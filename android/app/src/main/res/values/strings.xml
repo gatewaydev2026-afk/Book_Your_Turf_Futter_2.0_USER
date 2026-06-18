@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">BookYourTurf</string>
+    <!-- 🔥 Facebook SDK - உங்கள் App ID மற்றும் Client Token 🔥 -->
+    <string name="facebook_app_id">1893516301529670</string>
+    <string name="facebook_client_token">c6c3c716aa1e5cdeb11fc90f0cd1b4c8</string>
+    <string name="fb_login_protocol_scheme">fb1893516301529670</string>
+</resources>
