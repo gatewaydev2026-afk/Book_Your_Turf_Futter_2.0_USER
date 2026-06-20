@@ -1,4 +1,5 @@
-// booking_summary_view_model.dart - COMPLETE WITH FACEBOOK EVENTS
+// booking_summary_view_model.dart - COMPLETE FIXED WITH PROPER DECIMAL HANDLING
+// ✅ Fixed: toStringAsFixed called on String error
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -59,8 +60,18 @@ class BookingSummaryViewModel extends GetxController {
     selectedDate = args['selectedDate'];
     selectedPaymentType = args['selectedPaymentType'];
     totalAmount = args['totalAmount'];
-    payableAmount = args['payableAmount'];
-    minimumAdvance = args['requiredAdvance'] ?? 0;
+
+    // ✅ FIX: Convert to double first, then round
+    double rawPayableAmount = args['payableAmount'] is double
+        ? args['payableAmount']
+        : double.tryParse(args['payableAmount'].toString()) ?? 0.0;
+    payableAmount = double.parse(rawPayableAmount.toStringAsFixed(2));
+
+    // ✅ FIX: Convert to double first, then round
+    double rawMinimumAdvance = args['requiredAdvance'] is double
+        ? args['requiredAdvance']
+        : double.tryParse(args['requiredAdvance'].toString()) ?? 0.0;
+    minimumAdvance = double.parse(rawMinimumAdvance.toStringAsFixed(2));
 
     // 🔥 Facebook View Content Event
     _logViewContentEvent();
@@ -96,17 +107,24 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
-  // Helper: Format price with decimals only when needed
+  // ✅ Helper: Format price with proper rounding
   String _formatPrice(double price) {
-    if (price == price.toInt()) {
-      return price.toInt().toString();
+    // Round to 2 decimal places first
+    double roundedPrice = double.parse(price.toStringAsFixed(2));
+    if (roundedPrice == roundedPrice.toInt()) {
+      return roundedPrice.toInt().toString();
     }
-    String formatted = price.toStringAsFixed(2);
+    String formatted = roundedPrice.toStringAsFixed(2);
     formatted = formatted.replaceAll(RegExp(r'\.?0+$'), '');
     if (formatted.endsWith('.')) {
       formatted = formatted.substring(0, formatted.length - 1);
     }
     return formatted;
+  }
+
+  // ✅ Helper: Get properly formatted amount for API (2 decimal places)
+  String _getFormattedAmount(double amount) {
+    return amount.toStringAsFixed(2);
   }
 
   void _initRazorpay() {
@@ -131,7 +149,7 @@ class BookingSummaryViewModel extends GetxController {
     return sorted;
   }
 
-  // ==================== WALLET PAYMENT (WORKING VERSION) ====================
+  // ==================== WALLET PAYMENT - FIXED ====================
   Future<void> initiateWalletPayment() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -140,11 +158,29 @@ class BookingSummaryViewModel extends GetxController {
       return;
     }
 
+    // ✅ Check token validity
+    if (!SharedPrefsHelper.isTokenValid()) {
+      Get.snackbar('Session Expired', 'Please login again',
+          backgroundColor: Colors.red, colorText: Colors.white);
+      await SharedPrefsHelper.clearToken();
+      Get.offAllNamed(AppRoutes.login);
+      return;
+    }
+
     final profileVm = Get.find<ProfileViewModel>();
+
+    // ✅ Refresh wallet balance before checking
+    await profileVm.fetchUser(forceRefresh: true);
+
+    // ✅ Check if wallet balance is sufficient
     if (profileVm.walletBalance.value < payableAmount) {
-      Get.snackbar('Insufficient Balance',
-          'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(payableAmount)}',
-          backgroundColor: Colors.red, colorText: Colors.white, duration: const Duration(seconds: 4));
+      Get.snackbar(
+        'Insufficient Balance',
+        'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(payableAmount)}',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 4),
+      );
       return;
     }
 
@@ -160,22 +196,35 @@ class BookingSummaryViewModel extends GetxController {
       final dio = Get.find<Dio>();
       final dateStr = formattedDate;
 
+      // ✅ Format slots data correctly with 2 decimal places
       final slotsData = selectedSlots.map((slot) => ({
         'start_time': slot.startTime,
         'end_time': slot.endTime,
-        'price': slot.price,
+        // ✅ Use priceAsDouble which is already a double
+        'price': slot.priceAsDouble.toStringAsFixed(2),
       })).toList();
 
+      // ✅ FIX: Format amounts to 2 decimal places for API
+      final formattedTotalAmount = totalAmount.toStringAsFixed(2);
+      final formattedPayableAmount = payableAmount.toStringAsFixed(2);
+
+      // ✅ Prepare request body with proper field names
       final requestBody = {
         'turf_id': turf.id,
         'court_number': selectedCourt,
         'date': dateStr,
         'slots': slotsData,
-        'total_amount': totalAmount,
-        'amount_to_pay': payableAmount,
+        'total_amount': formattedTotalAmount,
+        'amount_to_pay': formattedPayableAmount,
       };
 
-      print('📤 Wallet Booking Request: $requestBody');
+      print('📤 Wallet Booking Request:');
+      print('   turf_id: ${turf.id}');
+      print('   court_number: $selectedCourt');
+      print('   date: $dateStr');
+      print('   slots: ${slotsData.length} slots');
+      print('   total_amount: $formattedTotalAmount');
+      print('   amount_to_pay: $formattedPayableAmount');
 
       final response = await dio.post(
         '/user/bookings/wallet-book/',
@@ -191,27 +240,60 @@ class BookingSummaryViewModel extends GetxController {
       if (result == 'success') {
         _handleWalletSuccess();
       } else {
+        // ✅ If failed, check if balance was deducted anyway
         await Future.delayed(const Duration(milliseconds: 500));
-        await profileVm.fetchUser();
+        await profileVm.fetchUser(forceRefresh: true);
 
         if (profileVm.walletBalance.value < initialBalance) {
           print('✅ Wallet payment successful - balance decreased');
           _handleWalletSuccess();
         } else {
-          _showWalletError();
+          String errorMsg = data['message'] ?? 'Payment failed. Please try again.';
+          _showWalletError(errorMsg);
         }
       }
-    } catch (e) {
-      print('❌ Wallet Booking Error: $e');
+    } on DioException catch (e) {
+      print('❌ Wallet Booking Dio Error: ${e.response?.statusCode}');
+      print('❌ Error Data: ${e.response?.data}');
 
+      String errorMsg = 'Something went wrong. Please try again.';
+      if (e.response?.data != null) {
+        final data = e.response?.data;
+        if (data is Map && data['message'] != null) {
+          errorMsg = data['message'];
+        }
+        // ✅ Check if it's a validation error
+        if (data is Map && data['data'] != null) {
+          final errorData = data['data'];
+          if (errorData is Map) {
+            final errors = errorData.entries.map((e) => '${e.key}: ${e.value}').join('\n');
+            errorMsg = 'Validation Error:\n$errors';
+          }
+        }
+      }
+
+      // ✅ Check if balance was deducted despite error
       await Future.delayed(const Duration(milliseconds: 500));
-      await profileVm.fetchUser();
+      await profileVm.fetchUser(forceRefresh: true);
 
       if (profileVm.walletBalance.value < initialBalance) {
         print('✅ Wallet payment successful despite error - balance decreased');
         _handleWalletSuccess();
       } else {
-        _showWalletError();
+        _showWalletError(errorMsg);
+      }
+    } catch (e) {
+      print('❌ Wallet Booking Error: $e');
+
+      // ✅ Check if balance was deducted despite error
+      await Future.delayed(const Duration(milliseconds: 500));
+      await profileVm.fetchUser(forceRefresh: true);
+
+      if (profileVm.walletBalance.value < initialBalance) {
+        print('✅ Wallet payment successful despite error - balance decreased');
+        _handleWalletSuccess();
+      } else {
+        _showWalletError('Payment failed. Please try again.');
       }
     }
   }
@@ -224,24 +306,25 @@ class BookingSummaryViewModel extends GetxController {
       _showWalletSuccessDialog();
     }
 
-    await Get.find<ProfileViewModel>().fetchUser();
+    // ✅ Refresh profile and bookings
+    await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
     if (Get.isRegistered<BookingViewModel>()) {
-      await Get.find<BookingViewModel>().fetch();
+      await Get.find<BookingViewModel>().refreshBookings();
     }
 
     isUILocked.value = false;
     isLoading.value = false;
   }
 
-  void _showWalletError() {
+  void _showWalletError(String message) {
     isUILocked.value = false;
     isLoading.value = false;
     Get.snackbar(
       'Payment Failed',
-      'Please try again or use online payment',
+      message,
       backgroundColor: Colors.red,
       colorText: Colors.white,
-      duration: const Duration(seconds: 3),
+      duration: const Duration(seconds: 4),
     );
   }
 
@@ -378,7 +461,7 @@ class BookingSummaryViewModel extends GetxController {
       final slotsData = selectedSlots.map((slot) => ({
         'start_time': slot.startTime,
         'end_time': slot.endTime,
-        'price': slot.price.toString(),
+        'price': slot.priceAsDouble.toStringAsFixed(2),
       })).toList();
 
       Map<String, dynamic> requestBody = {
@@ -386,13 +469,13 @@ class BookingSummaryViewModel extends GetxController {
         'court_number': selectedCourt,
         'date': dateStr,
         'slots': slotsData,
-        'total_amount': totalAmount.toString(),
+        'total_amount': totalAmount.toStringAsFixed(2),
       };
 
       if (selectedPaymentType == 'advance') {
-        requestBody['advance_amount'] = payableAmount.toString();
+        requestBody['advance_amount'] = payableAmount.toStringAsFixed(2);
       } else {
-        requestBody['advance_amount'] = payableAmount.toString();
+        requestBody['advance_amount'] = payableAmount.toStringAsFixed(2);
       }
 
       print('📤 Initiate Booking Request: $requestBody');
@@ -429,7 +512,7 @@ class BookingSummaryViewModel extends GetxController {
                 'num_items': selectedSlots.length.toString(),
                 'payment_method': 'razorpay',
                 'booking_type': selectedPaymentType,
-                'amount': payableAmount.toString(),
+                'amount': payableAmount.toStringAsFixed(2),
               },
               valueToSum: payableAmount,
             );
@@ -482,7 +565,10 @@ class BookingSummaryViewModel extends GetxController {
 
   void _openRazorpayCheckout(Map<String, dynamic> orderData, double amount) {
     const String razorpayKey = 'rzp_live_Rn1hHzY0kkjXFj';
-    double finalAmount = amount < 1 ? 1.0 : amount;
+
+    // ✅ Round amount properly for Razorpay
+    double finalAmount = double.parse(amount.toStringAsFixed(2));
+    if (finalAmount < 1) finalAmount = 1.0;
     int amountInPaise = (finalAmount * 100).toInt();
     isPaymentInitiated.value = true;
 
@@ -523,7 +609,7 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
-  // ==================== PAYMENT SUCCESS WITH FACEBOOK PURCHASE ====================
+  // ==================== PAYMENT SUCCESS ====================
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     print('=== ✅ PAYMENT SUCCESS ===');
     print('Payment ID: ${response.paymentId}');
@@ -577,13 +663,13 @@ class BookingSummaryViewModel extends GetxController {
         'court_number': _currentCourtNumber,
         'date': _currentDate,
         'slots': _currentSlotsData,
-        'total_amount': _currentTotalAmount?.toString(),
+        'total_amount': _currentTotalAmount?.toStringAsFixed(2),
       };
 
       if (_currentPaymentType == 'advance') {
-        confirmData['advance_amount'] = _currentPayableAmount?.toString();
+        confirmData['advance_amount'] = _currentPayableAmount?.toStringAsFixed(2);
       } else {
-        confirmData['advance_amount'] = _currentPayableAmount?.toString();
+        confirmData['advance_amount'] = _currentPayableAmount?.toStringAsFixed(2);
       }
 
       print('📤 Confirm Booking: $confirmData');
@@ -596,8 +682,9 @@ class BookingSummaryViewModel extends GetxController {
       print('⚠️ Confirmation error: $e');
     }
 
-    await Get.find<BookingViewModel>().fetch();
-    await Get.find<ProfileViewModel>().fetchUser();
+    // ✅ Use refreshBookings instead of fetch
+    await Get.find<BookingViewModel>().refreshBookings();
+    await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
 
     await Future.delayed(const Duration(seconds: 2));
     if (Get.isDialogOpen ?? false) Get.back();

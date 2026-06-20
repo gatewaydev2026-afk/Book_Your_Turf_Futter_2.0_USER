@@ -1,6 +1,5 @@
-// booking_history_view.dart - COMPLETE WITH DECIMAL PRICE HANDLING
-// FIXED: Wallet payment with notifications working
-// FIXED: Balance display shows exact decimals (1.50 not 2)
+// booking_history_view.dart - COMPLETE WITH LAZY LOADING
+// FIXED: Uses loadBookings() instead of fetch() for lazy loading
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -183,8 +182,9 @@ class BookingHistoryView extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 380;
 
+    // ✅ Load bookings when screen opens (lazy loading)
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      vm.fetch();
+      vm.loadBookings();
     });
 
     return SafeArea(
@@ -222,7 +222,6 @@ class BookingHistoryView extends StatelessWidget {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // BACK BUTTON - Navigates to Home (index 0) in bottom nav bar
           IconButton(
             onPressed: () {
               final mainPageVm = Get.find<MainPageViewModel>();
@@ -240,7 +239,7 @@ class BookingHistoryView extends StatelessWidget {
           Row(
             children: [
               IconButton(
-                onPressed: () => vm.fetch(),
+                onPressed: () => vm.refreshBookings(),
                 icon: Icon(Icons.refresh, color: Colors.green, size: screenWidth < 380 ? 20 : 24),
               ),
             ],
@@ -546,7 +545,7 @@ class BookingHistoryView extends StatelessWidget {
       }
 
       return RefreshIndicator(
-        onRefresh: () => vm.fetch(),
+        onRefresh: () => vm.refreshBookings(),
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           itemCount: vm.filteredBookings.length,
@@ -1092,9 +1091,8 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // FIXED: Wallet payment with NOTIFICATION - NO navigation to splash screen
+  // ✅ Wallet payment with lazy loading - NO navigation to splash screen
   Future<void> _payBalanceWithWallet(BookingModel booking) async {
-    // Prevent multiple simultaneous payments
     if (vm.isPayingBalance.value) return;
 
     vm.isPayingBalance.value = true;
@@ -1109,11 +1107,9 @@ class BookingHistoryView extends StatelessWidget {
         },
       );
 
-      // Close loading indicator
       vm.isPayingBalance.value = false;
 
       if (response.data['result'] == 'success') {
-        // Show success message
         if (Get.context != null) {
           Get.snackbar(
             'Payment Successful',
@@ -1125,16 +1121,13 @@ class BookingHistoryView extends StatelessWidget {
           );
         }
 
-        // Refresh data - THIS SHOULD NOT NAVIGATE TO SPLASH SCREEN
         await profileVm.fetchUser();
-        await vm.fetch();
+        await vm.refreshBookings();
 
-        // Force UI refresh
         vm.filteredBookings.refresh();
         vm.bookings.refresh();
 
       } else {
-        // Handle API error response
         if (Get.context != null) {
           Get.snackbar(
             'Payment Failed',
@@ -1191,7 +1184,7 @@ class BookingHistoryView extends StatelessWidget {
                 Get.back();
                 final success = await vm.cancelBooking(bookingId);
                 if (success) {
-                  await vm.fetch();
+                  await vm.refreshBookings();
                   await profileVm.fetchUser();
                   vm.changeTab("cancelled");
                 }

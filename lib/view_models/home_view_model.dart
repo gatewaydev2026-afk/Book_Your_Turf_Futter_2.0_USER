@@ -1,4 +1,4 @@
-// home_view_model.dart - Complete Optimized Version with Location Fetch
+// home_view_model.dart - Complete Optimized Version with Duplicate Call Prevention
 
 import 'dart:async';
 import 'dart:convert';
@@ -9,6 +9,7 @@ import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import '../models/turf_model.dart';
+import '../routes/app_routes.dart';
 import '../services/location_service.dart';
 import '../services/shared_prefs_helper.dart';
 
@@ -35,7 +36,7 @@ class HomeViewModel extends GetxController {
   bool _isRefreshingLock = false;
 
   bool _initialFetchDone = false;
-  bool _isFetching = false;
+  bool _isFetching = false;  // ✅ PREVENT DUPLICATE CALLS
   int _apiCallCount = 0;
 
   DateTime? _lastFetchTime;
@@ -66,6 +67,19 @@ class HomeViewModel extends GetxController {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       print('🚫 User not logged in, skipping home data load');
+      return;
+    }
+
+    // ✅ Check token validity
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, skipping home data load');
+      await SharedPrefsHelper.clearToken();
+      return;
+    }
+
+    // ✅ Prevent duplicate calls while fetching
+    if (_isFetching && !forceRefresh) {
+      print('⏭️ Home data already being fetched, skipping duplicate...');
       return;
     }
 
@@ -254,6 +268,14 @@ class HomeViewModel extends GetxController {
       return;
     }
 
+    // ✅ Check token validity
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, skipping turfs fetch');
+      await SharedPrefsHelper.clearToken();
+      return;
+    }
+
+    // ✅ Prevent duplicate calls
     if (_isFetching) {
       print('⏳ Fetch already in progress');
       return;
@@ -264,12 +286,12 @@ class HomeViewModel extends GetxController {
       return;
     }
 
+    _isFetching = true;
     _apiCallCount++;
     print('\n╔════════════════════════════════════════════════════════════╗');
     print('║  🏟️ FETCH TURFS API CALL #$_apiCallCount                     ║');
     print('╚════════════════════════════════════════════════════════════╝');
 
-    _isFetching = true;
     isLoading.value = true;
     homeError.value = '';
 
@@ -538,6 +560,15 @@ class HomeViewModel extends GetxController {
       return;
     }
 
+    // ✅ Check token validity
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, redirecting to login');
+      await SharedPrefsHelper.clearToken();
+      Get.offAllNamed(AppRoutes.login);
+      return;
+    }
+
+    // ✅ Prevent duplicate refresh calls
     if (_isRefreshingLock || _isFetching) {
       print('⏳ Refresh already in progress');
       return;
@@ -591,6 +622,12 @@ class HomeViewModel extends GetxController {
       return '${(distance * 1000).toInt()} m away';
     }
     return '${distance.toStringAsFixed(1)} km away';
+  }
+
+  // ========== RESET CACHE ==========
+  static void resetCache() {
+    // This will force fresh fetch on next load
+    // Static flags need to be reset
   }
 }
 

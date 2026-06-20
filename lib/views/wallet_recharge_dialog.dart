@@ -16,7 +16,7 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
   final WalletViewModel _walletVm = Get.find<WalletViewModel>();
 
   // Quick amounts including ₹1 and ₹5
-  final List<double> _quickAmounts = [1, 5, 10, 20, 50, 100, 200, 500, 1000];
+  final List<double> _quickAmounts = [500, 1000, 2000, 5000, 10000];
 
   @override
   void dispose() {
@@ -94,7 +94,7 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
                           ? null
                           : () async {
                         final amount = double.tryParse(_amountController.text);
-                        if (amount != null && amount >= 1) {
+                        if (amount != null && amount >= 500) {
                           Get.back();
                           await _walletVm.initiateRecharge(amount);
 
@@ -105,7 +105,7 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
                         } else {
                           Get.snackbar(
                             'Invalid Amount',
-                            'Please enter a valid amount (Minimum ₹1)',
+                            'Please enter a valid amount (Minimum ₹500)',
                             backgroundColor: Colors.red,
                             colorText: Colors.white,
                           );
@@ -138,7 +138,7 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Minimum recharge amount is ₹1',
+              'Minimum recharge amount is ₹500',
               style: TextStyle(
                 fontSize: 10,
                 color: Colors.grey.shade500,

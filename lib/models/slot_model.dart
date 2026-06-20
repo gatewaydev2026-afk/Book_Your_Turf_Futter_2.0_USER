@@ -1,4 +1,7 @@
 // models/slot_model.dart - COMPLETELY FIXED WITH DECIMAL PRICE HANDLING
+// ✅ Fixed: Floating point precision issues
+// ✅ Fixed: Proper rounding for wallet payment
+
 import '../utils/helpers.dart';
 
 class SlotModel {
@@ -43,12 +46,24 @@ class SlotModel {
       if (json['price'] is int) {
         priceValue = (json['price'] as int).toString();
       } else if (json['price'] is double) {
-        // Convert double to string without rounding
-        priceValue = (json['price'] as double).toString();
+        // ✅ FIX: Round to 2 decimal places to avoid floating point issues
+        double rounded = double.parse((json['price'] as double).toStringAsFixed(2));
+        priceValue = rounded.toString();
       } else if (json['price'] is String) {
-        priceValue = json['price'] as String;
+        // ✅ FIX: Parse and round string value
+        double parsed = double.tryParse(json['price'] as String) ?? 0;
+        double rounded = double.parse(parsed.toStringAsFixed(2));
+        priceValue = rounded.toString();
       }
     }
+
+    // ✅ FIX: Round requiredAdvance to 2 decimal places
+    double advFromApi = double.tryParse(requiredAdvance) ?? 0;
+    requiredAdvance = double.parse(advFromApi.toStringAsFixed(2)).toString();
+
+    // ✅ FIX: Round advanceValue to 2 decimal places
+    double advVal = double.tryParse(advanceValue) ?? 0;
+    advanceValue = double.parse(advVal.toStringAsFixed(2)).toString();
 
     return SlotModel(
       date: json['date']?.toString() ?? '',
@@ -73,29 +88,32 @@ class SlotModel {
   String get formattedEndTime => formatTo12Hour(endTime);
   String get formattedTimeRange => '${formatTo12Hour(startTime)} - ${formatTo12Hour(endTime)}';
 
-  // Get price as double for calculations (preserves decimals)
+  // ✅ FIXED: Get price as double with proper rounding
   double get priceAsDouble {
     try {
-      return double.parse(price);
+      double value = double.parse(price);
+      return double.parse(value.toStringAsFixed(2));
     } catch (e) {
       return 0.0;
     }
   }
 
-  // Get advance for this specific slot
+  // ✅ FIXED: Get advance for this specific slot with proper rounding
   double get slotRequiredAdvance {
     // If API provides required_advance, use it directly
     double advanceFromApi = double.tryParse(requiredAdvance) ?? 0;
     if (advanceFromApi > 0) {
-      return advanceFromApi;
+      return double.parse(advanceFromApi.toStringAsFixed(2));
     }
     // Otherwise calculate from percentage
     double priceDouble = priceAsDouble;
     double advancePercent = double.tryParse(advanceValue) ?? 0;
-    return priceDouble * (advancePercent / 100.0);
+    double calculated = priceDouble * (advancePercent / 100.0);
+    // ✅ Round to 2 decimal places
+    return double.parse(calculated.toStringAsFixed(2));
   }
 
-  // Format price for display (shows decimals only when needed)
+  // ✅ FIXED: Format price for display (shows decimals only when needed)
   String get formattedPrice {
     double priceDouble = priceAsDouble;
     if (priceDouble == priceDouble.toInt()) {
@@ -108,6 +126,16 @@ class SlotModel {
       formatted = formatted.substring(0, formatted.length - 1);
     }
     return formatted;
+  }
+
+  // ✅ FIXED: Get formatted amount for API (always 2 decimal places)
+  String get formattedAmountForApi {
+    return priceAsDouble.toStringAsFixed(2);
+  }
+
+  // ✅ FIXED: Get formatted advance for API (always 2 decimal places)
+  String get formattedAdvanceForApi {
+    return slotRequiredAdvance.toStringAsFixed(2);
   }
 
   bool isFutureSlot(DateTime selectedDate) {
@@ -139,5 +167,25 @@ class SlotModel {
       }
     }
     return true;
+  }
+
+  // ✅ NEW: Get slot as map for API with proper formatting
+  Map<String, String> toApiMap() {
+    return {
+      'start_time': startTime,
+      'end_time': endTime,
+      'price': formattedAmountForApi,
+    };
+  }
+
+  // ✅ NEW: Check if slot can be paid via wallet
+  bool canPayViaWallet(double walletBalance) {
+    return walletBalance >= slotRequiredAdvance;
+  }
+
+  // ✅ NEW: Get remaining amount after wallet payment
+  double getRemainingAfterWalletPayment(double walletBalance) {
+    double remaining = walletBalance - slotRequiredAdvance;
+    return double.parse(remaining.toStringAsFixed(2));
   }
 }

@@ -1,11 +1,12 @@
-// view_models/wallet_view_model.dart
+// view_models/wallet_view_model.dart - FIXED DUPLICATE API CALLS
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../models/wallet_transaction_model.dart';
-import '../services/notification_service.dart';
 import '../services/shared_prefs_helper.dart';
+import 'profile_view_model.dart';
 
 class WalletViewModel extends GetxController {
   final walletBalance = 0.0.obs;
@@ -13,18 +14,27 @@ class WalletViewModel extends GetxController {
   final isRecharging = false.obs;
   final transactions = <WalletTransactionModel>[].obs;
   final filteredTransactions = <WalletTransactionModel>[].obs;
+  final selectedFilter = 'all'.obs;
 
-  final selectedFilter = 'all'.obs; // all, credit, debit
   late Razorpay _razorpay;
   String? _currentOrderId;
   String? _currentReferenceId;
+
+  // ✅ Cache and loading flags
+  static bool _transactionsLoaded = false;
+  static DateTime? _lastFetchTime;
+  static const _cacheDuration = Duration(minutes: 1);
+  static bool _isFetching = false; // ✅ NEW: Prevent duplicate calls
 
   @override
   void onInit() {
     super.onInit();
     _initRazorpay();
-    fetchWalletBalance();
-    fetchTransactions();
+    print('📋 WalletViewModel initialized (lazy loading - will fetch when needed)');
+
+    if (Get.isRegistered<ProfileViewModel>()) {
+      walletBalance.value = Get.find<ProfileViewModel>().walletBalance.value;
+    }
   }
 
   void _initRazorpay() {
@@ -34,77 +44,83 @@ class WalletViewModel extends GetxController {
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
-  Future<void> fetchWalletBalance() async {
+  // ✅ Call this method ONLY when user opens Wallet screen
+  Future<void> loadWalletData({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      print('No token found for wallet balance');
+      print('🚫 No token, skipping wallet data load');
       return;
     }
 
-    try {
-      final dio = Get.find<Dio>();
-      final response = await dio.get('/user/profile/');
-      if (response.data['result'] == 'success') {
-        final user = response.data['data'];
-        walletBalance.value = double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0;
-        print('Wallet balance fetched: ${walletBalance.value}');
-      }
-    } catch (e) {
-      print('Error fetching wallet balance: $e');
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, skipping wallet data load');
+      await SharedPrefsHelper.clearToken();
+      return;
     }
+
+    // ✅ Prevent duplicate calls while fetching
+    if (_isFetching) {
+      print('⏭️ Wallet data already being fetched, skipping duplicate...');
+      return;
+    }
+
+    // Load balance from profile if available
+    if (Get.isRegistered<ProfileViewModel>()) {
+      final profileVm = Get.find<ProfileViewModel>();
+      walletBalance.value = profileVm.walletBalance.value;
+      print('✅ Wallet balance from profile: ₹${walletBalance.value}');
+    }
+
+    // Check cache before fetching transactions
+    if (!forceRefresh && _transactionsLoaded && _lastFetchTime != null) {
+      final age = DateTime.now().difference(_lastFetchTime!);
+      if (age < _cacheDuration) {
+        print('⏭️ Wallet transactions cached (${age.inSeconds}s old) - using cache');
+        return;
+      }
+    }
+
+    if (!forceRefresh && _transactionsLoaded && transactions.isNotEmpty) {
+      print('⏭️ Wallet transactions already loaded (${transactions.length} transactions)');
+      return;
+    }
+
+    await _fetchTransactions(forceRefresh: forceRefresh);
   }
 
-  Future<void> fetchTransactions({String? type, String? status}) async {
-    final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('No token found for wallet transactions');
+  // ✅ Private method with loading flag
+  Future<void> _fetchTransactions({bool forceRefresh = false}) async {
+    // ✅ Prevent duplicate calls
+    if (_isFetching) {
+      print('⏭️ Wallet transactions fetch already in progress...');
       return;
     }
 
+    _isFetching = true;
+    print('📡 Fetching wallet transactions from API...');
     isLoading.value = true;
-    print('Fetching wallet transactions...');
 
     try {
       final dio = Get.find<Dio>();
-      final queryParams = <String, dynamic>{};
-      if (type != null && type != 'all') {
-        queryParams['type'] = type;
-      }
-      if (status != null) {
-        queryParams['status'] = status;
-      }
-
-      final response = await dio.get(
-        '/user/wallet/transactions/',
-        queryParameters: queryParams,
-      );
-
-      print('Wallet transactions response: ${response.data}');
+      final response = await dio.get('/user/wallet/transactions/');
 
       if (response.data['result'] == 'success') {
         final List<dynamic> data = response.data['data'];
-        print('Wallet transactions count: ${data.length}');
-
-        // Print first transaction for debugging
-        if (data.isNotEmpty) {
-          print('First transaction: ${data[0]}');
-        }
-
         transactions.value = data
             .map((json) => WalletTransactionModel.fromJson(json))
             .toList();
+
         _applyFilter();
-      } else {
-        print('Failed to fetch wallet transactions: ${response.data['message']}');
+        _transactionsLoaded = true;
+        _lastFetchTime = DateTime.now();
+
+        print('✅ Wallet transactions fetched: ${transactions.length} transactions');
       }
     } catch (e) {
-      print('Error fetching wallet transactions: $e');
-      if (e is DioException) {
-        print('Dio error response: ${e.response?.data}');
-        print('Dio error status: ${e.response?.statusCode}');
-      }
+      print('❌ Error fetching wallet transactions: $e');
     } finally {
       isLoading.value = false;
+      _isFetching = false;
     }
   }
 
@@ -116,7 +132,6 @@ class WalletViewModel extends GetxController {
           .where((t) => t.transactionType.toLowerCase() == selectedFilter.value)
           .toList();
     }
-    print('Filtered transactions: ${filteredTransactions.length}');
   }
 
   void setFilter(String filter) {
@@ -124,7 +139,6 @@ class WalletViewModel extends GetxController {
     _applyFilter();
   }
 
-  // FIXED: Minimum recharge amount changed from ₹10 to ₹1
   Future<void> initiateRecharge(double amount) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -133,7 +147,6 @@ class WalletViewModel extends GetxController {
       return;
     }
 
-    // Changed from amount < 10 to amount < 1
     if (amount < 1) {
       Get.snackbar('Invalid Amount', 'Minimum recharge amount is ₹1',
           backgroundColor: Colors.red, colorText: Colors.white);
@@ -147,8 +160,6 @@ class WalletViewModel extends GetxController {
         '/user/wallet/recharge/initiate/',
         data: {'amount': amount},
       );
-
-      print('Recharge initiate response: ${response.data}');
 
       if (response.data['result'] == 'success') {
         final data = response.data['data'];
@@ -195,12 +206,8 @@ class WalletViewModel extends GetxController {
     }
   }
 
-// lib/view_models/wallet_view_model.dart
-
-
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     print('Wallet Recharge Success - Payment ID: ${response.paymentId}');
-    print('Order ID: ${response.orderId}');
 
     try {
       final dio = Get.find<Dio>();
@@ -212,34 +219,23 @@ class WalletViewModel extends GetxController {
         },
       );
 
-      print('Recharge confirm response: ${confirmResponse.data}');
-
       if (confirmResponse.data['result'] == 'success') {
-        await fetchWalletBalance();
-        await fetchTransactions();
-        Get.snackbar(
-          'Success',
-          'Wallet recharged successfully!',
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-          duration: const Duration(seconds: 3),
-        );
+        _transactionsLoaded = false;
+        await loadWalletData(forceRefresh: true);
+        if (Get.isRegistered<ProfileViewModel>()) {
+          await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
+        }
+        Get.snackbar('Success', 'Wallet recharged successfully!',
+            backgroundColor: Colors.green, colorText: Colors.white,
+            duration: const Duration(seconds: 3));
       } else {
-        Get.snackbar(
-          'Error',
-          confirmResponse.data['message'] ?? 'Payment confirmation failed',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
+        Get.snackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed',
+            backgroundColor: Colors.red, colorText: Colors.white);
       }
     } catch (e) {
       print('Error confirming recharge: $e');
-      Get.snackbar(
-        'Error',
-        'Failed to confirm payment. Please contact support.',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      Get.snackbar('Error', 'Failed to confirm payment. Please contact support.',
+          backgroundColor: Colors.red, colorText: Colors.white);
     } finally {
       isRecharging.value = false;
       _currentOrderId = null;
@@ -255,17 +251,11 @@ class WalletViewModel extends GetxController {
       errorMessage = 'Payment cancelled by user';
     } else if (response.code == 1) {
       errorMessage = 'Payment failed. Please check your payment method.';
-    } else if (response.code == 2) {
-      errorMessage = 'Payment failed. Please try again.';
     }
 
-    Get.snackbar(
-      'Payment Failed',
-      errorMessage,
-      backgroundColor: Colors.red,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 3),
-    );
+    Get.snackbar('Payment Failed', errorMessage,
+        backgroundColor: Colors.red, colorText: Colors.white,
+        duration: const Duration(seconds: 3));
     isRecharging.value = false;
   }
 
@@ -273,9 +263,15 @@ class WalletViewModel extends GetxController {
     print('External Wallet: ${response.walletName}');
   }
 
-  Future<void> refresh() async {
-    await fetchWalletBalance();
-    await fetchTransactions();
+  Future<void> refreshWallet() async {
+    _transactionsLoaded = false;
+    await loadWalletData(forceRefresh: true);
+  }
+
+  static void resetCache() {
+    _transactionsLoaded = false;
+    _lastFetchTime = null;
+    _isFetching = false;
   }
 
   @override

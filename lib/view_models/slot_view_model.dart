@@ -1,4 +1,5 @@
 // view_models/slot_view_model.dart - COMPLETELY FIXED WITH DECIMAL PRICE HANDLING
+// ✅ Fixed: Floating point precision issues for wallet payment
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -83,32 +84,38 @@ class SlotViewModel extends GetxController {
 
   int get courtCount => turf.courts;
 
-  // FIXED: totalPrice preserves decimals
+  // ✅ FIXED: totalPrice with proper rounding
   double get totalPrice {
     double total = 0.0;
     for (var slot in selectedSlots) {
       total += slot.priceAsDouble;
     }
-    return total;
+    // ✅ Round to 2 decimal places to avoid floating point issues
+    return double.parse(total.toStringAsFixed(2));
   }
 
-  // FIXED: requiredAdvance preserves decimals
+  // ✅ FIXED: requiredAdvance with proper rounding
   double get requiredAdvance {
     double totalAdvance = 0.0;
     for (var slot in selectedSlots) {
       totalAdvance += slot.slotRequiredAdvance;
     }
-    return totalAdvance;
+    // ✅ Round to 2 decimal places to avoid floating point issues
+    return double.parse(totalAdvance.toStringAsFixed(2));
   }
 
   double get calculatedAdvanceAmount => requiredAdvance;
 
+  // ✅ FIXED: getPayableAmount with proper rounding
   double get getPayableAmount {
+    double amount;
     if (selectedPaymentType.value == 'full') {
-      return totalPrice;
+      amount = totalPrice;
     } else {
-      return calculatedAdvanceAmount;
+      amount = calculatedAdvanceAmount;
     }
+    // ✅ Round to 2 decimal places to avoid floating point issues
+    return double.parse(amount.toStringAsFixed(2));
   }
 
   bool get isMinSlotsMet => selectedSlots.length >= turf.minSlots;

@@ -1,4 +1,4 @@
-// home_view.dart - Complete with notification badge and system notifications
+// home_view.dart - Complete with notification badge, working update check
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile_view.dart';
@@ -8,11 +8,12 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'package:lottie/lottie.dart';
 import 'package:url_launcher/url_launcher.dart';
 import '../models/notification_model.dart';
+import '../routes/app_routes.dart';
 import '../services/notification_service.dart';
 import '../services/update_service.dart';
+import '../services/shared_prefs_helper.dart';
 import '../view_models/home_view_model.dart';
 import '../view_models/profile_view_model.dart';
-import '../services/shared_prefs_helper.dart';
 import '../widgets/turf_card.dart';
 import '../widgets/turf_skeleton.dart';
 import 'ChatbotView.dart';
@@ -49,8 +50,8 @@ class _HomeViewState extends State<HomeView>
   final Map<String, DateTime> _lastClickTime = {};
   static const int DEBOUNCE_DURATION_MS = 800;
 
-  bool _isUpdateCheckComplete = false;
   bool _dataLoaded = false;
+  bool _isUpdateCheckDone = false;
 
   // Stream subscription for real-time notifications
   StreamSubscription<NotificationItem>? _notificationStreamSubscription;
@@ -68,7 +69,9 @@ class _HomeViewState extends State<HomeView>
       }
     });
 
-    _checkForUpdatesBeforeLoad();
+    // ✅ Run update check in background (non-blocking, with rate limiting)
+    _checkForUpdatesInBackground();
+
     WidgetsBinding.instance.addObserver(this);
 
     _cachedUserName = profileVm.name.value.isNotEmpty
@@ -118,6 +121,34 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
+  // ✅ Non-blocking update check with rate limiting
+  Future<void> _checkForUpdatesInBackground() async {
+    try {
+      // ✅ Check rate limiting (once per day)
+      if (!SharedPrefsHelper.shouldCheckForUpdate()) {
+        final lastCheck = SharedPrefsHelper.getLastUpdateCheck();
+        if (lastCheck != null) {
+          final diff = DateTime.now().difference(lastCheck);
+          print('⏭️ Update check skipped (${diff.inHours}h ago)');
+        }
+        return;
+      }
+
+      // Run update check without blocking UI
+      Future.delayed(const Duration(seconds: 3), () async {
+        try {
+          await UpdateService.checkAndShowUpdateDialog(context);
+          // Last check time is saved inside UpdateService
+          _isUpdateCheckDone = true;
+        } catch (e) {
+          print('⚠️ Background update check failed: $e');
+        }
+      });
+    } catch (e) {
+      print('⚠️ Update check setup failed: $e');
+    }
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -136,10 +167,19 @@ class _HomeViewState extends State<HomeView>
       return;
     }
 
+    // ✅ Check token validity
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, redirecting to login');
+      await SharedPrefsHelper.clearToken();
+      Get.offAllNamed(AppRoutes.login);
+      return;
+    }
+
     if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
+      print('📡 Loading home data for the first time...');
       await homeVm.loadHomeData();
       _dataLoaded = true;
-    } else {
+    } else if (homeVm.allTurfs.isNotEmpty) {
       print('✅ Home data already available (${homeVm.allTurfs.length} turfs)');
       _dataLoaded = true;
     }
@@ -161,20 +201,6 @@ class _HomeViewState extends State<HomeView>
     }
 
     _lastScrollOffset = currentOffset;
-  }
-
-  Future<void> _checkForUpdatesBeforeLoad() async {
-    setState(() {
-      _isUpdateCheckComplete = false;
-    });
-
-    await UpdateService.checkAndShowUpdateDialog(context);
-
-    if (mounted) {
-      setState(() {
-        _isUpdateCheckComplete = true;
-      });
-    }
   }
 
   bool _isDebounced(String actionId) {
@@ -216,6 +242,10 @@ class _HomeViewState extends State<HomeView>
     print('App state: $state - Updating notification badge only');
     if (state == AppLifecycleState.resumed) {
       _notificationService.updateUnreadCount();
+      // ✅ Refresh data if needed (but only if token is valid)
+      if (SharedPrefsHelper.isLoggedIn() && SharedPrefsHelper.isTokenValid()) {
+        _loadHomeData();
+      }
     }
   }
 
@@ -301,25 +331,7 @@ class _HomeViewState extends State<HomeView>
 
   @override
   Widget build(BuildContext context) {
-    if (!_isUpdateCheckComplete) {
-      return Scaffold(
-        backgroundColor: const Color(0xFFF5F7F6),
-        body: Center(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const CircularProgressIndicator(color: Colors.green),
-              const SizedBox(height: 16),
-              Text(
-                'Checking for updates...',
-                style: TextStyle(color: Colors.grey.shade600),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
+    // ✅ No blocking - show UI immediately
     return Container(
       color: const Color(0xFFF5F7F6),
       child: Scaffold(
@@ -405,6 +417,9 @@ class _HomeViewState extends State<HomeView>
                       'assets/lottie/chatbot.json',
                       height: 90,
                       width: 90,
+                      errorBuilder: (context, error, stackTrace) {
+                        return const Icon(Icons.chat, size: 50, color: Colors.green);
+                      },
                     ),
                   ),
                 ),
@@ -455,6 +470,7 @@ class _HomeViewState extends State<HomeView>
                       'assets/sports/all .png',
                       height: 120,
                       fit: BoxFit.fill,
+                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
                     ),
                   ),
                 ),
@@ -503,6 +519,7 @@ class _HomeViewState extends State<HomeView>
                           category["image1"] as String,
                           height: 180,
                           fit: BoxFit.fill,
+                          errorBuilder: (context, error, stackTrace) => const SizedBox(),
                         ),
                         Center(
                           child: Stack(
@@ -624,17 +641,21 @@ class _HomeViewState extends State<HomeView>
       }
 
       if (homeVm.turfs.isNotEmpty) {
-        return GridView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: getCrossAxisCount(context),
-            childAspectRatio: 0.68,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
+        return RefreshIndicator(
+          onRefresh: _handleRefresh,
+          color: Colors.green,
+          child: GridView.builder(
+            controller: _scrollController,
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+              crossAxisCount: getCrossAxisCount(context),
+              childAspectRatio: 0.68,
+              crossAxisSpacing: 12,
+              mainAxisSpacing: 12,
+            ),
+            itemCount: homeVm.turfs.length,
+            itemBuilder: (_, index) => TurfCard(homeVm.turfs[index]),
           ),
-          itemCount: homeVm.turfs.length,
-          itemBuilder: (_, index) => TurfCard(homeVm.turfs[index]),
         );
       }
 
@@ -642,7 +663,7 @@ class _HomeViewState extends State<HomeView>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Lottie.asset('assets/lottie/no.json', height: 80),
+            Lottie.asset('assets/lottie/no.json', height: 80, errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80)),
             const SizedBox(height: 16),
             const Text("No Turfs Found", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -653,7 +674,7 @@ class _HomeViewState extends State<HomeView>
             const SizedBox(height: 16),
             ElevatedButton.icon(
               onPressed: () => _handleRefresh(),
-              icon: const Icon(Icons.refresh,color: Colors.white,),
+              icon: const Icon(Icons.refresh, color: Colors.white),
               label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green,
@@ -785,7 +806,32 @@ class _HomeViewState extends State<HomeView>
                     },
                   ),
                 ),
-
+                // ✅ Notification Badge
+                if (count > 0)
+                  Positioned(
+                    right: -2,
+                    top: -2,
+                    child: Container(
+                      padding: const EdgeInsets.all(4),
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                      constraints: const BoxConstraints(
+                        minWidth: 18,
+                        minHeight: 18,
+                      ),
+                      child: Text(
+                        count > 99 ? '99+' : count.toString(),
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 10,
+                          fontWeight: FontWeight.bold,
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
               ],
             );
           }),

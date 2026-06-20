@@ -17,7 +17,7 @@ class AutoRefreshService extends GetxService {
         await Get.find<HomeViewModel>();
       }
       if (Get.isRegistered<BookingViewModel>()) {
-        await Get.find<BookingViewModel>().fetch();
+        await Get.find<BookingViewModel>();
       }
       if (Get.isRegistered<ProfileViewModel>()) {
         await Get.find<ProfileViewModel>().refresh();

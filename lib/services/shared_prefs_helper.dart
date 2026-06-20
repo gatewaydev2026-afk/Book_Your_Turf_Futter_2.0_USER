@@ -1,5 +1,5 @@
 // services/shared_prefs_helper.dart
-// ✅ Complete with device ID and location storage
+// ✅ Complete with device ID, location storage, and proper type handling
 
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -8,6 +8,7 @@ class SharedPrefsHelper {
 
   static const String _keyFirstLaunch = 'first_launch';
   static const String _keyAuthToken = 'auth_token';
+  static const String _keyTokenExpiry = 'token_expiry';
   static const String _keyUserId = 'user_id';
   static const String _keyUserName = 'user_name';
   static const String _keyUserEmail = 'user_email';
@@ -20,8 +21,10 @@ class SharedPrefsHelper {
   static const String _keyTurfsCache = 'cached_turfs';
   static const String _keyLastTurfsFetch = 'last_turfs_fetch';
   static const String _keyNotificationsCache = 'notifications_cache';
+  static const String _keyLastUpdateCheck = 'last_update_check';
+  static const String _keyLastProfileFetch = 'last_profile_fetch';
 
-  // ✅ Device Management Keys
+  // Device Management Keys
   static const String _keyDeviceId = 'persistent_device_id';
   static const String _keyDeviceRegistered = 'device_registered';
   static const String _keyDeviceLocation = 'device_location';
@@ -34,23 +37,75 @@ class SharedPrefsHelper {
   static Future<void> setFirstLaunch(bool isFirst) async => await _prefs.setBool(_keyFirstLaunch, isFirst);
   static bool isFirstLaunch() => _prefs.getBool(_keyFirstLaunch) ?? true;
 
-  // ========== AUTH ==========
-  static Future<void> setToken(String token) async => await _prefs.setString(_keyAuthToken, token);
+  // ========== AUTH WITH TOKEN EXPIRY ==========
+  static Future<void> setToken(String token) async {
+    await _prefs.setString(_keyAuthToken, token);
+    final expiry = DateTime.now().add(const Duration(days: 7));
+    await _prefs.setString(_keyTokenExpiry, expiry.toIso8601String());
+    print('🔑 Token saved (expires: ${expiry.toLocal().toString().substring(0, 16)})');
+  }
+
   static String? getToken() => _prefs.getString(_keyAuthToken);
-  static Future<void> setUserId(int id) async => await _prefs.setInt(_keyUserId, id);
+
+  static DateTime? getTokenExpiry() {
+    final expiryStr = _prefs.getString(_keyTokenExpiry);
+    if (expiryStr == null) return null;
+    try {
+      return DateTime.parse(expiryStr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static bool isTokenValid() {
+    final expiry = getTokenExpiry();
+    if (expiry == null) return false;
+    final isValid = DateTime.now().isBefore(expiry);
+    if (!isValid) {
+      print('⚠️ Token expired on ${expiry.toLocal().toString().substring(0, 16)}');
+    }
+    return isValid;
+  }
+
+  static Future<void> clearToken() async {
+    await _prefs.remove(_keyAuthToken);
+    await _prefs.remove(_keyTokenExpiry);
+  }
+
+  // ========== USER ID WITH TYPE HANDLING ==========
+  static Future<void> setUserId(dynamic id) async {
+    int userId;
+    if (id is int) {
+      userId = id;
+    } else if (id is String) {
+      userId = int.tryParse(id) ?? 0;
+    } else if (id is double) {
+      userId = id.toInt();
+    } else {
+      userId = 0;
+    }
+    await _prefs.setInt(_keyUserId, userId);
+  }
+
   static int? getUserId() => _prefs.getInt(_keyUserId);
+
+  // ========== USER DATA ==========
   static Future<void> setUserName(String name) async => await _prefs.setString(_keyUserName, name);
   static String? getUserName() => _prefs.getString(_keyUserName);
+
   static Future<void> setUserEmail(String email) async => await _prefs.setString(_keyUserEmail, email);
   static String? getUserEmail() => _prefs.getString(_keyUserEmail);
+
   static Future<void> setUserPhone(String phone) async => await _prefs.setString(_keyUserPhone, phone);
   static String? getUserPhone() => _prefs.getString(_keyUserPhone);
 
   // ========== BALANCES ==========
   static Future<void> setWalletBalance(double balance) async => await _prefs.setDouble(_keyWalletBalance, balance);
-  static double? getWalletBalance() => _prefs.getDouble(_keyWalletBalance);
+  static double getWalletBalance() => _prefs.getDouble(_keyWalletBalance) ?? 0.0;
+
   static Future<void> setGameCoins(int coins) async => await _prefs.setInt(_keyGameCoins, coins);
-  static int? getGameCoins() => _prefs.getInt(_keyGameCoins);
+  static int getGameCoins() => _prefs.getInt(_keyGameCoins) ?? 0;
+
   static Future<void> setReferralCode(String code) async => await _prefs.setString(_keyReferralCode, code);
   static String? getReferralCode() => _prefs.getString(_keyReferralCode);
 
@@ -67,15 +122,38 @@ class SharedPrefsHelper {
       await _prefs.setString(_keyLastTokenRegistration, date.toIso8601String());
     }
   }
+
   static Future<DateTime?> getLastTokenRegistration() async {
     final timestamp = _prefs.getString(_keyLastTokenRegistration);
     if (timestamp == null) return null;
     return DateTime.tryParse(timestamp);
   }
+
   static Future<bool> isTokenRegistrationValid() async {
     final lastReg = await getLastTokenRegistration();
     if (lastReg == null) return false;
     return DateTime.now().difference(lastReg).inDays < 7;
+  }
+
+  // ========== UPDATE CHECK ==========
+  static Future<void> setLastUpdateCheck(DateTime time) async {
+    await _prefs.setString(_keyLastUpdateCheck, time.toIso8601String());
+  }
+
+  static DateTime? getLastUpdateCheck() {
+    final timeStr = _prefs.getString(_keyLastUpdateCheck);
+    if (timeStr == null) return null;
+    try {
+      return DateTime.parse(timeStr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static bool shouldCheckForUpdate() {
+    final lastCheck = getLastUpdateCheck();
+    if (lastCheck == null) return true;
+    return DateTime.now().difference(lastCheck).inHours >= 24;
   }
 
   // ========== DEVICE ID (PERSISTENT - NEVER CLEARED) ==========
@@ -99,12 +177,15 @@ class SharedPrefsHelper {
     await _prefs.setString(_keyLocationUpdatedAt, DateTime.now().toIso8601String());
     print('📍 Location saved: $location');
   }
+
   static String? getDeviceLocation() => _prefs.getString(_keyDeviceLocation);
+
   static Future<DateTime?> getLocationUpdatedAt() async {
     final timestamp = _prefs.getString(_keyLocationUpdatedAt);
     if (timestamp == null) return null;
     return DateTime.tryParse(timestamp);
   }
+
   static Future<bool> isLocationValid() async {
     final updatedAt = await getLocationUpdatedAt();
     if (updatedAt == null) return false;
@@ -121,7 +202,9 @@ class SharedPrefsHelper {
     await _prefs.setString(_keyTurfsCache, turfsJson);
     await _prefs.setString(_keyLastTurfsFetch, DateTime.now().toIso8601String());
   }
+
   static String? getCachedTurfs() => _prefs.getString(_keyTurfsCache);
+
   static bool isTurfsCacheValid() {
     final lastFetch = _prefs.getString(_keyLastTurfsFetch);
     if (lastFetch == null) return false;
@@ -135,6 +218,33 @@ class SharedPrefsHelper {
   static bool isDeviceRegistered() => _prefs.getBool(_keyDeviceRegistered) ?? false;
   static Future<void> setCurrentDeviceId(String deviceId) async => await _prefs.setString(_keyCurrentDeviceId, deviceId);
   static String? getCurrentDeviceId() => _prefs.getString(_keyCurrentDeviceId);
+
+  // ========== PROFILE CACHE ==========
+  static Future<void> setLastProfileFetch(DateTime time) async {
+    await _prefs.setString(_keyLastProfileFetch, time.toIso8601String());
+  }
+
+  static DateTime? getLastProfileFetch() {
+    final timeStr = _prefs.getString(_keyLastProfileFetch);
+    if (timeStr == null) return null;
+    try {
+      return DateTime.parse(timeStr);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  static bool isProfileCacheValid() {
+    final lastFetch = getLastProfileFetch();
+    if (lastFetch == null) return false;
+    return DateTime.now().difference(lastFetch).inSeconds < 30;
+  }
+
+  // ========== LOGIN CHECK ==========
+  static bool isLoggedIn() {
+    final token = getToken();
+    return token != null && token.isNotEmpty && isTokenValid();
+  }
 
   // ========== CLEAR ALL (PRESERVES DEVICE ID AND LOCATION) ==========
   static Future<void> clearAll() async {
@@ -154,10 +264,5 @@ class SharedPrefsHelper {
       await _prefs.setString(_keyLocationUpdatedAt, locationTime);
     }
     print('🗑️ All cleared (device_id and location preserved)');
-  }
-
-  static bool isLoggedIn() {
-    final token = getToken();
-    return token != null && token.isNotEmpty;
   }
 }

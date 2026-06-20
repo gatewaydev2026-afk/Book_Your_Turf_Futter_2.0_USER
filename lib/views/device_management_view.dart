@@ -1,5 +1,5 @@
 // views/device_management_view.dart
-// ✅ Complete Device Management Screen
+// ✅ Complete Device Management Screen - With proper loading dialog
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -30,10 +30,12 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
 
   Future<void> _showLogoutDeviceDialog(DeviceInfo device) async {
     final isCurrentDevice = await _isCurrentDevice(device);
+    // Capture the main widget context for use in callbacks
+    final scaffoldContext = context;
 
     showDialog(
-      context: context,
-      builder: (context) => AlertDialog(
+      context: scaffoldContext,
+      builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
           children: [
@@ -101,24 +103,44 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(context),
+            onPressed: () => Navigator.pop(dialogContext),
             child: const Text('Cancel', style: TextStyle(fontSize: 15)),
           ),
           ElevatedButton(
             onPressed: () async {
-              Navigator.pop(context);
+              // Close the confirmation dialog
+              Navigator.pop(dialogContext);
 
-              // Show loading
+              // Show loading dialog with proper UI
               showDialog(
-                context: context,
+                context: scaffoldContext,
                 barrierDismissible: false,
-                builder: (context) => const Center(
-                  child: Column(
+                builder: (loadingContext) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  content: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Logging out device...'),
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.green),
+                      ),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Logging out ${device.deviceName}...',
+                        style: const TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'Please wait',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -126,24 +148,48 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
 
               final success = await _deviceManager.logoutDevice(device.id);
 
-              if (context.mounted) Navigator.pop(context);
+              // Pop the loading dialog
+              if (scaffoldContext.mounted) {
+                Navigator.of(scaffoldContext).pop();
+              }
 
-              if (success && mounted) {
+              if (success && scaffoldContext.mounted) {
                 if (isCurrentDevice) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('This device has been logged out. Returning to login screen...'),
-                      backgroundColor: Colors.orange,
-                      duration: Duration(seconds: 2),
+                  // Show success message in a dialog before logout
+                  showDialog(
+                    context: scaffoldContext,
+                    barrierDismissible: false,
+                    builder: (context) => AlertDialog(
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                      title: const Row(
+                        children: [
+                          Icon(Icons.check_circle, color: Colors.green),
+                          SizedBox(width: 8),
+                          Text('Logged Out'),
+                        ],
+                      ),
+                      content: const Text(
+                        'This device has been logged out successfully. You will be redirected to the login screen.',
+                      ),
+                      actions: [
+                        TextButton(
+                          onPressed: () async {
+                            Navigator.pop(context);
+                            await SharedPrefsHelper.clearAll();
+                            if (scaffoldContext.mounted) {
+                              Get.offAllNamed(AppRoutes.login);
+                            }
+                          },
+                          child: const Text('OK'),
+                        ),
+                      ],
                     ),
                   );
-                  await Future.delayed(const Duration(seconds: 1));
-                  await SharedPrefsHelper.clearAll();
-                  if (context.mounted) {
-                    Get.offAllNamed(AppRoutes.login);
-                  }
                 } else {
-                  ScaffoldMessenger.of(context).showSnackBar(
+                  // Show success snackbar for non-current device
+                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
                     SnackBar(
                       content: Text('${device.deviceName} has been logged out'),
                       backgroundColor: Colors.green,
@@ -152,11 +198,30 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                   );
                   await _loadDevices();
                 }
-              } else if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('Failed to logout device. Please try again.'),
-                    backgroundColor: Colors.red,
+              } else if (scaffoldContext.mounted) {
+                // Show error dialog
+                showDialog(
+                  context: scaffoldContext,
+                  builder: (context) => AlertDialog(
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    title: const Row(
+                      children: [
+                        Icon(Icons.error, color: Colors.red),
+                        SizedBox(width: 8),
+                        Text('Failed'),
+                      ],
+                    ),
+                    content: const Text(
+                      'Failed to logout device. Please try again.',
+                    ),
+                    actions: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('OK'),
+                      ),
+                    ],
                   ),
                 );
               }
@@ -257,16 +322,36 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
             onPressed: () async {
               Navigator.pop(context);
 
+              // Show loading dialog for logout all
               showDialog(
                 context: context,
                 barrierDismissible: false,
-                builder: (context) => const Center(
-                  child: Column(
+                builder: (context) => AlertDialog(
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  content: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      CircularProgressIndicator(),
-                      SizedBox(height: 16),
-                      Text('Logging out devices...'),
+                      const CircularProgressIndicator(
+                        valueColor: AlwaysStoppedAnimation<Color>(Colors.orange),
+                      ),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'Logging out all devices...',
+                        style: TextStyle(
+                          fontSize: 16,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        'This may take a few seconds',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey.shade600,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -414,7 +499,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                         leading: _buildDeviceIcon(device.platform),
                         title: Row(
                           children: [
-                            Expanded(
+                            Flexible(
                               child: Text(
                                 device.deviceName,
                                 style: const TextStyle(
@@ -425,6 +510,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
+                            const SizedBox(width: 8),
                             if (isCurrent)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),

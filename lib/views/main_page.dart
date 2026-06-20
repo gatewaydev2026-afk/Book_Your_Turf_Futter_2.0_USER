@@ -235,7 +235,7 @@ class MainPage extends StatelessWidget {
           final bookingVm = Get.find<BookingViewModel>();
           if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
             print('📅 Loading Bookings data...');
-            await bookingVm.fetch();
+            await bookingVm.loadBookings();
             _loadedTabs.add(index);
           } else {
             print('✅ Bookings data already available (${bookingVm.bookings.length} bookings)');

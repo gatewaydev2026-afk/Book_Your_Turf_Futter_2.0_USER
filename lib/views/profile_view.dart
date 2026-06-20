@@ -1,5 +1,5 @@
 // views/profile_view.dart
-// ✅ Complete with Device Management menu item
+// ✅ Complete with Device Management menu item & Lazy Loading
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -16,13 +16,14 @@ import '../view_models/profile_view_model.dart';
 import '../view_models/auth_view_model.dart';
 import '../view_models/wallet_view_model.dart';
 import '../view_models/coin_view_model.dart';
+import '../view_models/booking_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../themes/app_colors.dart';
 import '../routes/app_routes.dart';
 import '../views/wallet_recharge_dialog.dart';
 import '../views/wallet_transactions_view.dart';
 import '../views/coin_transactions_view.dart';
-import '../views/device_management_view.dart'; // ✅ NEW IMPORT
+import '../views/device_management_view.dart';
 
 class ProfileView extends StatelessWidget {
   ProfileView({super.key}) {
@@ -291,6 +292,9 @@ class ProfileView extends StatelessWidget {
                                 onTap: () {
                                   final mainPageVm = Get.find<MainPageViewModel>();
                                   mainPageVm.changeTab(1);
+                                  // ✅ Load bookings when navigating to Bookings tab
+                                  final bookingVm = Get.find<BookingViewModel>();
+                                  bookingVm.loadBookings();
                                 },
                               ),
                               Divider(color: AppColors.grey.withOpacity(0.3)),
@@ -309,13 +313,23 @@ class ProfileView extends StatelessWidget {
                               others(
                                 title: 'Wallet Transactions',
                                 icon: Icons.history,
-                                onTap: () => Get.to(() => const WalletTransactionsView()),
+                                onTap: () {
+                                  // ✅ Load wallet data when navigating
+                                  final walletVm = Get.find<WalletViewModel>();
+                                  walletVm.loadWalletData();
+                                  Get.to(() => const WalletTransactionsView());
+                                },
                               ),
                               Divider(color: AppColors.grey.withOpacity(0.3)),
                               others(
                                 title: 'Coin History',
                                 icon: 'assets/icons/coin.svg',
-                                onTap: () => Get.to(() => const CoinTransactionsView()),
+                                onTap: () {
+                                  // ✅ Load coin data when navigating
+                                  final coinVm = Get.find<CoinViewModel>();
+                                  coinVm.loadCoinData();
+                                  Get.to(() => const CoinTransactionsView());
+                                },
                               ),
                               Divider(color: AppColors.grey.withOpacity(0.3)),
                               others(
@@ -463,7 +477,7 @@ class ProfileView extends StatelessWidget {
                   ),
                   const Spacer(),
                   IconButton(
-                    onPressed: () => walletVm.fetchWalletBalance(),
+                    onPressed: () => walletVm.loadWalletData(forceRefresh: true),
                     icon: const Icon(Icons.refresh, color: Colors.white),
                   ),
                 ],
@@ -486,6 +500,8 @@ class ProfileView extends StatelessWidget {
               title: const Text('View Transactions'),
               onTap: () {
                 Get.back();
+                // ✅ Load wallet data when navigating
+                walletVm.loadWalletData();
                 Get.to(() => const WalletTransactionsView());
               },
             ),
@@ -1333,6 +1349,9 @@ class PointsCard extends StatelessWidget {
               Expanded(
                 child: GestureDetector(
                   onTap: () {
+                    // ✅ Load coin data when navigating
+                    final coinVm = Get.find<CoinViewModel>();
+                    coinVm.loadCoinData();
                     Get.to(() => const CoinTransactionsView());
                   },
                   child: Container(

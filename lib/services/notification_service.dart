@@ -1,4 +1,4 @@
-// services/notification_service.dart - COMPLETE USER APP VERSION
+// services/notification_service.dart - COMPLETE FIXED VERSION
 
 import 'dart:async';
 import 'dart:convert';
@@ -22,6 +22,11 @@ class NotificationService extends GetxService {
   var currentOffset = 0;
   var totalCount = 0;
   static const int pageSize = 20;
+
+  // ✅ PREVENT DUPLICATE CALLS
+  static bool _isFetching = false;
+  static DateTime? _lastFetchTime;
+  static const _cacheDuration = Duration(seconds: 30);
 
   // ✅ STREAM FOR REAL-TIME NOTIFICATIONS
   final _notificationController = StreamController<NotificationItem>.broadcast();
@@ -173,7 +178,7 @@ class NotificationService extends GetxService {
       _updateUnreadCount();
       _saveNotificationsToCache();
 
-      // ✅ ADD THIS LINE - Broadcast to stream listeners
+      // Broadcast to stream listeners
       _notificationController.add(notificationItem);
 
       // Show system notification
@@ -225,14 +230,34 @@ class NotificationService extends GetxService {
 
   // ==================== BACKEND API METHODS ====================
 
+  // ✅ FETCH WITH DUPLICATE PREVENTION
   Future<List<NotificationItem>> fetchFromBackend({
     int offset = 0,
     int limit = 20,
+    bool forceRefresh = false,
   }) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       return [];
     }
+
+    // ✅ Prevent duplicate calls
+    if (_isFetching && !forceRefresh) {
+      print('⏭️ Notifications already being fetched, skipping duplicate...');
+      return [];
+    }
+
+    // ✅ Check cache
+    if (!forceRefresh && _lastFetchTime != null) {
+      final age = DateTime.now().difference(_lastFetchTime!);
+      if (age < _cacheDuration && notifications.isNotEmpty) {
+        print('⏭️ Notifications cached (${age.inSeconds}s old) - using cache');
+        return notifications.toList();
+      }
+    }
+
+    _isFetching = true;
+    print('📡 Fetching notifications from API...');
 
     try {
       final url = Uri.parse(
@@ -265,6 +290,7 @@ class NotificationService extends GetxService {
           );
         }).toList();
 
+        _lastFetchTime = DateTime.now();
         print('✅ Fetched ${fetchedNotifications.length} notifications from backend (total: $totalCount)');
         return fetchedNotifications;
       } else {
@@ -273,13 +299,22 @@ class NotificationService extends GetxService {
     } catch (e) {
       print('❌ Error fetching notifications: $e');
       return [];
+    } finally {
+      _isFetching = false;
     }
   }
 
+  // ✅ REFRESH WITH DUPLICATE PREVENTION
   Future<void> refreshFromBackend() async {
+    // ✅ Prevent duplicate calls
+    if (isLoading.value) {
+      print('⏭️ Notifications refresh already in progress');
+      return;
+    }
+
     isLoading.value = true;
     try {
-      final fetched = await fetchFromBackend(offset: 0, limit: pageSize);
+      final fetched = await fetchFromBackend(offset: 0, limit: pageSize, forceRefresh: true);
 
       final existingIds = notifications.map((n) => n.id).toSet();
       final newNotifications = fetched.where((n) => !existingIds.contains(n.id)).toList();
@@ -481,5 +516,11 @@ class NotificationService extends GetxService {
     _updateUnreadCount();
     await _saveNotificationsToCache();
     print('🗑️ Deleted: $notificationId');
+  }
+
+  // ✅ Reset cache
+  static void resetCache() {
+    _isFetching = false;
+    _lastFetchTime = null;
   }
 }

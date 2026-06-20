@@ -1,4 +1,5 @@
-// views/coin_transactions_view.dart
+// views/coin_transactions_view.dart - UPDATED
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/coin_transaction_model.dart';
@@ -9,7 +10,12 @@ class CoinTransactionsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final CoinViewModel vm = Get.put(CoinViewModel());
+    final CoinViewModel vm = Get.find<CoinViewModel>();
+
+    // ✅ Load coin data when screen opens
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      vm.loadCoinData();
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -20,7 +26,9 @@ class CoinTransactionsView extends StatelessWidget {
         actions: [
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
-            onPressed: () => vm.refresh(),
+            onPressed: () {
+              vm.loadCoinData(forceRefresh: true); // ✅ Using loadCoinData
+            },
           ),
         ],
         bottom: PreferredSize(
@@ -46,14 +54,16 @@ class CoinTransactionsView extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
                 Obx(() => Text(
-                  'Total Coins: ${vm.gameCoins.value}',
+                  'Current Coins: ${vm.gameCoins.value}',
                   style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                 )),
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
-                  onPressed: () => vm.refresh(),
+                  onPressed: () {
+                    vm.loadCoinData(forceRefresh: true);
+                  },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh',style: TextStyle(color: Colors.white),),
+                  label: const Text('Refresh', style: TextStyle(color: Colors.white)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                   ),
@@ -64,7 +74,9 @@ class CoinTransactionsView extends StatelessWidget {
         }
 
         return RefreshIndicator(
-          onRefresh: () => vm.refresh(),
+          onRefresh: () async {
+            await vm.loadCoinData(forceRefresh: true);
+          },
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: vm.filteredTransactions.length,
@@ -100,33 +112,13 @@ class CoinTransactionsView extends StatelessWidget {
       selected: vm.selectedFilter.value == value,
       onSelected: (_) => vm.setFilter(value),
       backgroundColor: Colors.grey.shade100,
-      selectedColor: Colors.amber.shade100,
-      checkmarkColor: Colors.amber,
+      selectedColor: Colors.green.shade100,
+      checkmarkColor: Colors.green,
     ));
   }
 
   Widget _buildTransactionCard(CoinTransactionModel txn) {
     final isCredit = txn.isCredit;
-
-    // Get description from API data
-    String displayDescription = txn.description;
-    if (displayDescription.isEmpty) {
-      if (isCredit) {
-        displayDescription = 'Coins Earned';
-      } else {
-        displayDescription = 'Coins Spent';
-      }
-    }
-
-    // Get booking reference if available
-    String bookingRef = '';
-    if (txn.booking != null) {
-      if (txn.booking!.containsKey('booking_id')) {
-        bookingRef = 'Booking: ${txn.booking!['booking_id']}';
-      } else if (txn.booking!.containsKey('id')) {
-        bookingRef = 'Booking: ${txn.booking!['id']}';
-      }
-    }
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
@@ -148,12 +140,12 @@ class CoinTransactionsView extends StatelessWidget {
             width: 50,
             height: 50,
             decoration: BoxDecoration(
-              color: isCredit ? Colors.amber.shade50 : Colors.red.shade50,
+              color: isCredit ? Colors.green.shade50 : Colors.red.shade50,
               borderRadius: BorderRadius.circular(12),
             ),
             child: Icon(
-              isCredit ? Icons.add_circle : Icons.remove_circle,
-              color: isCredit ? Colors.amber : Colors.red,
+              isCredit ? Icons.arrow_downward : Icons.arrow_upward,
+              color: isCredit ? Colors.green : Colors.red,
               size: 28,
             ),
           ),
@@ -163,7 +155,7 @@ class CoinTransactionsView extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  displayDescription,
+                  txn.description,
                   style: const TextStyle(
                     fontWeight: FontWeight.w600,
                     fontSize: 14,
@@ -172,7 +164,6 @@ class CoinTransactionsView extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
                 const SizedBox(height: 4),
-                // Use formattedDateTime from model (converts UTC to local)
                 Text(
                   txn.formattedDateTime,
                   style: TextStyle(
@@ -180,22 +171,21 @@ class CoinTransactionsView extends StatelessWidget {
                     color: Colors.grey.shade500,
                   ),
                 ),
-                if (bookingRef.isNotEmpty)
+                if (txn.referenceId.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 4),
                     child: Text(
-                      bookingRef,
+                      'Ref: ${txn.referenceId}',
                       style: TextStyle(
                         fontSize: 10,
                         color: Colors.grey.shade400,
                       ),
                     ),
                   ),
-                // Show balance info from API
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Text(
-                    'Balance: ${txn.previousBalance} → ${txn.currentBalance} coins',
+                    'Balance: ${txn.previousBalance} → ${txn.currentBalance}',
                     style: TextStyle(
                       fontSize: 9,
                       color: Colors.grey.shade400,
@@ -205,20 +195,41 @@ class CoinTransactionsView extends StatelessWidget {
               ],
             ),
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-            decoration: BoxDecoration(
-              color: isCredit ? Colors.amber.shade50 : Colors.red.shade50,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              '${isCredit ? '+' : '-'}${txn.amount}',
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                fontSize: 18,
-                color: isCredit ? Colors.amber.shade700 : Colors.red.shade700,
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                decoration: BoxDecoration(
+                  color: txn.isSuccess ? Colors.green.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  '${isCredit ? '+' : '-'} ${txn.amount}',
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: isCredit ? Colors.green : Colors.red,
+                  ),
+                ),
               ),
-            ),
+              const SizedBox(height: 4),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: txn.isSuccess ? Colors.green.shade50 : Colors.orange.shade50,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  txn.status.toUpperCase(),
+                  style: TextStyle(
+                    fontSize: 9,
+                    color: txn.isSuccess ? Colors.green : Colors.orange,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+            ],
           ),
         ],
       ),

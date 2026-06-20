@@ -1,4 +1,5 @@
-// view_models/profile_view_model.dart
+// view_models/profile_view_model.dart - COMPLETE
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide MultipartFile, FormData;
@@ -23,75 +24,116 @@ class ProfileViewModel extends GetxController {
   final isLoading = false.obs;
   final isUpdating = false.obs;
   final isRefreshingWallet = false.obs;
-
   final imageVersion = 0.obs;
+
+  static bool _initialFetchDone = false;
+  static DateTime? _lastFetchTime;
+  static const _cacheDuration = Duration(seconds: 30);
+  static Map<String, dynamic>? _cachedUserData;
 
   @override
   void onInit() {
     super.onInit();
-    _checkLoginAndFetch();
+    print('📋 ProfileViewModel initialized (lazy loading - will fetch when needed)');
+    _loadFromCache();
   }
 
-  Future<void> _checkLoginAndFetch() async {
-    final token = SharedPrefsHelper.getToken();
-    if (token != null && token.isNotEmpty) {
-      await fetchUser();
-    } else {
-      print('User not logged in, skipping profile fetch');
-    }
-  }
-
-  Future<void> fetchUser() async {
+  Future<void> fetchUser({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      print('User not logged in, skipping profile fetch');
+      print('🚫 No token, skipping profile fetch');
       return;
     }
 
+    if (!SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, skipping profile fetch');
+      await SharedPrefsHelper.clearToken();
+      return;
+    }
+
+    if (!forceRefresh && _initialFetchDone && _lastFetchTime != null) {
+      final age = DateTime.now().difference(_lastFetchTime!);
+      if (age < _cacheDuration) {
+        print('⏭️ Profile data cached (${age.inSeconds}s old) - skipping fetch');
+        return;
+      }
+    }
+
+    if (!forceRefresh && _initialFetchDone && name.value.isNotEmpty) {
+      print('⏭️ Profile data already loaded');
+      return;
+    }
+
+    print('📡 Fetching profile from API...');
     isLoading.value = true;
+
     try {
       final dio = Get.find<Dio>();
       final response = await dio.get('/user/profile/');
 
-      print('========== PROFILE FETCH RESPONSE ==========');
-      print('Status: ${response.statusCode}');
-
       if (response.data['result'] == 'success') {
         final user = response.data['data'];
-        name.value = user['name'] ?? '';
-        email.value = user['email'] ?? '';
-        phone.value = user['number'] ?? '';
-        profileImageUrl.value = user['profile_image_url'] ?? '';
-        walletBalance.value = double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0;
-        gameCoins.value = user['game_coins'] ?? 0;
-        referralCode.value = user['referral_code'] ?? '';
+        _cachedUserData = user;
+        _updateProfileData(user);
 
-        print('Wallet Balance: ${walletBalance.value}');
-        print('Game Coins: ${gameCoins.value}');
-        print('Referral Code: ${referralCode.value}');
+        _initialFetchDone = true;
+        _lastFetchTime = DateTime.now();
+        await SharedPrefsHelper.setLastProfileFetch(DateTime.now());
 
-        if (name.value.isNotEmpty) {
-          await SharedPrefsHelper.setUserName(name.value);
-        }
-        await SharedPrefsHelper.setWalletBalance(walletBalance.value);
-        await SharedPrefsHelper.setGameCoins(gameCoins.value);
-        await SharedPrefsHelper.setReferralCode(referralCode.value);
+        print('✅ Profile fetched successfully');
+        print('   Name: ${name.value}');
+        print('   Wallet: ₹${walletBalance.value}');
+        print('   Coins: ${gameCoins.value}');
       }
     } catch (e) {
-      print('Error fetching user: $e');
-      Get.snackbar('Error', 'Failed to load profile',
-          backgroundColor: Colors.red,
-          colorText: Colors.white
-      );
+      print('❌ Error fetching profile: $e');
+      _loadFromCache();
     } finally {
       isLoading.value = false;
+    }
+  }
+
+  void _updateProfileData(Map<String, dynamic> user) {
+    name.value = user['name'] ?? '';
+    email.value = user['email'] ?? '';
+    phone.value = user['number'] ?? '';
+    profileImageUrl.value = user['profile_image_url'] ?? '';
+    walletBalance.value = double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0;
+    gameCoins.value = user['game_coins'] ?? 0;
+    referralCode.value = user['referral_code'] ?? '';
+
+    if (name.value.isNotEmpty) {
+      SharedPrefsHelper.setUserName(name.value);
+    }
+    SharedPrefsHelper.setWalletBalance(walletBalance.value);
+    SharedPrefsHelper.setGameCoins(gameCoins.value);
+    SharedPrefsHelper.setReferralCode(referralCode.value);
+  }
+
+  void _loadFromCache() {
+    final cachedName = SharedPrefsHelper.getUserName();
+    final cachedWallet = SharedPrefsHelper.getWalletBalance();
+    final cachedCoins = SharedPrefsHelper.getGameCoins();
+    final cachedReferral = SharedPrefsHelper.getReferralCode();
+
+    if (cachedName != null && cachedName.isNotEmpty) {
+      name.value = cachedName;
+      walletBalance.value = cachedWallet;
+      gameCoins.value = cachedCoins;
+      referralCode.value = cachedReferral ?? '';
+
+      final cachedEmail = SharedPrefsHelper.getUserEmail();
+      final cachedPhone = SharedPrefsHelper.getUserPhone();
+      if (cachedEmail != null) email.value = cachedEmail;
+      if (cachedPhone != null) phone.value = cachedPhone;
+
+      print('📦 Loaded profile from cache');
     }
   }
 
   Future<double> refreshWalletBalance() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      print('User not logged in, skipping wallet refresh');
       return walletBalance.value;
     }
 
@@ -109,47 +151,14 @@ class ProfileViewModel extends GetxController {
         await SharedPrefsHelper.setWalletBalance(newBalance);
         await SharedPrefsHelper.setGameCoins(gameCoins.value);
 
-        print('Wallet balance refreshed: $newBalance');
         return newBalance;
       }
     } catch (e) {
-      print('Error refreshing wallet balance: $e');
+      print('Error refreshing wallet: $e');
     } finally {
       isRefreshingWallet.value = false;
     }
     return walletBalance.value;
-  }
-
-  // NEW: Fetch coin transaction history
-  Future<List<CoinTransactionModel>> fetchCoinTransactions({String? type, String? status}) async {
-    final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      return [];
-    }
-
-    try {
-      final dio = Get.find<Dio>();
-      final queryParams = <String, dynamic>{};
-      if (type != null && type != 'all') {
-        queryParams['type'] = type;
-      }
-      if (status != null) {
-        queryParams['status'] = status;
-      }
-
-      final response = await dio.get(
-        '/user/coins/transactions/',
-        queryParameters: queryParams,
-      );
-
-      if (response.data['result'] == 'success') {
-        final List<dynamic> data = response.data['data'];
-        return data.map((json) => CoinTransactionModel.fromJson(json)).toList();
-      }
-    } catch (e) {
-      print('Error fetching coin transactions: $e');
-    }
-    return [];
   }
 
   Future<File?> compressImage(File imageFile) async {
@@ -197,17 +206,12 @@ class ProfileViewModel extends GetxController {
 
     isUpdating.value = true;
 
-    print('=== UPDATING PROFILE ===');
-    print('Name: $name');
-    print('Has Image: ${profileImageFile != null}');
-
     try {
       final dio = Get.find<Dio>();
       final formData = FormData();
 
       if (name != null && name.isNotEmpty && name != this.name.value) {
         formData.fields.add(MapEntry('name', name));
-        print('Adding name field: $name');
       }
 
       if (profileImageFile != null) {
@@ -219,19 +223,15 @@ class ProfileViewModel extends GetxController {
             contentType: MediaType('image', 'jpeg'),
           );
           formData.files.add(MapEntry('profile_image', multipartFile));
-          print('Adding profile_image file: ${compressedImage.path}');
         }
       }
 
       if (formData.fields.isEmpty && formData.files.isEmpty) {
-        print('No changes to update');
         Get.snackbar('Info', 'No changes to update',
             backgroundColor: Colors.orange, colorText: Colors.white);
         isUpdating.value = false;
         return false;
       }
-
-      print('Sending PATCH request to /user/profile/');
 
       final response = await dio.patch(
         '/user/profile/',
@@ -242,9 +242,6 @@ class ProfileViewModel extends GetxController {
           },
         ),
       );
-
-      print('Response status: ${response.statusCode}');
-      print('Response data: ${response.data}');
 
       if (response.data['result'] == 'success') {
         await _handleUpdateSuccess();
@@ -257,7 +254,6 @@ class ProfileViewModel extends GetxController {
     } on DioException catch (e) {
       print('DioException: ${e.message}');
       if (e.response?.statusCode == 405) {
-        print('Method not allowed, trying POST with _method override');
         return await _updateWithPostOverride();
       }
       _showError(e.response?.data['message'] ?? 'Failed to update profile');
@@ -272,7 +268,6 @@ class ProfileViewModel extends GetxController {
   }
 
   Future<bool> _updateWithPostOverride() async {
-    print('Using POST with method override');
     try {
       final dio = Get.find<Dio>();
       final formData = FormData();
@@ -307,7 +302,8 @@ class ProfileViewModel extends GetxController {
   }
 
   Future<void> _handleUpdateSuccess() async {
-    await fetchUser();
+    _initialFetchDone = false;
+    await fetchUser(forceRefresh: true);
     imageVersion.value++;
 
     if (name.value.isNotEmpty) {
@@ -332,7 +328,7 @@ class ProfileViewModel extends GetxController {
       await Get.find<HomeViewModel>().refreshTurfs();
     }
     if (Get.isRegistered<BookingViewModel>()) {
-      await Get.find<BookingViewModel>().fetch();
+      await Get.find<BookingViewModel>().refreshBookings();
     }
   }
 
@@ -350,9 +346,6 @@ class ProfileViewModel extends GetxController {
       final response = await dio.post('/user/convert-coins/', data: {
         'coins_to_convert': coinsToConvert,
       });
-
-      print('========== CONVERT COINS RESPONSE ==========');
-      print('Response: ${response.data}');
 
       if (response.data['result'] == 'success') {
         final data = response.data['data'];
@@ -386,38 +379,14 @@ class ProfileViewModel extends GetxController {
   }
 
   Future<void> refresh() async {
-    await fetchUser();
+    _initialFetchDone = false;
+    await fetchUser(forceRefresh: true);
     imageVersion.value++;
   }
 
-  Future<void> checkWalletBalance() async {
-    final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('No token found');
-      return;
-    }
-
-    try {
-      final dio = Get.find<Dio>();
-      print('========== WALLET API TEST ==========');
-      final response = await dio.get('/user/profile/');
-      print('Response status: ${response.statusCode}');
-
-      if (response.data['result'] == 'success') {
-        final user = response.data['data'];
-        print('Wallet balance from API: ${user['wallet_balance']}');
-        print('Game coins from API: ${user['game_coins']}');
-        print('Local wallet balance: ${walletBalance.value}');
-
-        final apiBalance = double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0;
-        if (apiBalance != walletBalance.value) {
-          print('Wallet balance mismatch! Updating...');
-          walletBalance.value = apiBalance;
-          await SharedPrefsHelper.setWalletBalance(apiBalance);
-        }
-      }
-    } catch (e) {
-      print('Wallet API test failed: $e');
-    }
+  static void resetCache() {
+    _initialFetchDone = false;
+    _lastFetchTime = null;
+    _cachedUserData = null;
   }
 }

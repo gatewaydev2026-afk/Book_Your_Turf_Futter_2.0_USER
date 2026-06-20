@@ -1,4 +1,6 @@
 // views/wallet_transactions_view.dart
+// ✅ LAZY LOADING - Loads data only when screen is opened
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/wallet_transaction_model.dart';
@@ -11,6 +13,11 @@ class WalletTransactionsView extends StatelessWidget {
   Widget build(BuildContext context) {
     final WalletViewModel vm = Get.find<WalletViewModel>();
 
+    // ✅ Load wallet data when screen opens (lazy loading)
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      vm.loadWalletData();
+    });
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('Wallet Transactions'),
@@ -21,8 +28,7 @@ class WalletTransactionsView extends StatelessWidget {
           IconButton(
             icon: const Icon(Icons.refresh, color: Colors.green),
             onPressed: () {
-              vm.fetchWalletBalance();
-              vm.fetchTransactions();
+              vm.loadWalletData(forceRefresh: true);
             },
           ),
         ],
@@ -55,11 +61,10 @@ class WalletTransactionsView extends StatelessWidget {
                 const SizedBox(height: 20),
                 ElevatedButton.icon(
                   onPressed: () {
-                    vm.fetchWalletBalance();
-                    vm.fetchTransactions();
+                    vm.loadWalletData(forceRefresh: true);
                   },
                   icon: const Icon(Icons.refresh),
-                  label: const Text('Refresh',style: TextStyle(color: Colors.white),),
+                  label: const Text('Refresh', style: TextStyle(color: Colors.white)),
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.green,
                   ),
@@ -71,8 +76,7 @@ class WalletTransactionsView extends StatelessWidget {
 
         return RefreshIndicator(
           onRefresh: () async {
-            await vm.fetchWalletBalance();
-            await vm.fetchTransactions();
+            await vm.loadWalletData(forceRefresh: true);
           },
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
