@@ -1,5 +1,5 @@
 // views/device_management_view.dart
-// ✅ Complete Device Management Screen - With proper loading dialog
+// ✅ Complete Device Management Screen - Logout Option Visible
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -17,24 +17,63 @@ class DeviceManagementView extends StatefulWidget {
 class _DeviceManagementViewState extends State<DeviceManagementView> {
   final DeviceManager _deviceManager = Get.find<DeviceManager>();
 
+  bool _isMounted = false;
+
   @override
   void initState() {
     super.initState();
+    _isMounted = true;
+    print('📱 DeviceManagementView initState');
     _loadDevices();
   }
 
-  Future<void> _loadDevices() async {
-    await _deviceManager.fetchDevices();
-    setState(() {});
+  @override
+  void dispose() {
+    _isMounted = false;
+    super.dispose();
   }
 
+  Future<void> _loadDevices() async {
+    if (!_isMounted) return;
+    print('🔄 Loading devices...');
+    try {
+      await _deviceManager.fetchDevices();
+      if (_isMounted) {
+        setState(() {});
+      }
+      print('✅ Devices loaded: ${_deviceManager.devices.length}');
+    } catch (e) {
+      print('❌ Error loading devices: $e');
+    }
+  }
+
+  void _showSnackBar(String message, Color color) {
+    if (!_isMounted) return;
+    try {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(message),
+          backgroundColor: color,
+          duration: const Duration(seconds: 2),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    } catch (e) {
+      print('⚠️ Could not show snackbar: $e');
+    }
+  }
+
+  // ✅ LOGOUT DEVICE DIALOG
   Future<void> _showLogoutDeviceDialog(DeviceInfo device) async {
+    if (!_isMounted) return;
+
     final isCurrentDevice = await _isCurrentDevice(device);
-    // Capture the main widget context for use in callbacks
-    final scaffoldContext = context;
+    print('🔴 Logout clicked for: ${device.deviceName} (ID: ${device.id})');
+    print('🔴 Is current device: $isCurrentDevice');
 
     showDialog(
-      context: scaffoldContext,
+      context: context,
+      barrierDismissible: false,
       builder: (dialogContext) => AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: Row(
@@ -68,10 +107,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
               ),
               child: Text(
                 '${device.platform.toUpperCase()} • ${device.osVersion}',
-                style: TextStyle(
-                  fontSize: 12,
-                  color: Colors.grey.shade700,
-                ),
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade700),
               ),
             ),
             if (device.location != null && device.location!.isNotEmpty) ...[
@@ -97,23 +133,28 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
               isCurrentDevice
                   ? '⚠️ WARNING: Logging out this device will log you out of THIS app. You will need to login again.'
                   : 'This device will be logged out and will no longer receive notifications from your account.',
-              style: TextStyle(color: isCurrentDevice ? Colors.red.shade700 : Colors.grey.shade600, fontSize: 13),
+              style: TextStyle(
+                  color: isCurrentDevice ? Colors.red.shade700 : Colors.grey.shade600,
+                  fontSize: 13),
             ),
           ],
         ),
         actions: [
           TextButton(
-            onPressed: () => Navigator.pop(dialogContext),
+            onPressed: () {
+              print('❌ User cancelled logout');
+              Navigator.pop(dialogContext);
+            },
             child: const Text('Cancel', style: TextStyle(fontSize: 15)),
           ),
           ElevatedButton(
             onPressed: () async {
-              // Close the confirmation dialog
               Navigator.pop(dialogContext);
+              print('✅ User confirmed logout');
 
-              // Show loading dialog with proper UI
+              // Show loading
               showDialog(
-                context: scaffoldContext,
+                context: context,
                 barrierDismissible: false,
                 builder: (loadingContext) => AlertDialog(
                   shape: RoundedRectangleBorder(
@@ -146,18 +187,32 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                 ),
               );
 
-              final success = await _deviceManager.logoutDevice(device.id);
-
-              // Pop the loading dialog
-              if (scaffoldContext.mounted) {
-                Navigator.of(scaffoldContext).pop();
+              bool success = false;
+              try {
+                success = await _deviceManager.logoutDevice(device.id);
+                print('🔴 Logout result: $success');
+              } catch (e) {
+                print('❌ Logout exception: $e');
+                success = false;
               }
 
-              if (success && scaffoldContext.mounted) {
+              // Pop loading
+              if (mounted) {
+                try {
+                  Navigator.of(context).pop();
+                } catch (e) {
+                  print('⚠️ Could not pop loading: $e');
+                }
+              }
+
+              if (!mounted) return;
+
+              if (success) {
+                print('✅ Logout successful');
+
                 if (isCurrentDevice) {
-                  // Show success message in a dialog before logout
                   showDialog(
-                    context: scaffoldContext,
+                    context: context,
                     barrierDismissible: false,
                     builder: (context) => AlertDialog(
                       shape: RoundedRectangleBorder(
@@ -176,10 +231,14 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                       actions: [
                         TextButton(
                           onPressed: () async {
-                            Navigator.pop(context);
-                            await SharedPrefsHelper.clearAll();
-                            if (scaffoldContext.mounted) {
-                              Get.offAllNamed(AppRoutes.login);
+                            try {
+                              Navigator.pop(context);
+                              await SharedPrefsHelper.clearAll();
+                              if (mounted) {
+                                Get.offAllNamed(AppRoutes.login);
+                              }
+                            } catch (e) {
+                              print('❌ Error during logout: $e');
                             }
                           },
                           child: const Text('OK'),
@@ -188,20 +247,22 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                     ),
                   );
                 } else {
-                  // Show success snackbar for non-current device
-                  ScaffoldMessenger.of(scaffoldContext).showSnackBar(
-                    SnackBar(
-                      content: Text('${device.deviceName} has been logged out'),
-                      backgroundColor: Colors.green,
-                      duration: const Duration(seconds: 2),
-                    ),
-                  );
+                  try {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      SnackBar(
+                        content: Text('${device.deviceName} has been logged out'),
+                        backgroundColor: Colors.green,
+                        duration: const Duration(seconds: 2),
+                      ),
+                    );
+                  } catch (e) {
+                    print('⚠️ Could not show snackbar: $e');
+                  }
                   await _loadDevices();
                 }
-              } else if (scaffoldContext.mounted) {
-                // Show error dialog
+              } else if (mounted) {
                 showDialog(
-                  context: scaffoldContext,
+                  context: context,
                   builder: (context) => AlertDialog(
                     shape: RoundedRectangleBorder(
                       borderRadius: BorderRadius.circular(20),
@@ -240,18 +301,19 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
     );
   }
 
+  // ✅ LOGOUT ALL OTHER DEVICES
   Future<void> _showLogoutAllOtherDevicesDialog() async {
+    if (!_isMounted) return;
+
     final devices = _deviceManager.devices;
     final currentDeviceId = await _deviceManager.getDeviceId();
     final otherDevicesList = devices.where((d) => d.deviceId != currentDeviceId).toList();
 
+    print('🔴 Logout All Others - Current ID: $currentDeviceId');
+    print('🔴 Other devices: ${otherDevicesList.length}');
+
     if (otherDevicesList.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(
-          content: Text('No other devices found'),
-          backgroundColor: Colors.orange,
-        ),
-      );
+      _showSnackBar('No other devices found', Colors.orange);
       return;
     }
 
@@ -322,7 +384,6 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
             onPressed: () async {
               Navigator.pop(context);
 
-              // Show loading dialog for logout all
               showDialog(
                 context: context,
                 barrierDismissible: false,
@@ -359,17 +420,27 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
 
               final count = await _deviceManager.logoutAllOtherDevices();
 
-              if (context.mounted) Navigator.pop(context);
-
               if (mounted) {
+                try {
+                  Navigator.of(context).pop();
+                } catch (e) {
+                  print('⚠️ Could not pop loading: $e');
+                }
+              }
+
+              if (!mounted) return;
+
+              try {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(
                     content: Text('Logged out $count device${count > 1 ? 's' : ''}'),
                     backgroundColor: Colors.green,
                   ),
                 );
-                await _loadDevices();
+              } catch (e) {
+                print('⚠️ Could not show snackbar: $e');
               }
+              await _loadDevices();
             },
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.orange,
@@ -383,8 +454,13 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
   }
 
   Future<bool> _isCurrentDevice(DeviceInfo device) async {
-    final currentDeviceId = await _deviceManager.getDeviceId();
-    return device.deviceId == currentDeviceId;
+    try {
+      final currentDeviceId = await _deviceManager.getDeviceId();
+      return device.deviceId == currentDeviceId;
+    } catch (e) {
+      print('❌ Error checking current device: $e');
+      return false;
+    }
   }
 
   Widget _buildDeviceIcon(String platform, {double size = 28}) {
@@ -426,6 +502,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
         ],
       ),
       body: Obx(() {
+        // ✅ Loading state
         if (_deviceManager.isLoading.value && _deviceManager.devices.isEmpty) {
           return const Center(
             child: Column(
@@ -439,6 +516,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
           );
         }
 
+        // ✅ Empty state
         if (_deviceManager.devices.isEmpty) {
           return Center(
             child: Column(
@@ -470,6 +548,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
           );
         }
 
+        // ✅ Device list
         return RefreshIndicator(
           onRefresh: _loadDevices,
           child: ListView.builder(
@@ -499,7 +578,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                         leading: _buildDeviceIcon(device.platform),
                         title: Row(
                           children: [
-                            Flexible(
+                            Expanded(
                               child: Text(
                                 device.deviceName,
                                 style: const TextStyle(
@@ -625,6 +704,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                             ),
                           ],
                         ),
+                        // ✅ LOGOUT BUTTON - ALWAYS VISIBLE FOR NON-CURRENT DEVICES
                         trailing: isCurrent
                             ? IconButton(
                           icon: const Icon(Icons.info_outline, color: Colors.grey),

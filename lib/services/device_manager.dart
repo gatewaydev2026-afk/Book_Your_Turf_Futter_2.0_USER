@@ -1,5 +1,5 @@
 // services/device_manager.dart
-// ✅ Complete with all methods
+// ✅ Updated with secure device ID
 
 import 'dart:io';
 import 'dart:convert';
@@ -11,6 +11,7 @@ import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:http/http.dart' as http;
 import '../services/shared_prefs_helper.dart';
+import '../services/secure_device_id_service.dart'; // ✅ Import
 
 class DeviceManager extends GetxService {
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
@@ -38,6 +39,7 @@ class DeviceManager extends GetxService {
     }
   }
 
+  // ✅ FIXED: Uses secure storage - survives reinstalls
   Future<String> getDeviceId() async => await SharedPrefsHelper.getDeviceId();
 
   // ==================== FETCH LOCATION DIRECTLY ====================
@@ -131,6 +133,7 @@ class DeviceManager extends GetxService {
   }
 
   Future<Map<String, String>> getDeviceInfo() async {
+    // ✅ Uses secure device ID that survives reinstalls
     final deviceId = await SharedPrefsHelper.getDeviceId();
 
     if (Platform.isAndroid) {
@@ -221,7 +224,7 @@ class DeviceManager extends GetxService {
 
       final Map<String, dynamic> requestBody = {
         'token': tokenToUse,
-        'device_id': deviceInfo['device_id']!,
+        'device_id': deviceInfo['device_id']!, // ✅ Stable device_id
         'platform': deviceInfo['platform']!,
         'device_name': deviceInfo['device_name'] ?? 'Unknown',
         'os_version': deviceInfo['os_version'] ?? 'unknown',
@@ -233,7 +236,7 @@ class DeviceManager extends GetxService {
       }
 
       print('\n📤 API Request:');
-      print('   device_id: ${deviceInfo['device_id']}');
+      print('   device_id: ${deviceInfo['device_id']} (PERSISTENT)');
       print('   platform: ${deviceInfo['platform']}');
       print('   device_name: ${deviceInfo['device_name']}');
       print('   location: ${locationToUse ?? "none"}');
@@ -255,7 +258,9 @@ class DeviceManager extends GetxService {
         await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
         isRegistered.value = true;
         _apiCalled = true;
-        print('\n✅ Device registered successfully!');
+        print('\n✅ Device registered successfully with PERSISTENT device_id!');
+        print('   📍 Location: ${locationToUse ?? "none"}');
+        print('   🆔 Device ID: ${deviceInfo['device_id']} (survives reinstalls)');
       } else {
         result.success = false;
         print('❌ Registration failed');
@@ -353,11 +358,9 @@ class DeviceManager extends GetxService {
       return 0;
     }
 
-    // First fetch all devices
     final allDevices = await fetchDevices();
     final currentDeviceId = await getDeviceId();
 
-    // Find devices to logout (all except current)
     final devicesToLogout = <int>[];
 
     for (var device in allDevices) {
@@ -385,7 +388,6 @@ class DeviceManager extends GetxService {
       } else {
         print('❌ Failed to logout device ID: $deviceId');
       }
-      // Small delay between requests
       await Future.delayed(const Duration(milliseconds: 500));
     }
 

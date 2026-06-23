@@ -1,7 +1,8 @@
 // services/shared_prefs_helper.dart
-// ✅ Complete with device ID, location storage, and proper type handling
+// ✅ Updated with secure device ID methods
 
 import 'package:shared_preferences/shared_preferences.dart';
+import 'secure_device_id_service.dart'; // ✅ Import new service
 
 class SharedPrefsHelper {
   static late SharedPreferences _prefs;
@@ -24,8 +25,7 @@ class SharedPrefsHelper {
   static const String _keyLastUpdateCheck = 'last_update_check';
   static const String _keyLastProfileFetch = 'last_profile_fetch';
 
-  // Device Management Keys
-  static const String _keyDeviceId = 'persistent_device_id';
+  // Device Management Keys (now using secure storage)
   static const String _keyDeviceRegistered = 'device_registered';
   static const String _keyDeviceLocation = 'device_location';
   static const String _keyLocationUpdatedAt = 'location_updated_at';
@@ -156,19 +156,16 @@ class SharedPrefsHelper {
     return DateTime.now().difference(lastCheck).inHours >= 24;
   }
 
-  // ========== DEVICE ID (PERSISTENT - NEVER CLEARED) ==========
+  // ========== ✅ FIXED: DEVICE ID (USES SECURE STORAGE) ==========
+  // ✅ Now uses SecureDeviceIdService which stores in iOS Keychain / Android EncryptedSharedPreferences
+
   static Future<String> getDeviceId() async {
-    String? deviceId = _prefs.getString(_keyDeviceId);
-    if (deviceId == null || deviceId.isEmpty) {
-      deviceId = _generateDeviceId();
-      await _prefs.setString(_keyDeviceId, deviceId);
-      print('📱 Generated new device ID: $deviceId');
-    }
-    return deviceId;
+    return await SecureDeviceIdService.getCachedDeviceId();
   }
 
-  static String _generateDeviceId() {
-    return '${DateTime.now().millisecondsSinceEpoch}_${DateTime.now().hashCode.abs()}';
+  static Future<void> clearDeviceId() async {
+    await SecureDeviceIdService.clearDeviceId();
+    SecureDeviceIdService.clearCache();
   }
 
   // ========== LOCATION STORAGE ==========
@@ -216,6 +213,7 @@ class SharedPrefsHelper {
   // ========== DEVICE REGISTRATION FLAG ==========
   static Future<void> setDeviceRegistered(bool registered) async => await _prefs.setBool(_keyDeviceRegistered, registered);
   static bool isDeviceRegistered() => _prefs.getBool(_keyDeviceRegistered) ?? false;
+
   static Future<void> setCurrentDeviceId(String deviceId) async => await _prefs.setString(_keyCurrentDeviceId, deviceId);
   static String? getCurrentDeviceId() => _prefs.getString(_keyCurrentDeviceId);
 
@@ -246,23 +244,26 @@ class SharedPrefsHelper {
     return token != null && token.isNotEmpty && isTokenValid();
   }
 
-  // ========== CLEAR ALL (PRESERVES DEVICE ID AND LOCATION) ==========
+  // ========== CLEAR ALL (PRESERVES DEVICE ID IN SECURE STORAGE) ==========
   static Future<void> clearAll() async {
-    final deviceId = _prefs.getString(_keyDeviceId);
     final deviceLocation = _prefs.getString(_keyDeviceLocation);
     final locationTime = _prefs.getString(_keyLocationUpdatedAt);
 
     await _prefs.clear();
 
-    if (deviceId != null && deviceId.isNotEmpty) {
-      await _prefs.setString(_keyDeviceId, deviceId);
-    }
+    // ✅ DO NOT clear device ID - it's stored in secure storage
+    // Device ID persists across reinstalls via Keychain/EncryptedSharedPreferences
+
     if (deviceLocation != null && deviceLocation.isNotEmpty) {
       await _prefs.setString(_keyDeviceLocation, deviceLocation);
     }
     if (locationTime != null && locationTime.isNotEmpty) {
       await _prefs.setString(_keyLocationUpdatedAt, locationTime);
     }
-    print('🗑️ All cleared (device_id and location preserved)');
+
+    // Clear cache
+    SecureDeviceIdService.clearCache();
+
+    print('🗑️ All cleared (device_id preserved in secure storage)');
   }
 }
