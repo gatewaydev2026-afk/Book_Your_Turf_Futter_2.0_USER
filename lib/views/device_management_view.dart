@@ -1,7 +1,8 @@
 // views/device_management_view.dart
-// ✅ Complete Device Management Screen - Logout Option Visible
+// ✅ User App - Complete Device Management Screen
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import '../services/device_manager.dart';
 import '../services/shared_prefs_helper.dart';
@@ -16,14 +17,14 @@ class DeviceManagementView extends StatefulWidget {
 
 class _DeviceManagementViewState extends State<DeviceManagementView> {
   final DeviceManager _deviceManager = Get.find<DeviceManager>();
-
   bool _isMounted = false;
+  String _currentDeviceId = 'Loading...';
 
   @override
   void initState() {
     super.initState();
     _isMounted = true;
-    print('📱 DeviceManagementView initState');
+    _loadDeviceId();
     _loadDevices();
   }
 
@@ -31,6 +32,20 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
   void dispose() {
     _isMounted = false;
     super.dispose();
+  }
+
+  Future<void> _loadDeviceId() async {
+    try {
+      final deviceId = await _deviceManager.getDeviceId();
+      if (_isMounted) {
+        setState(() {
+          _currentDeviceId = deviceId;
+        });
+      }
+      print('📱 Current Device ID: $deviceId');
+    } catch (e) {
+      print('❌ Error loading device ID: $e');
+    }
   }
 
   Future<void> _loadDevices() async {
@@ -134,8 +149,35 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                   ? '⚠️ WARNING: Logging out this device will log you out of THIS app. You will need to login again.'
                   : 'This device will be logged out and will no longer receive notifications from your account.',
               style: TextStyle(
-                  color: isCurrentDevice ? Colors.red.shade700 : Colors.grey.shade600,
-                  fontSize: 13),
+                color: isCurrentDevice ? Colors.red.shade700 : Colors.grey.shade600,
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 12),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.fingerprint, size: 14, color: Colors.green.shade700),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      'ID: ${device.deviceId}',
+                      style: TextStyle(
+                        fontSize: 10,
+                        color: Colors.green.shade700,
+                        fontFamily: 'monospace',
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
@@ -676,6 +718,7 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                 Icon(Icons.schedule, size: 12, color: Colors.grey.shade500),
                                 const SizedBox(width: 4),
                                 Text(
+                                  // ✅ Uses formattedDate getter
                                   'Added ${device.formattedDate}',
                                   style: TextStyle(
                                     fontSize: 11,
@@ -687,24 +730,44 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                   width: 6,
                                   height: 6,
                                   decoration: BoxDecoration(
+                                    // ✅ Uses activeStatusColor getter
                                     color: device.activeStatusColor,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
+                                  // ✅ Uses activeStatusText getter
                                   device.activeStatusText,
                                   style: TextStyle(
                                     fontSize: 11,
+                                    // ✅ Uses activeStatusColor getter
                                     color: device.activeStatusColor,
                                     fontWeight: FontWeight.w500,
                                   ),
                                 ),
                               ],
                             ),
+                            const SizedBox(height: 6),
+                            Row(
+                              children: [
+                                Icon(Icons.fingerprint, size: 12, color: Colors.grey.shade400),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    'ID: ${device.deviceId.substring(0, device.deviceId.length > 8 ? 8 : device.deviceId.length)}...',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      color: Colors.grey.shade400,
+                                      fontFamily: 'monospace',
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ],
                         ),
-                        // ✅ LOGOUT BUTTON - ALWAYS VISIBLE FOR NON-CURRENT DEVICES
                         trailing: isCurrent
                             ? IconButton(
                           icon: const Icon(Icons.info_outline, color: Colors.grey),
@@ -727,15 +790,44 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                       Text('Location: ${device.location}'),
                                     ],
                                     const SizedBox(height: 8),
+                                    // ✅ Uses activeStatusText getter
                                     Text('Status: ${device.activeStatusText}'),
                                     const SizedBox(height: 8),
+                                    // ✅ Uses formattedDate getter
                                     Text('Added: ${device.formattedDate}'),
+                                    const SizedBox(height: 8),
+                                    Divider(),
+                                    const SizedBox(height: 8),
+                                    Row(
+                                      children: [
+                                        Icon(Icons.fingerprint, size: 14, color: Colors.grey),
+                                        const SizedBox(width: 8),
+                                        Expanded(
+                                          child: Text(
+                                            'Device ID: ${device.deviceId}',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              color: Colors.grey.shade600,
+                                              fontFamily: 'monospace',
+                                            ),
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ],
                                 ),
                                 actions: [
                                   TextButton(
                                     onPressed: () => Navigator.pop(context),
                                     child: const Text('OK'),
+                                  ),
+                                  TextButton(
+                                    onPressed: () {
+                                      Navigator.pop(context);
+                                      Clipboard.setData(ClipboardData(text: device.deviceId));
+                                      _showSnackBar('Device ID copied!', Colors.green);
+                                    },
+                                    child: const Text('Copy ID'),
                                   ),
                                 ],
                               ),

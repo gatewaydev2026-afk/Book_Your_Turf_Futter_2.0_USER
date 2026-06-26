@@ -1,8 +1,3 @@
-// views/slot_view.dart - COMPLETELY FIXED VERSION
-// Fixed: 11 PM to 12 AM slot click issue
-// Fixed: Next-day slot display and selection
-// Fixed: NEXT DAY text shows ONLY when isNextDay = true
-// Fixed: Price display with proper decimals (shows ₹1.50 instead of ₹2)
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -104,8 +99,7 @@ class SlotView extends StatelessWidget {
             if (vm.courtCount > 1) _buildCourtSelector(context, vm, courtTurfLabel),
             const SizedBox(height: 6),
             _buildLegend(),
-            const SizedBox(height: 10),
-            _buildRulesBanner(turf, vm),
+
             const SizedBox(height: 6),
             _buildTodayInfoBanner(vm),
             const SizedBox(height: 6),
@@ -402,58 +396,6 @@ class SlotView extends StatelessWidget {
     );
   }
 
-  Widget _buildRulesBanner(TurfModel turf, SlotViewModel vm) {
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        gradient: LinearGradient(
-          colors: [Colors.blue.shade50, Colors.green.shade50],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: Colors.blue.shade200),
-      ),
-      child: Row(
-        children: [
-          Icon(Icons.info_outline, size: 16, color: Colors.blue.shade700),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  turf.getMinSlotsDisplayText(),
-                  style: TextStyle(fontSize: 11, color: Colors.blue.shade700, fontWeight: FontWeight.w500),
-                ),
-                Text(
-                  turf.getAdvanceDisplayText(),
-                  style: TextStyle(fontSize: 11, color: Colors.green.shade700, fontWeight: FontWeight.w500),
-                ),
-              ],
-            ),
-          ),
-          Obx(() {
-            if (vm.selectedSlots.isNotEmpty && !vm.isMinSlotsMet) {
-              return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                decoration: BoxDecoration(
-                  color: Colors.red.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  'Need ${vm.turf.minSlots - vm.selectedSlots.length} more',
-                  style: TextStyle(fontSize: 10, color: Colors.red.shade700, fontWeight: FontWeight.w500),
-                ),
-              );
-            }
-            return const SizedBox.shrink();
-          }),
-        ],
-      ),
-    );
-  }
 
   Widget _buildTodayInfoBanner(SlotViewModel vm) {
     return Obx(() {

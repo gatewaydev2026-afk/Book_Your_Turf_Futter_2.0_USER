@@ -1,7 +1,11 @@
-// auth_view_model.dart - COMPLETE FIXED LOGIN WITH ALL FIELD OPTIONS
+// auth_view_model.dart - COMPLETE FIXED WITH PERSISTENT DEVICE ID
+// ✅ Device ID survives reinstalls (Same as Partner App)
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:book_your_turf/view_models/booking_view_model.dart';
+import 'package:book_your_turf/view_models/home_view_model.dart';
+import 'package:book_your_turf/view_models/profile_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
@@ -14,9 +18,8 @@ import '../services/facebook_events.dart';
 import '../services/shared_prefs_helper.dart';
 import '../services/auto_refresh_service.dart';
 import '../services/device_manager.dart';
-import 'home_view_model.dart';
-import 'booking_view_model.dart';
-import 'profile_view_model.dart';
+import '../services/secure_device_id_service.dart';
+
 import '../routes/app_routes.dart';
 import 'package:book_your_turf/main.dart' show facebookAppEvents;
 
@@ -94,7 +97,6 @@ class AuthViewModel extends GetxController {
     String? referralCode,
     required String verificationMethod,
   }) async {
-    // ✅ Validate input
     if (verificationMethod == 'email' && (email.isEmpty || !email.contains('@'))) {
       _showError('Please enter a valid email address');
       return false;
@@ -325,10 +327,9 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  // ==================== LOGIN - FIXED WITH MULTIPLE FIELD OPTIONS ====================
+  // ==================== LOGIN ====================
 
   Future<bool> login(String loginId, String password) async {
-    // ✅ Validate input
     if (loginId.isEmpty || password.isEmpty) {
       _showError('Please enter both email/phone and password');
       return false;
@@ -340,43 +341,34 @@ class AuthViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
 
-      // ✅ TRY ALL POSSIBLE FIELD NAMES - One will work
       Map<String, dynamic> requestData = {
         'password': password,
       };
 
-      // Check if loginId is email or phone
       if (loginId.contains('@')) {
-        // It's an email - Try all possible email field names
         print('📤 Login with Email: $loginId');
+        requestData['email'] = loginId;
+        requestData['username'] = loginId;
+        requestData['login_id'] = loginId;
 
-        // Try different email field names
-        requestData['email'] = loginId;           // Most common
-        requestData['username'] = loginId;        // Alternative
-        requestData['login_id'] = loginId;        // Alternative
-
-        // Also try as phone if it's a number
         if (loginId.replaceAll(RegExp(r'\D'), '').length >= 10) {
           requestData['number'] = loginId.replaceAll(RegExp(r'\D'), '');
           requestData['phone'] = loginId.replaceAll(RegExp(r'\D'), '');
           requestData['mobile'] = loginId.replaceAll(RegExp(r'\D'), '');
         }
       } else {
-        // It's a phone number - Try all possible phone field names
         String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
         print('📤 Login with Phone: $cleanPhone');
-
-        requestData['number'] = cleanPhone;      // Your current field
-        requestData['phone'] = cleanPhone;       // Alternative
-        requestData['mobile'] = cleanPhone;      // Alternative
-        requestData['phone_number'] = cleanPhone; // Alternative
-        requestData['username'] = cleanPhone;    // Alternative
-        requestData['login_id'] = cleanPhone;    // Alternative
+        requestData['number'] = cleanPhone;
+        requestData['phone'] = cleanPhone;
+        requestData['mobile'] = cleanPhone;
+        requestData['phone_number'] = cleanPhone;
+        requestData['username'] = cleanPhone;
+        requestData['login_id'] = cleanPhone;
       }
 
       print('📡 API POST /user/login/');
       print('📤 Request Fields: ${requestData.keys.join(", ")}');
-      print('📤 Password: *****');
 
       final response = await dio.post('/user/login/', data: requestData);
 
@@ -390,7 +382,6 @@ class AuthViewModel extends GetxController {
         final token = response.data['data']['access'];
         final user = response.data['data']['user'];
 
-        // Handle user ID properly
         int userId = 0;
         final idValue = user['id'];
         if (idValue is int) {
@@ -401,7 +392,6 @@ class AuthViewModel extends GetxController {
           userId = idValue.toInt();
         }
 
-        // Save token with expiry
         await SharedPrefsHelper.setToken(token);
         await SharedPrefsHelper.setUserId(userId);
         await SharedPrefsHelper.setUserName(user['name'] ?? '');
@@ -418,6 +408,12 @@ class AuthViewModel extends GetxController {
         print('   Name: ${user['name']}');
         print('   Email: ${user['email']}');
         print('   Phone: ${user['number']}');
+
+        // ✅ Get persistent device ID (survives reinstalls)
+        final persistentDeviceId = await SharedPrefsHelper.getDeviceId();
+        print('📱 Persistent Device ID: $persistentDeviceId');
+        print('   ✅ This ID is the SAME across reinstalls');
+        print('   ✅ ONE ID PER DEVICE');
 
         // Facebook Login Event
         try {
@@ -438,14 +434,12 @@ class AuthViewModel extends GetxController {
         // Register device token with location
         await _registerDeviceToken(token);
 
-        // ✅ Load ONLY essential data using AppInitializer
         await AppInitializer.initializeApp();
 
         _showSuccess('Welcome ${user['name']}!');
         Get.offAllNamed(AppRoutes.mainPage);
         return true;
       } else {
-        // ✅ If login fails, try with just one field at a time
         print('⚠️ Login failed with all fields, trying individual fields...');
         return await _tryLoginWithIndividualFields(loginId, password, dio);
       }
@@ -453,7 +447,6 @@ class AuthViewModel extends GetxController {
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
 
-      // ✅ If DioException, try individual fields
       print('⚠️ DioException, trying individual fields...');
       try {
         final dio = Get.find<Dio>();
@@ -505,7 +498,6 @@ class AuthViewModel extends GetxController {
         final response = await dio.post('/user/login/', data: requestData);
 
         if (response.data['result'] == 'success') {
-          // Success! Process the response
           final token = response.data['data']['access'];
           final user = response.data['data']['user'];
 
@@ -639,6 +631,7 @@ class AuthViewModel extends GetxController {
   }
 
   // ==================== DEVICE TOKEN REGISTRATION ====================
+  // ✅ Uses persistent device ID (survives reinstalls)
 
   Future<void> _registerDeviceToken(String jwtToken) async {
     if (_deviceRegistrationStarted) {
@@ -662,6 +655,11 @@ class AuthViewModel extends GetxController {
 
     _deviceRegistrationStarted = true;
 
+    // ✅ Get persistent device ID
+    final persistentDeviceId = await SharedPrefsHelper.getDeviceId();
+    print('📱 Persistent Device ID for registration: $persistentDeviceId');
+    print('   ✅ This ID is the SAME across reinstalls');
+
     String? currentLocation;
     if (Get.isRegistered<HomeViewModel>()) {
       final homeVm = Get.find<HomeViewModel>();
@@ -671,7 +669,7 @@ class AuthViewModel extends GetxController {
         attempts++;
       }
       currentLocation = homeVm.currentLocationName.value;
-      if (currentLocation.isNotEmpty) {
+      if (currentLocation!.isNotEmpty) {
         print('📍 Got location from HomeViewModel: "$currentLocation"');
       }
     }
@@ -687,8 +685,9 @@ class AuthViewModel extends GetxController {
 
     final deviceManager = Get.find<DeviceManager>();
 
-    print('\n📱 Registering device (ONCE per session)...');
-    print('📍 Location to send: "${currentLocation ?? "none"}"');
+    print('\n📱 Registering device with PERSISTENT ID...');
+    print('   🆔 Device ID: $persistentDeviceId (✅ SAME across reinstalls)');
+    print('📍 Location: "${currentLocation ?? "none"}"');
 
     final result = await deviceManager.registerDevice(
       jwtToken: jwtToken,
@@ -696,7 +695,8 @@ class AuthViewModel extends GetxController {
     );
 
     if (result.success) {
-      print('✅ Device registered successfully with location: ${currentLocation ?? "none"}');
+      print('✅ Device registered successfully with PERSISTENT ID: $persistentDeviceId');
+      print('   ✅ ONE ID PER DEVICE');
       await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
     } else {
       print('❌ Device registration failed: ${result.error}');
@@ -716,6 +716,7 @@ class AuthViewModel extends GetxController {
 
     AppInitializer.reset();
 
+    // ✅ clearAll() preserves device_id in secure storage
     await SharedPrefsHelper.clearAll();
 
     if (Get.isRegistered<HomeViewModel>()) {

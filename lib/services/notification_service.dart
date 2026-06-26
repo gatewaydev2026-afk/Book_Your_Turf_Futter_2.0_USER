@@ -1,4 +1,4 @@
-// services/notification_service.dart - COMPLETE FIXED VERSION
+// services/notification_service.dart - FIX: Prevent duplicate notifications
 
 import 'dart:async';
 import 'dart:convert';
@@ -28,6 +28,11 @@ class NotificationService extends GetxService {
   static DateTime? _lastFetchTime;
   static const _cacheDuration = Duration(seconds: 30);
 
+  // ✅ TRACK RECEIVED NOTIFICATIONS TO PREVENT DUPLICATES
+  static final Set<String> _processedNotificationIds = {};
+  static const _cleanupInterval = Duration(minutes: 5);
+  static DateTime? _lastCleanupTime;
+
   // ✅ STREAM FOR REAL-TIME NOTIFICATIONS
   final _notificationController = StreamController<NotificationItem>.broadcast();
   Stream<NotificationItem> get onNotificationReceived => _notificationController.stream;
@@ -41,6 +46,33 @@ class NotificationService extends GetxService {
     _initializeLocalNotifications();
     _setupForegroundHandler();
     _loadCachedNotifications();
+
+    // ✅ Start cleanup timer
+    _startCleanupTimer();
+  }
+
+  void _startCleanupTimer() {
+    Timer.periodic(_cleanupInterval, (timer) {
+      _cleanupProcessedIds();
+    });
+  }
+
+  void _cleanupProcessedIds() {
+    final now = DateTime.now();
+    if (_lastCleanupTime != null && now.difference(_lastCleanupTime!) < _cleanupInterval) {
+      return;
+    }
+    _lastCleanupTime = now;
+
+    // ✅ Clean old entries (keep only last 100)
+    if (_processedNotificationIds.length > 100) {
+      final ids = _processedNotificationIds.toList();
+      final toRemove = ids.sublist(0, ids.length - 100);
+      for (var id in toRemove) {
+        _processedNotificationIds.remove(id);
+      }
+      print('🧹 Cleaned ${toRemove.length} old notification IDs');
+    }
   }
 
   @override
@@ -106,8 +138,20 @@ class NotificationService extends GetxService {
     required String title,
     required String body,
     String? payload,
+    String? notificationId,
   }) async {
     if (!_isInitialized) await _initializeLocalNotifications();
+
+    // ✅ Generate unique ID based on notification content to prevent duplicates
+    int id;
+    if (notificationId != null) {
+      id = notificationId.hashCode;
+    } else {
+      id = '$title-$body'.hashCode;
+    }
+
+    // ✅ Ensure ID is positive
+    id = id.abs();
 
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
       'user_channel',
@@ -128,14 +172,14 @@ class NotificationService extends GetxService {
     );
 
     await _localNotifications.show(
-      DateTime.now().millisecondsSinceEpoch.hashCode,
+      id,
       title,
       body,
       platformDetails,
       payload: payload,
     );
 
-    print('✅ System notification shown in tray: $title');
+    print('✅ System notification shown in tray: $title (ID: $id)');
   }
 
   // ==================== FCM HANDLER ====================
@@ -159,10 +203,24 @@ class NotificationService extends GetxService {
     });
   }
 
+  // ✅ MAIN FIX: Check for duplicate notifications
   void _handleIncomingNotification(RemoteMessage message) {
     try {
       final data = message.data;
       final notification = message.notification;
+
+      // ✅ Generate unique ID for this notification
+      final msgId = message.messageId ?? '${DateTime.now().millisecondsSinceEpoch}';
+
+      // ✅ Check if this notification was already processed
+      if (_processedNotificationIds.contains(msgId)) {
+        print('⏭️ Duplicate notification ignored: $msgId');
+        return;
+      }
+
+      // ✅ Mark as processed
+      _processedNotificationIds.add(msgId);
+      print('✅ Processing notification: $msgId');
 
       final notificationItem = NotificationItem(
         id: DateTime.now().millisecondsSinceEpoch,
@@ -173,6 +231,18 @@ class NotificationService extends GetxService {
         isRead: false,
       );
 
+      // ✅ Check for duplicate in local list (by title+body within last 5 seconds)
+      final isDuplicate = notifications.any((n) =>
+      n.title == notificationItem.title &&
+          n.body == notificationItem.body &&
+          DateTime.now().difference(n.sentAt).inSeconds < 5
+      );
+
+      if (isDuplicate) {
+        print('⏭️ Duplicate notification (same content) ignored');
+        return;
+      }
+
       // Add to local list
       notifications.insert(0, notificationItem);
       _updateUnreadCount();
@@ -181,11 +251,12 @@ class NotificationService extends GetxService {
       // Broadcast to stream listeners
       _notificationController.add(notificationItem);
 
-      // Show system notification
+      // Show system notification with unique ID
       _showSystemNotification(
         title: notificationItem.title,
         body: notificationItem.body,
         payload: jsonEncode(data),
+        notificationId: msgId,
       );
 
       // Show in-app snackbar for foreground
@@ -195,12 +266,22 @@ class NotificationService extends GetxService {
 
       print('✅ Notification saved: ${notificationItem.title}');
 
-      // Refresh from backend
-      refreshFromBackend();
+      // Refresh from backend (with debounce)
+      _debouncedRefresh();
 
     } catch (e) {
       print('❌ Error handling notification: $e');
     }
+  }
+
+  // ✅ Debounced refresh to prevent multiple API calls
+  Timer? _refreshDebounceTimer;
+
+  void _debouncedRefresh() {
+    _refreshDebounceTimer?.cancel();
+    _refreshDebounceTimer = Timer(const Duration(seconds: 2), () {
+      refreshFromBackend();
+    });
   }
 
   void _showInAppSnackbar(NotificationItem notification) {
@@ -522,5 +603,7 @@ class NotificationService extends GetxService {
   static void resetCache() {
     _isFetching = false;
     _lastFetchTime = null;
+    _processedNotificationIds.clear();
+    _lastCleanupTime = null;
   }
 }

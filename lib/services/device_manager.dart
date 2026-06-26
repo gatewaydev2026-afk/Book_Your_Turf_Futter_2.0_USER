@@ -1,147 +1,208 @@
 // services/device_manager.dart
-// ✅ Updated with secure device ID
+// ✅ Complete - Uses SharedPreferences for device ID
 
 import 'dart:io';
-import 'dart:convert';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:geolocator/geolocator.dart';
-import 'package:http/http.dart' as http;
 import '../services/shared_prefs_helper.dart';
-import '../services/secure_device_id_service.dart'; // ✅ Import
 
 class DeviceManager extends GetxService {
   final DeviceInfoPlugin _deviceInfo = DeviceInfoPlugin();
   bool _isRegistering = false;
-  bool _apiCalled = false;
 
   final isRegistered = false.obs;
   final devices = <DeviceInfo>[].obs;
   final isLoading = false.obs;
 
-  static const String googleMapsApiKey = 'AIzaSyBQ6kiaROyTfm7TLKG2c_FA1XER8IVaMlY';
+  static bool _registrationInProgress = false;
+  static final Set<String> _processedFcmTokens = {};
+
+  // ✅ PERMANENT device ID - cached
+  static String? _permanentDeviceId;
+  static String? _cachedDeviceName;
 
   @override
   void onInit() {
     super.onInit();
+    _initPermanentDeviceId();
     _checkExistingRegistration();
+    _setupFCMTokenRefresh();
+  }
+
+  // ✅ Initialize permanent device ID ONCE
+  Future<void> _initPermanentDeviceId() async {
+    if (_permanentDeviceId == null) {
+      _permanentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+      print('📱 🔒 PERMANENT Device ID: $_permanentDeviceId');
+      print('   ✅ This ID will NEVER change');
+    }
+  }
+
+  void _setupFCMTokenRefresh() {
+    FirebaseMessaging.instance.onTokenRefresh.listen((newToken) async {
+      print('📱 FCM Token refreshed');
+      await _updateFcmTokenOnly(newToken);
+    });
+  }
+
+  Future<void> _updateFcmTokenOnly(String newToken) async {
+    final token = SharedPrefsHelper.getToken();
+    if (token == null || token.isEmpty) return;
+
+    if (_processedFcmTokens.contains(newToken)) {
+      print('⏭️ Token already processed');
+      return;
+    }
+
+    _processedFcmTokens.add(newToken);
+
+    // ✅ Update only FCM token
+    final deviceId = await _getPermanentDeviceId();
+    await _updateDeviceToken(
+      jwtToken: token,
+      fcmToken: newToken,
+      deviceId: deviceId,
+    );
   }
 
   Future<void> _checkExistingRegistration() async {
     final isValid = await SharedPrefsHelper.isTokenRegistrationValid();
     if (isValid) {
       isRegistered.value = true;
-      _apiCalled = true;
       print('✅ Device already registered (valid until 7 days)');
     }
   }
 
-  // ✅ FIXED: Uses secure storage - survives reinstalls
-  Future<String> getDeviceId() async => await SharedPrefsHelper.getDeviceId();
+  // ✅ Get permanent device ID - NEVER changes
+  Future<String> _getPermanentDeviceId() async {
+    if (_permanentDeviceId != null) {
+      return _permanentDeviceId!;
+    }
+    _permanentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+    return _permanentDeviceId!;
+  }
 
-  // ==================== FETCH LOCATION DIRECTLY ====================
+  // ✅ Public method - returns permanent device ID
+  Future<String> getDeviceId() async {
+    return await _getPermanentDeviceId();
+  }
 
-  Future<String?> fetchCurrentLocation() async {
-    print('\n📍 Fetching current location for device registration...');
+  // ✅ Get current device name
+  Future<String> _getCurrentDeviceName() async {
+    if (_cachedDeviceName != null) {
+      return _cachedDeviceName!;
+    }
 
+    if (Platform.isAndroid) {
+      final androidInfo = await _deviceInfo.androidInfo;
+      _cachedDeviceName = _getDeviceName(androidInfo.model, androidInfo.manufacturer);
+    } else if (Platform.isIOS) {
+      final iosInfo = await _deviceInfo.iosInfo;
+      _cachedDeviceName = _getDeviceName(iosInfo.model, 'Apple');
+    } else {
+      _cachedDeviceName = 'Unknown Device';
+    }
+
+    return _cachedDeviceName!;
+  }
+
+  // ✅ ============================================================
+  // ✅ UPDATE DEVICE TOKEN - ONLY FCM TOKEN
+  // ✅ ============================================================
+  Future<bool> _updateDeviceToken({
+    required String jwtToken,
+    required String fcmToken,
+    required String deviceId,
+  }) async {
     try {
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) {
-          print('❌ Location permission denied');
-          return null;
-        }
-      }
+      final dio = Dio(BaseOptions(
+        baseUrl: 'https://backend.arcmedialabs.in',
+        headers: {
+          'Authorization': 'Bearer $jwtToken',
+          'Content-Type': 'application/json',
+        },
+      ));
 
-      if (permission == LocationPermission.deniedForever) {
-        print('❌ Location permission permanently denied');
-        return null;
-      }
+      print('📤 UPDATING DEVICE TOKEN ONLY:');
+      print('   device_id: $deviceId (SAME)');
 
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 10),
+      final response = await dio.post(
+        '/api/user/device-token/update/',
+        data: {
+          'token': fcmToken,
+          'device_id': deviceId,
+        },
       );
 
-      print('📍 Got coordinates: ${position.latitude}, ${position.longitude}');
-
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=$googleMapsApiKey',
-      );
-
-      final response = await http.get(url);
-
-      if (response.statusCode == 200) {
-        final data = json.decode(response.body);
-        if (data['status'] == 'OK') {
-          final results = data['results'];
-          if (results.isNotEmpty) {
-            String area = '';
-            String city = '';
-            String state = '';
-
-            final components = results[0]['address_components'] as List;
-            for (var comp in components) {
-              final types = comp['types'] as List;
-              if (area.isEmpty && (types.contains('sublocality_level_1') ||
-                  types.contains('sublocality') ||
-                  types.contains('neighborhood') ||
-                  types.contains('route'))) {
-                area = comp['long_name'];
-              }
-              if (types.contains('locality') && city.isEmpty) {
-                city = comp['long_name'];
-              }
-              if (types.contains('administrative_area_level_1') && state.isEmpty) {
-                state = comp['long_name'];
-              }
-            }
-
-            String locationName = "";
-            if (area.isNotEmpty && city.isNotEmpty && area != city) {
-              locationName = "$area, $city";
-            } else if (city.isNotEmpty && state.isNotEmpty) {
-              locationName = "$city, $state";
-            } else if (city.isNotEmpty) {
-              locationName = city;
-            } else if (area.isNotEmpty) {
-              locationName = area;
-            } else {
-              locationName = results[0]['formatted_address'];
-            }
-
-            await SharedPrefsHelper.saveDeviceLocation(locationName);
-            print('📍 Location fetched: "$locationName"');
-            return locationName;
-          }
-        }
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ FCM token updated successfully');
+        await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
+        return true;
       }
-
-      final coordinates = "${position.latitude},${position.longitude}";
-      await SharedPrefsHelper.saveDeviceLocation(coordinates);
-      print('📍 Using coordinates: "$coordinates"');
-      return coordinates;
-
+      return false;
     } catch (e) {
-      print('❌ Error fetching location: $e');
-      return null;
+      print('❌ Error updating token: $e');
+      return false;
+    }
+  }
+
+  // ✅ ============================================================
+  // ✅ UPDATE DEVICE LOCATION - ONLY LOCATION
+  // ✅ ============================================================
+  Future<bool> _updateDeviceLocation({
+    required String jwtToken,
+    required String deviceId,
+    required String location,
+  }) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: 'https://backend.arcmedialabs.in',
+        headers: {
+          'Authorization': 'Bearer $jwtToken',
+          'Content-Type': 'application/json',
+        },
+      ));
+
+      print('📤 UPDATING DEVICE LOCATION ONLY:');
+      print('   device_id: $deviceId (SAME)');
+      print('   location: $location');
+
+      final response = await dio.patch(
+        '/api/user/device-token/location/',
+        data: {
+          'device_id': deviceId,
+          'location': location,
+        },
+      );
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print('✅ Device location updated successfully');
+        await SharedPrefsHelper.saveDeviceLocation(location);
+        return true;
+      }
+      return false;
+    } catch (e) {
+      print('❌ Error updating location: $e');
+      return false;
     }
   }
 
   Future<Map<String, String>> getDeviceInfo() async {
-    // ✅ Uses secure device ID that survives reinstalls
-    final deviceId = await SharedPrefsHelper.getDeviceId();
+    final deviceId = await _getPermanentDeviceId();
+    final deviceName = await _getCurrentDeviceName();
+
+    print('📱 Using PERMANENT device ID: $deviceId');
+    print('📱 Device Name: $deviceName');
 
     if (Platform.isAndroid) {
       final androidInfo = await _deviceInfo.androidInfo;
       return {
         'device_id': deviceId,
         'platform': 'android',
-        'device_name': _getDeviceName(androidInfo.model, androidInfo.manufacturer),
+        'device_name': deviceName,
         'os_version': androidInfo.version.release,
       };
     } else if (Platform.isIOS) {
@@ -149,7 +210,7 @@ class DeviceManager extends GetxService {
       return {
         'device_id': deviceId,
         'platform': 'ios',
-        'device_name': _getDeviceName(iosInfo.model, 'Apple'),
+        'device_name': deviceName,
         'os_version': iosInfo.systemVersion,
       };
     } else {
@@ -169,77 +230,225 @@ class DeviceManager extends GetxService {
     return '$manufacturer $model';
   }
 
-  // ==================== REGISTER DEVICE ====================
+  // ✅ ============================================================
+  // ✅ CHECK IF SAME DEVICE - COMPARE DEVICE NAME
+  // ✅ ============================================================
+  Future<bool> _isSameDevice(String jwtToken, String currentDeviceName) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: 'https://backend.arcmedialabs.in',
+        headers: {
+          'Authorization': 'Bearer $jwtToken',
+          'Content-Type': 'application/json',
+        },
+      ));
 
+      print('📤 Checking if device exists with name: $currentDeviceName');
+
+      final response = await dio.get(
+        '/api/user/devices/check-by-name/',
+        queryParameters: {'device_name': currentDeviceName},
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['result'] == 'success' && data['exists'] == true) {
+          print('✅ Device with name "$currentDeviceName" EXISTS in backend');
+          return true;
+        }
+      }
+      print('❌ Device with name "$currentDeviceName" does NOT exist');
+      return false;
+    } catch (e) {
+      print('⚠️ Error checking device: $e');
+      return false;
+    }
+  }
+
+  // ✅ ============================================================
+  // ✅ GET EXISTING DEVICE ID BY DEVICE NAME
+  // ✅ ============================================================
+  Future<String?> _getExistingDeviceIdByName(String jwtToken, String deviceName) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: 'https://backend.arcmedialabs.in',
+        headers: {
+          'Authorization': 'Bearer $jwtToken',
+          'Content-Type': 'application/json',
+        },
+      ));
+
+      final response = await dio.get(
+        '/api/user/devices/get-by-name/',
+        queryParameters: {'device_name': deviceName},
+      );
+
+      if (response.statusCode == 200) {
+        final data = response.data;
+        if (data['result'] == 'success' && data['data'] != null) {
+          final deviceId = data['data']['device_id'];
+          print('✅ Found existing device ID: $deviceId');
+          return deviceId;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('⚠️ Error getting device ID: $e');
+      return null;
+    }
+  }
+
+  // ✅ ============================================================
+  // ✅ REGISTER DEVICE - SAME DEVICE NAME = UPDATE ONLY
+  // ✅ Different Device Name = CREATE NEW
+  // ✅ ============================================================
   Future<DeviceRegistrationResult> registerDevice({
     required String jwtToken,
     String? fcmToken,
     String? location,
   }) async {
-    if (_apiCalled) {
-      print('⏭️ API already called once, skipping...');
-      return DeviceRegistrationResult(success: true, message: 'Already registered');
+    if (_registrationInProgress) {
+      return DeviceRegistrationResult(
+          success: false,
+          message: 'Registration already in progress'
+      );
     }
 
     if (isRegistered.value) {
-      print('✅ Device already registered, skipping API call');
+      print('✅ Device already registered in this session');
       return DeviceRegistrationResult(success: true, message: 'Already registered');
     }
 
     final isValid = await SharedPrefsHelper.isTokenRegistrationValid();
     if (isValid) {
-      print('✅ Device registration still valid (within 7 days), skipping API call');
       isRegistered.value = true;
-      _apiCalled = true;
+      print('✅ Device registration still valid (within 7 days)');
       return DeviceRegistrationResult(success: true, message: 'Registration still valid');
     }
 
-    if (_isRegistering) {
-      print('⏭️ Registration already in progress...');
-      return DeviceRegistrationResult(success: false, message: 'Already registering');
-    }
-
-    _isRegistering = true;
-
-    print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║  📱 DEVICE REGISTRATION                                      ║');
-    print('╚════════════════════════════════════════════════════════════╝');
-
-    final result = DeviceRegistrationResult();
+    _registrationInProgress = true;
 
     try {
-      final tokenToUse = fcmToken ?? await FirebaseMessaging.instance.getToken();
+      String? tokenToUse = fcmToken ?? await FirebaseMessaging.instance.getToken();
       if (tokenToUse == null) {
-        result.success = false;
-        result.error = 'No FCM token';
-        return result;
+        return DeviceRegistrationResult(success: false, error: 'No FCM token');
+      }
+
+      if (_processedFcmTokens.contains(tokenToUse)) {
+        isRegistered.value = true;
+        return DeviceRegistrationResult(success: true, message: 'Token already registered');
       }
 
       final deviceInfo = await getDeviceInfo();
+      final String currentDeviceName = deviceInfo['device_name']!;
+      final String currentPlatform = deviceInfo['platform']!;
 
-      String? locationToUse = location;
-      if (locationToUse == null || locationToUse.isEmpty) {
-        locationToUse = await fetchCurrentLocation();
+      print('\n╔════════════════════════════════════════════════════════════╗');
+      print('║  📱 DEVICE REGISTRATION CHECK                               ║');
+      print('╚════════════════════════════════════════════════════════════╝');
+      print('   📱 Device Name: $currentDeviceName');
+
+      // ✅ Check if device with same name exists
+      final bool deviceExists = await _isSameDevice(jwtToken, currentDeviceName);
+
+      if (deviceExists) {
+        // ✅ SAME DEVICE - UPDATE ONLY
+        print('\n╔════════════════════════════════════════════════════════════╗');
+        print('║  🔄 SAME DEVICE DETECTED - UPDATING ONLY                   ║');
+        print('╚════════════════════════════════════════════════════════════╝');
+        print('   ✅ Device with name "$currentDeviceName" already exists');
+        print('   ❌ NO NEW DEVICE ID GENERATED');
+
+        final existingDeviceId = await _getExistingDeviceIdByName(jwtToken, currentDeviceName);
+
+        if (existingDeviceId != null) {
+          // ✅ Update FCM token
+          bool tokenUpdated = await _updateDeviceToken(
+            jwtToken: jwtToken,
+            fcmToken: tokenToUse,
+            deviceId: existingDeviceId,
+          );
+
+          // ✅ Update location if provided
+          bool locationUpdated = true;
+          if (location != null && location.isNotEmpty) {
+            locationUpdated = await _updateDeviceLocation(
+              jwtToken: jwtToken,
+              deviceId: existingDeviceId,
+              location: location,
+            );
+          }
+
+          if (tokenUpdated || locationUpdated) {
+            await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
+            isRegistered.value = true;
+            _processedFcmTokens.add(tokenToUse);
+
+            // ✅ Sync local device ID with backend
+            await SharedPrefsHelper.setPermanentDeviceId(existingDeviceId);
+            _permanentDeviceId = existingDeviceId;
+
+            print('\n✅ Device UPDATED successfully:');
+            print('   🆔 Device ID: $existingDeviceId (SAME - NO CHANGE)');
+            print('   📱 Device Name: $currentDeviceName (SAME)');
+            print('   ✅ NO NEW DEVICE CREATED');
+
+            return DeviceRegistrationResult(
+                success: true,
+                message: 'Device updated successfully'
+            );
+          }
+          return DeviceRegistrationResult(success: false, error: 'Update failed');
+        }
+        return DeviceRegistrationResult(success: false, error: 'Device exists but no ID found');
+      } else {
+        // ✅ NEW DEVICE - CREATE NEW
+        print('\n╔════════════════════════════════════════════════════════════╗');
+        print('║  🆕 NEW DEVICE - CREATING NEW ENTRY                        ║');
+        print('╚════════════════════════════════════════════════════════════╝');
+        print('   ✅ New device name: $currentDeviceName');
+
+        return await _createNewDevice(
+          jwtToken: jwtToken,
+          tokenToUse: tokenToUse,
+          deviceInfo: deviceInfo,
+          location: location,
+        );
       }
+
+    } catch (e) {
+      return DeviceRegistrationResult(success: false, error: e.toString());
+    } finally {
+      _registrationInProgress = false;
+    }
+  }
+
+  // ✅ ============================================================
+  // ✅ CREATE NEW DEVICE
+  // ✅ ============================================================
+  Future<DeviceRegistrationResult> _createNewDevice({
+    required String jwtToken,
+    required String tokenToUse,
+    required Map<String, String> deviceInfo,
+    String? location,
+  }) async {
+    try {
+      final String deviceId = deviceInfo['device_id']!;
+      final String deviceName = deviceInfo['device_name']!;
+      final String platform = deviceInfo['platform']!;
+      final String osVersion = deviceInfo['os_version']!;
 
       final Map<String, dynamic> requestBody = {
         'token': tokenToUse,
-        'device_id': deviceInfo['device_id']!, // ✅ Stable device_id
-        'platform': deviceInfo['platform']!,
-        'device_name': deviceInfo['device_name'] ?? 'Unknown',
-        'os_version': deviceInfo['os_version'] ?? 'unknown',
+        'device_id': deviceId,
+        'platform': platform,
+        'device_name': deviceName,
+        'os_version': osVersion,
       };
 
-      if (locationToUse != null && locationToUse.isNotEmpty) {
-        requestBody['location'] = locationToUse;
-        print('\n📍 Location added: "$locationToUse"');
+      if (location != null && location.isNotEmpty) {
+        requestBody['location'] = location;
       }
-
-      print('\n📤 API Request:');
-      print('   device_id: ${deviceInfo['device_id']} (PERSISTENT)');
-      print('   platform: ${deviceInfo['platform']}');
-      print('   device_name: ${deviceInfo['device_name']}');
-      print('   location: ${locationToUse ?? "none"}');
 
       final dio = Dio(BaseOptions(
         baseUrl: 'https://backend.arcmedialabs.in',
@@ -251,41 +460,37 @@ class DeviceManager extends GetxService {
 
       final response = await dio.post('/api/user/device-token/', data: requestBody);
 
-      print('\n📥 Response: Status ${response.statusCode}');
-
       if (response.statusCode == 200 || response.statusCode == 201) {
-        result.success = true;
         await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
         isRegistered.value = true;
-        _apiCalled = true;
-        print('\n✅ Device registered successfully with PERSISTENT device_id!');
-        print('   📍 Location: ${locationToUse ?? "none"}');
-        print('   🆔 Device ID: ${deviceInfo['device_id']} (survives reinstalls)');
-      } else {
-        result.success = false;
-        print('❌ Registration failed');
+        _processedFcmTokens.add(tokenToUse);
+
+        // ✅ Save device ID locally
+        await SharedPrefsHelper.setPermanentDeviceId(deviceId);
+        _permanentDeviceId = deviceId;
+
+        print('\n✅ NEW Device created successfully:');
+        print('   🆕 Device ID: $deviceId (NEW)');
+        print('   📱 Device Name: $deviceName');
+
+        return DeviceRegistrationResult(success: true);
       }
-
+      return DeviceRegistrationResult(success: false);
     } catch (e) {
-      result.success = false;
-      result.error = e.toString();
-      print('❌ Error: $e');
-    } finally {
-      _isRegistering = false;
+      print('❌ Error creating new device: $e');
+      return DeviceRegistrationResult(success: false, error: e.toString());
     }
-
-    return result;
   }
 
   Future<bool> registerDeviceToken({String? location}) async {
     final jwtToken = SharedPrefsHelper.getToken();
     if (jwtToken == null || jwtToken.isEmpty) return false;
+    if (!SharedPrefsHelper.isTokenValid()) return false;
     final result = await registerDevice(jwtToken: jwtToken, location: location);
     return result.success;
   }
 
   // ==================== FETCH DEVICES ====================
-
   Future<List<DeviceInfo>> fetchDevices() async {
     final jwtToken = SharedPrefsHelper.getToken();
     if (jwtToken == null || jwtToken.isEmpty) return [];
@@ -303,12 +508,10 @@ class DeviceManager extends GetxService {
             .map((json) => DeviceInfo.fromJson(json))
             .toList();
         devices.assignAll(devicesList);
-        print('✅ Found ${devicesList.length} devices');
         return devicesList;
       }
       return [];
     } catch (e) {
-      print('❌ Error: $e');
       return [];
     } finally {
       isLoading.value = false;
@@ -316,20 +519,17 @@ class DeviceManager extends GetxService {
   }
 
   // ==================== LOGOUT DEVICE ====================
-
   Future<bool> logoutDevice(int deviceRecordId) async {
     final jwtToken = SharedPrefsHelper.getToken();
     if (jwtToken == null || jwtToken.isEmpty) return false;
 
     isLoading.value = true;
-
     try {
       final dio = Dio(BaseOptions(
         baseUrl: 'https://backend.arcmedialabs.in',
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
 
-      print('\n📱 Logging out device ID: $deviceRecordId');
       final response = await dio.post(
         '/api/user/devices/logout/',
         data: {'device_id': deviceRecordId},
@@ -337,12 +537,10 @@ class DeviceManager extends GetxService {
 
       if (response.statusCode == 200 && response.data['result'] == 'success') {
         devices.removeWhere((d) => d.id == deviceRecordId);
-        print('✅ Device logged out successfully');
         return true;
       }
       return false;
     } catch (e) {
-      print('❌ Error: $e');
       return false;
     } finally {
       isLoading.value = false;
@@ -350,69 +548,47 @@ class DeviceManager extends GetxService {
   }
 
   // ==================== LOGOUT ALL OTHER DEVICES ====================
-
   Future<int> logoutAllOtherDevices() async {
     final jwtToken = SharedPrefsHelper.getToken();
-    if (jwtToken == null || jwtToken.isEmpty) {
-      print('❌ No JWT token to logout devices');
-      return 0;
-    }
+    if (jwtToken == null || jwtToken.isEmpty) return 0;
 
     final allDevices = await fetchDevices();
     final currentDeviceId = await getDeviceId();
 
-    final devicesToLogout = <int>[];
+    final devicesToLogout = allDevices
+        .where((d) => d.deviceId != currentDeviceId)
+        .map((d) => d.id)
+        .toList();
 
-    for (var device in allDevices) {
-      if (device.deviceId != currentDeviceId) {
-        devicesToLogout.add(device.id);
-        print('📍 Will logout: ${device.deviceName} (ID: ${device.id})');
-      } else {
-        print('📍 Current device: ${device.deviceName} (ID: ${device.id}) - Skipping');
-      }
-    }
-
-    if (devicesToLogout.isEmpty) {
-      print('📱 No other devices found to logout');
-      return 0;
-    }
-
-    print('\n📱 Found ${devicesToLogout.length} other devices to logout');
+    if (devicesToLogout.isEmpty) return 0;
 
     int successCount = 0;
     for (var deviceId in devicesToLogout) {
       final success = await logoutDevice(deviceId);
-      if (success) {
-        successCount++;
-        print('✅ Logged out device ID: $deviceId');
-      } else {
-        print('❌ Failed to logout device ID: $deviceId');
-      }
+      if (success) successCount++;
       await Future.delayed(const Duration(milliseconds: 500));
     }
-
-    print('✅ Successfully logged out $successCount devices');
     return successCount;
   }
 
-  // ==================== CLEAR REGISTRATION ====================
-
   Future<void> clearRegistration() async {
     isRegistered.value = false;
-    _apiCalled = false;
+    _processedFcmTokens.clear();
     devices.clear();
     await SharedPrefsHelper.setLastTokenRegistration(null);
     print('🗑️ Device registration cleared');
   }
 }
 
-// ==================== DATA MODELS ====================
-
 class DeviceRegistrationResult {
-  bool success = false;
-  String message = '';
+  bool success;
+  String message;
   String? error;
-  DeviceRegistrationResult({this.success = false, this.message = '', this.error});
+  DeviceRegistrationResult({
+    this.success = false,
+    this.message = '',
+    this.error
+  });
 }
 
 class DeviceInfo {

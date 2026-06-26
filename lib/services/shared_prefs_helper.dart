@@ -1,12 +1,14 @@
 // services/shared_prefs_helper.dart
-// ✅ Updated with secure device ID methods
+// ✅ COMPLETE - Device ID stored in SecureStorage (survives reinstalls) + Backend Sync
 
 import 'package:shared_preferences/shared_preferences.dart';
-import 'secure_device_id_service.dart'; // ✅ Import new service
+import 'package:dio/dio.dart';
+import 'secure_device_id_service.dart';
 
 class SharedPrefsHelper {
   static late SharedPreferences _prefs;
 
+  // ========== KEYS ==========
   static const String _keyFirstLaunch = 'first_launch';
   static const String _keyAuthToken = 'auth_token';
   static const String _keyTokenExpiry = 'token_expiry';
@@ -24,12 +26,13 @@ class SharedPrefsHelper {
   static const String _keyNotificationsCache = 'notifications_cache';
   static const String _keyLastUpdateCheck = 'last_update_check';
   static const String _keyLastProfileFetch = 'last_profile_fetch';
-
-  // Device Management Keys (now using secure storage)
-  static const String _keyDeviceRegistered = 'device_registered';
   static const String _keyDeviceLocation = 'device_location';
   static const String _keyLocationUpdatedAt = 'location_updated_at';
-  static const String _keyCurrentDeviceId = 'current_device_id';
+  static const String _keyDeviceRegistered = 'device_registered';
+
+  // ✅ PERMANENT DEVICE ID - Stored in SharedPreferences
+  static const String _keyPermanentDeviceId = 'permanent_device_id';
+  static const String _keyDeviceIdBackup = 'device_id_backup';
 
   static Future<void> init() async => _prefs = await SharedPreferences.getInstance();
 
@@ -156,16 +159,85 @@ class SharedPrefsHelper {
     return DateTime.now().difference(lastCheck).inHours >= 24;
   }
 
-  // ========== ✅ FIXED: DEVICE ID (USES SECURE STORAGE) ==========
-  // ✅ Now uses SecureDeviceIdService which stores in iOS Keychain / Android EncryptedSharedPreferences
+  // ✅ ============================================================
+  // ✅ PERMANENT DEVICE ID
+  //    Primary source → SecureDeviceIdService
+  //      Android : ANDROID_ID (hardware-bound, survives reinstall)
+  //                Fallback: EncryptedSharedPreferences + Auto Backup
+  //      iOS     : identifierForVendor (hardware-bound, survives reinstall)
+  //                Fallback: Keychain via flutter_secure_storage
+  //    SharedPreferences = session-level cache only (fast reads).
+  //    Result: ONE stable device_id per physical device, forever.
+  // ✅ ============================================================
 
-  static Future<String> getDeviceId() async {
-    return await SecureDeviceIdService.getCachedDeviceId();
+  /// Returns the permanent device ID.
+  /// Reads from secure storage on first call; uses SharedPrefs as cache
+  /// for all subsequent calls within the same app session.
+  static Future<String> getPermanentDeviceId() async {
+    // 1️⃣ Fast path – session cache (cleared on reinstall, that's fine)
+    final cached = _prefs.getString(_keyPermanentDeviceId);
+    if (cached != null && cached.isNotEmpty) {
+      print('📱 🔒 Device ID (session cache): $cached');
+      return cached;
+    }
+
+    // 2️⃣ Authoritative source – secure storage (survives reinstall)
+    final secureId = await SecureDeviceIdService.getDeviceId();
+    print('📱 🔒 Device ID (secure storage): $secureId');
+    print('   ✅ Same ID returned after reinstall');
+
+    // Populate session cache for fast access during this session
+    await _prefs.setString(_keyPermanentDeviceId, secureId);
+    await _prefs.setString(_keyDeviceIdBackup, secureId);
+    return secureId;
   }
 
+  /// Convenience alias used throughout the codebase.
+  static Future<String> getDeviceId() async => getPermanentDeviceId();
+
+  /// Called after the backend returns a canonical device_id.
+  /// Updates BOTH the secure storage (via cache invalidation + next read)
+  /// and the session cache so everything stays consistent.
+  static Future<void> setPermanentDeviceId(String deviceId) async {
+    if (deviceId.isNotEmpty) {
+      // Update session cache immediately
+      await _prefs.setString(_keyPermanentDeviceId, deviceId);
+      await _prefs.setString(_keyDeviceIdBackup, deviceId);
+      // Invalidate secure storage cache so next cold-start re-reads correctly.
+      // SecureDeviceIdService will write this value on the next getDeviceId()
+      // call if the secure store is empty; to keep them in sync, write now:
+      await SecureDeviceIdService.writeDeviceId(deviceId);
+      print('📱 🔄 Permanent device ID set: $deviceId');
+    }
+  }
+
+  /// Sync with backend: if backend returns a device_id, adopt it.
+  static Future<void> syncDeviceIdWithBackend(String jwtToken) async {
+    try {
+      final dio = Dio(BaseOptions(
+        baseUrl: 'https://backend.arcmedialabs.in/api',
+        headers: {'Authorization': 'Bearer $jwtToken'},
+      ));
+      final response = await dio.get('/user/device-id/');
+      if (response.statusCode == 200 && response.data['result'] == 'success') {
+        final deviceId = response.data['data']['device_id'] as String?;
+        if (deviceId != null && deviceId.isNotEmpty) {
+          await setPermanentDeviceId(deviceId);
+          print('📱 🔄 Synced device ID from backend: $deviceId');
+        }
+      }
+    } catch (e) {
+      print('⚠️ Failed to sync device ID: $e');
+    }
+  }
+
+  /// Clears only the session cache.
+  /// The secure-storage copy is intentionally preserved so the ID
+  /// survives this call and any future reinstall.
   static Future<void> clearDeviceId() async {
-    await SecureDeviceIdService.clearDeviceId();
-    SecureDeviceIdService.clearCache();
+    await _prefs.remove(_keyPermanentDeviceId);
+    await _prefs.remove(_keyDeviceIdBackup);
+    print('🗑️ Device ID session cache cleared (secure storage preserved)');
   }
 
   // ========== LOCATION STORAGE ==========
@@ -214,9 +286,6 @@ class SharedPrefsHelper {
   static Future<void> setDeviceRegistered(bool registered) async => await _prefs.setBool(_keyDeviceRegistered, registered);
   static bool isDeviceRegistered() => _prefs.getBool(_keyDeviceRegistered) ?? false;
 
-  static Future<void> setCurrentDeviceId(String deviceId) async => await _prefs.setString(_keyCurrentDeviceId, deviceId);
-  static String? getCurrentDeviceId() => _prefs.getString(_keyCurrentDeviceId);
-
   // ========== PROFILE CACHE ==========
   static Future<void> setLastProfileFetch(DateTime time) async {
     await _prefs.setString(_keyLastProfileFetch, time.toIso8601String());
@@ -244,16 +313,24 @@ class SharedPrefsHelper {
     return token != null && token.isNotEmpty && isTokenValid();
   }
 
-  // ========== CLEAR ALL (PRESERVES DEVICE ID IN SECURE STORAGE) ==========
+  // ✅ ============================================================
+  // ✅ CLEAR ALL - BUT PRESERVE DEVICE ID
+  // ✅ ============================================================
+
   static Future<void> clearAll() async {
+    final deviceId = _prefs.getString(_keyPermanentDeviceId);
+    final backupId = _prefs.getString(_keyDeviceIdBackup);
     final deviceLocation = _prefs.getString(_keyDeviceLocation);
     final locationTime = _prefs.getString(_keyLocationUpdatedAt);
 
     await _prefs.clear();
 
-    // ✅ DO NOT clear device ID - it's stored in secure storage
-    // Device ID persists across reinstalls via Keychain/EncryptedSharedPreferences
-
+    if (deviceId != null && deviceId.isNotEmpty) {
+      await _prefs.setString(_keyPermanentDeviceId, deviceId);
+    }
+    if (backupId != null && backupId.isNotEmpty) {
+      await _prefs.setString(_keyDeviceIdBackup, backupId);
+    }
     if (deviceLocation != null && deviceLocation.isNotEmpty) {
       await _prefs.setString(_keyDeviceLocation, deviceLocation);
     }
@@ -261,9 +338,6 @@ class SharedPrefsHelper {
       await _prefs.setString(_keyLocationUpdatedAt, locationTime);
     }
 
-    // Clear cache
-    SecureDeviceIdService.clearCache();
-
-    print('🗑️ All cleared (device_id preserved in secure storage)');
+    print('🗑️ All cleared (Device ID preserved)');
   }
 }

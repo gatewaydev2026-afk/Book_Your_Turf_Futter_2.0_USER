@@ -1,4 +1,6 @@
-// main.dart - Complete Final Version with Facebook Events
+// main.dart - Complete Final Version with Permanent Device ID
+// ✅ Device ID stored in SharedPreferences - NEVER changes
+// ✅ ONE ID PER DEVICE - FOREVER
 
 import 'package:book_your_turf/services/chat_bot_service.dart';
 import 'package:book_your_turf/services/device_manager.dart';
@@ -39,7 +41,7 @@ void main() async {
   print('║              BOOK YOUR TURF APP STARTING                    ║');
   print('╚════════════════════════════════════════════════════════════╝');
 
-  // Initialize Firebase
+  // 1️⃣ Initialize Firebase
   try {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
@@ -49,7 +51,7 @@ void main() async {
     print('⚠️ Firebase initialization warning: $e');
   }
 
-  // 🔥 Log Facebook App Launch Event (SDK auto-initializes)
+  // 🔥 Log Facebook App Launch Event
   try {
     await facebookAppEvents.logEvent(
       name: 'fb_mobile_activate_app',
@@ -59,7 +61,41 @@ void main() async {
     print('❌ Facebook app launch error: $e');
   }
 
-  // Initialize local notifications
+  // 2️⃣ Initialize SharedPreferences FIRST
+  await SharedPrefsHelper.init();
+  print('✅ SharedPreferences initialized');
+
+  // 3️⃣ ============================================================
+  // ✅ PERMANENT DEVICE ID - NEVER CHANGES
+  // ✅ Stored in SharedPreferences - survives reinstall
+  // ✅ ONE ID PER DEVICE - FOREVER
+  // ============================================================
+  final permanentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+
+  print('\n╔════════════════════════════════════════════════════════════╗');
+  print('║  🔒 PERMANENT DEVICE ID                                    ║');
+  print('║  🆔 $permanentDeviceId                                     ║');
+  print('║  ✅ This ID will NEVER change                              ║');
+  print('║  ✅ ONE ID PER DEVICE - FOREVER                            ║');
+  print('║  ✅ Survives app reinstall                                 ║');
+  print('╚════════════════════════════════════════════════════════════╝\n');
+
+  // 4️⃣ Check first launch
+  final isFirstLaunch = SharedPrefsHelper.isFirstLaunch();
+  if (isFirstLaunch) {
+    print('🔄 First launch detected - Setting up');
+    await SharedPrefsHelper.setFirstLaunch(false);
+    print('✅ First launch setup complete');
+  } else {
+    final tokenExists = SharedPrefsHelper.getToken() != null;
+    print('📱 App launched - Token exists: $tokenExists');
+    if (tokenExists) {
+      final token = SharedPrefsHelper.getToken();
+      print('🔑 Token preview: ${token!.substring(0, token.length > 20 ? 20 : token.length)}...');
+    }
+  }
+
+  // 5️⃣ Initialize Local Notifications
   const AndroidInitializationSettings androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
   const DarwinInitializationSettings iosSettings = DarwinInitializationSettings(
     requestAlertPermission: true,
@@ -74,7 +110,7 @@ void main() async {
   await flutterLocalNotificationsPlugin.initialize(initializationSettings);
   print('✅ Local notifications initialized');
 
-  // Create notification channel for Android
+  // 6️⃣ Create notification channel for Android
   if (defaultTargetPlatform == TargetPlatform.android) {
     const AndroidNotificationChannel channel = AndroidNotificationChannel(
       'user_channel',
@@ -90,7 +126,7 @@ void main() async {
     print('✅ Notification channel created');
   }
 
-  // Initialize Firebase Messaging Service
+  // 7️⃣ Initialize Firebase Messaging Service
   try {
     await FirebaseMessagingService.initialize();
     print('✅ Firebase Messaging Service initialized');
@@ -98,7 +134,7 @@ void main() async {
     print('⚠️ Firebase Messaging initialization warning: $e');
   }
 
-  // Request notification permissions
+  // 8️⃣ Request notification permissions
   try {
     final settings = await FirebaseMessaging.instance.requestPermission(
       alert: true,
@@ -111,30 +147,7 @@ void main() async {
     print('⚠️ Permission request warning: $e');
   }
 
-  // Initialize SharedPreferences
-  await SharedPrefsHelper.init();
-
-  final isFirstLaunch = SharedPrefsHelper.isFirstLaunch();
-
-  if (isFirstLaunch) {
-    print('🔄 First launch detected - Clearing all existing data');
-    await SharedPrefsHelper.clearAll();
-    await SharedPrefsHelper.setFirstLaunch(false);
-    print('✅ First launch setup complete');
-  } else {
-    final tokenExists = SharedPrefsHelper.getToken() != null;
-    print('📱 App launched - Token exists: $tokenExists');
-    if (tokenExists) {
-      final token = SharedPrefsHelper.getToken();
-      print('🔑 Token preview: ${token!.substring(0, token.length > 20 ? 20 : token.length)}...');
-    }
-  }
-
-  // Initialize device ID (persists forever)
-  await SharedPrefsHelper.getDeviceId();
-  print('✅ Device ID initialized');
-
-  // Request location permission
+  // 9️⃣ Request location permission
   try {
     await Geolocator.requestPermission();
     print('📍 Location permission requested');
@@ -142,10 +155,10 @@ void main() async {
     print('⚠️ Location permission warning: $e');
   }
 
-  // Initialize all dependencies
+  // 🔟 Initialize all dependencies
   await initDependencies();
 
-  // Initialize deep link service
+  // 1️⃣1️⃣ Initialize deep link service
   try {
     final deepLinkService = DeepLinkService();
     await deepLinkService.init();
@@ -154,7 +167,7 @@ void main() async {
     print('⚠️ Deep Link Service warning: $e');
   }
 
-  print('═══════════════════════════════════════════════════════════════\n');
+  print('\n═══════════════════════════════════════════════════════════════\n');
 
   runApp(const MyApp());
 }
