@@ -498,7 +498,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                         ],
                       ),
 
-
                       const SizedBox(height: 12),
 
                       // Opening & Closing Times
@@ -570,56 +569,50 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                                             color: Colors.red,
                                           ),
                                           const SizedBox(width: 4),
-                                          Expanded(
-                                            child: Column(
-                                              crossAxisAlignment: CrossAxisAlignment.start,
-                                              children: [
-                                                Text(
-                                                  formatTo12Hour(turf.closeTime),
-                                                  style: const TextStyle(
-                                                    fontSize: 16,
-                                                    fontWeight: FontWeight.bold,
-                                                  ),
-                                                ),
-                                                if (isNextDayClose)
-                                                  const SizedBox(height: 4),
-                                                if (isNextDayClose)
-                                                  Container(
-                                                    padding: const EdgeInsets.symmetric(
-                                                      horizontal: 8,
-                                                      vertical: 2,
-                                                    ),
-                                                    decoration: BoxDecoration(
-                                                      color: Colors.orange.shade100,
-                                                      borderRadius: BorderRadius.circular(12),
-                                                      border: Border.all(
-                                                        color: Colors.orange.shade300,
-                                                        width: 0.5,
-                                                      ),
-                                                    ),
-                                                    child: Row(
-                                                      mainAxisSize: MainAxisSize.min,
-                                                      children: [
-                                                        Icon(
-                                                          Icons.nightlight_round,
-                                                          size: 12,
-                                                          color: Colors.orange.shade700,
-                                                        ),
-                                                        const SizedBox(width: 4),
-                                                        Text(
-                                                          'Next Day',
-                                                          style: TextStyle(
-                                                            fontSize: 10,
-                                                            fontWeight: FontWeight.w500,
-                                                            color: Colors.orange.shade700,
-                                                          ),
-                                                        ),
-                                                      ],
-                                                    ),
-                                                  ),
-                                              ],
+                                          Text(
+                                            formatTo12Hour(turf.closeTime),
+                                            style: const TextStyle(
+                                              fontSize: 16,
+                                              fontWeight: FontWeight.bold,
                                             ),
                                           ),
+                                          // ✅ NEXT DAY LABEL - RIGHT SIDE OF TIME
+                                          if (isNextDayClose) ...[
+                                            const SizedBox(width: 8),
+                                            Container(
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 6,
+                                                vertical: 2,
+                                              ),
+                                              decoration: BoxDecoration(
+                                                color: Colors.orange.shade100,
+                                                borderRadius: BorderRadius.circular(12),
+                                                border: Border.all(
+                                                  color: Colors.orange.shade300,
+                                                  width: 0.5,
+                                                ),
+                                              ),
+                                              child: Row(
+                                                mainAxisSize: MainAxisSize.min,
+                                                children: [
+                                                  Icon(
+                                                    Icons.nightlight_round,
+                                                    size: 12,
+                                                    color: Colors.orange.shade700,
+                                                  ),
+                                                  const SizedBox(width: 4),
+                                                  Text(
+                                                    'Next Day',
+                                                    style: TextStyle(
+                                                      fontSize: 6,
+                                                      fontWeight: FontWeight.w500,
+                                                      color: Colors.orange.shade700,
+                                                    ),
+                                                  ),
+                                                ],
+                                              ),
+                                            ),
+                                          ],
                                         ],
                                       ),
                                     ],

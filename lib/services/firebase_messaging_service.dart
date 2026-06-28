@@ -1,5 +1,6 @@
 // firebase_messaging_service.dart - COMPLETE FIXED VERSION
 // ✅ Prevents duplicate notifications, handles token refresh properly
+// ✅ Fixed: Background handler is now a TOP-LEVEL function with @pragma
 
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -10,11 +11,29 @@ import 'package:get/get_core/src/get_main.dart';
 import 'package:get/get_navigation/src/extension_navigation.dart';
 import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 
+// ✅ 1. TOP-LEVEL BACKGROUND HANDLER (MUST be outside class)
+// ✅ 2. Must be annotated with @pragma('vm:entry-point')
+@pragma('vm:entry-point')
+Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  // ✅ 3. Initialize any services needed
+  // WidgetsFlutterBinding.ensureInitialized();
+
+  print('📨 BACKGROUND MESSAGE: ${message.messageId}');
+  print('   Title: ${message.notification?.title}');
+  print('   Body: ${message.notification?.body}');
+
+  try {
+    // Show notification using a separate helper or static method
+    await FirebaseMessagingService._showBackgroundNotification(message);
+  } catch (e) {
+    print('⚠️ Background notification error: $e');
+  }
+}
+
 class FirebaseMessagingService {
   static final FlutterLocalNotificationsPlugin _localNotifications =
   FlutterLocalNotificationsPlugin();
 
-  // ✅ PREVENT DUPLICATE HANDLING
   static bool _isInitialized = false;
   static bool _isTokenRegistered = false;
   static final Set<String> _processedMessageIds = {};
@@ -25,14 +44,13 @@ class FirebaseMessagingService {
   static const _cleanupInterval = Duration(minutes: 5);
 
   static Future<void> initialize() async {
-    // ✅ Prevent multiple initialization
     if (_isInitialized) {
       print('⏭️ Firebase Messaging already initialized');
       return;
     }
 
     try {
-      // Initialize local notifications for Android
+      // Initialize local notifications
       const AndroidInitializationSettings androidSettings =
       AndroidInitializationSettings('@mipmap/ic_launcher');
 
@@ -47,16 +65,16 @@ class FirebaseMessagingService {
       await _localNotifications.initialize(settings);
       print('✅ Local notifications plugin initialized');
 
-      // ✅ Setup background handler first
-      FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+      // ✅ Register the TOP-LEVEL background handler
+      FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-      // ✅ Setup message handlers
+      // Setup message handlers
       _setupMessageHandlers();
 
-      // ✅ Get FCM token
+      // Get FCM token
       await _getAndStoreToken();
 
-      // ✅ Start cleanup timer for processed IDs
+      // Start cleanup timer
       _startCleanupTimer();
 
       _isInitialized = true;
@@ -100,13 +118,13 @@ class FirebaseMessagingService {
   }
 
   static void _setupMessageHandlers() {
-    // ✅ Foreground messages
+    // Foreground messages
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('📱 Foreground message received: ${message.messageId}');
       _handleMessage(message, isForeground: true);
     });
 
-    // ✅ App opened from terminated state
+    // App opened from terminated state
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
         print('📱 App opened from terminated state: ${message.messageId}');
@@ -114,34 +132,11 @@ class FirebaseMessagingService {
       }
     });
 
-    // ✅ App opened from background
+    // App opened from background
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       print('📱 App opened from background: ${message.messageId}');
       _handleMessage(message, isForeground: false);
     });
-  }
-
-  // ✅ BACKGROUND HANDLER - Must be top-level function
-  @pragma('vm:entry-point')
-  static Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-    try {
-      print('📨 Background message received: ${message.messageId}');
-
-      // ✅ Check for duplicate in background
-      final msgId = message.messageId ?? '';
-      if (msgId.isNotEmpty && _processedMessageIds.contains(msgId)) {
-        print('⏭️ Duplicate background message ignored: $msgId');
-        return;
-      }
-
-      if (msgId.isNotEmpty) {
-        _processedMessageIds.add(msgId);
-      }
-
-      await _showLocalNotification(message);
-    } catch (e) {
-      print('⚠️ Background notification handling error: $e');
-    }
   }
 
   // ✅ Main message handler with duplicate prevention
@@ -149,13 +144,13 @@ class FirebaseMessagingService {
     try {
       final msgId = message.messageId ?? '';
 
-      // ✅ Check for duplicate
+      // Check for duplicate
       if (msgId.isNotEmpty && _processedMessageIds.contains(msgId)) {
         print('⏭️ Duplicate message ignored: $msgId');
         return;
       }
 
-      // ✅ Add to processed set
+      // Add to processed set
       if (msgId.isNotEmpty) {
         _processedMessageIds.add(msgId);
       }
@@ -165,10 +160,10 @@ class FirebaseMessagingService {
       print('   Body: ${message.notification?.body}');
       print('   Data: ${message.data}');
 
-      // ✅ Show notification
+      // Show notification
       _showLocalNotification(message);
 
-      // ✅ Show in-app notification only for foreground
+      // Show in-app notification only for foreground
       if (isForeground) {
         _showInAppNotification(message);
       }
@@ -176,6 +171,11 @@ class FirebaseMessagingService {
     } catch (e) {
       print('⚠️ Message handling error: $e');
     }
+  }
+
+  // ✅ Called from background handler (static)
+  static Future<void> _showBackgroundNotification(RemoteMessage message) async {
+    await _showLocalNotification(message);
   }
 
   static Future<void> _showLocalNotification(RemoteMessage message) async {
@@ -188,7 +188,6 @@ class FirebaseMessagingService {
         priority: Priority.high,
         playSound: true,
         showWhen: true,
-        // ✅ Use unique ID to prevent duplicate notifications
       );
 
       const DarwinNotificationDetails iosDetails = DarwinNotificationDetails();
@@ -198,7 +197,7 @@ class FirebaseMessagingService {
         iOS: iosDetails,
       );
 
-      // ✅ Generate unique ID from message ID or content
+      // Generate unique ID from message ID or content
       final id = message.messageId?.hashCode.abs() ??
           '${message.notification?.title}-${message.notification?.body}'.hashCode.abs();
 
@@ -217,7 +216,6 @@ class FirebaseMessagingService {
   }
 
   static void _showInAppNotification(RemoteMessage message) {
-    // ✅ Show in-app notification only if Get is available
     try {
       if (Get.context != null) {
         Get.snackbar(
@@ -233,7 +231,6 @@ class FirebaseMessagingService {
           mainButton: TextButton(
             onPressed: () {
               Get.back();
-              // Navigate based on data
               final type = message.data['type'] ?? message.data['notification_type'];
               if (type == 'booking' || type == 'booking_confirmed') {
                 Get.toNamed('/my-bookings');
@@ -252,10 +249,8 @@ class FirebaseMessagingService {
     }
   }
 
-  // ✅ Subscribe to topics with duplicate prevention
   static Future<void> subscribeToTopics() async {
     try {
-      // ✅ Check if already subscribed
       final token = await FirebaseMessaging.instance.getToken();
       if (token == null) {
         print('❌ No FCM token available');
@@ -270,7 +265,6 @@ class FirebaseMessagingService {
     }
   }
 
-  // ✅ Unsubscribe from topics
   static Future<void> unsubscribeFromTopics() async {
     try {
       await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
@@ -281,19 +275,16 @@ class FirebaseMessagingService {
     }
   }
 
-  // ✅ Helper to handle FCM token refresh
   static Future<String?> refreshToken() async {
     try {
       final token = await FirebaseMessaging.instance.getToken();
       if (token != null) {
-        // ✅ Check if token already processed
         if (_processedTokens.contains(token)) {
-          print('⏭️ Token already processed: ${token.substring(0, token.length > 10 ? 10 : token.length)}...');
+          print('⏭️ Token already processed');
           return token;
         }
-
         _processedTokens.add(token);
-        print('📱 Refreshed FCM Token: ${token.substring(0, token.length > 10 ? 10 : token.length)}...');
+        print('📱 Refreshed FCM Token');
         return token;
       }
       return null;
@@ -303,14 +294,12 @@ class FirebaseMessagingService {
     }
   }
 
-  // ✅ Clear all processed IDs (useful for testing)
   static void clearProcessedIds() {
     _processedMessageIds.clear();
     _processedTokens.clear();
     print('🧹 Cleared all processed IDs');
   }
 
-  // ✅ Dispose
   static void dispose() {
     _cleanupTimer?.cancel();
     _isInitialized = false;

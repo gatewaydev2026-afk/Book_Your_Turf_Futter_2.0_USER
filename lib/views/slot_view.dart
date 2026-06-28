@@ -1,4 +1,3 @@
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/slot_model.dart';
@@ -460,7 +459,11 @@ class SlotView extends StatelessWidget {
         endHour = int.parse(endParts[0]);
         endMinute = int.parse(endParts[1]);
 
-        int slotEndMinutes = endHour * 60 + endMinute;
+        // ✅ FIX: 00:00 = midnight = 1440 minutes (not 0!)
+        // 11PM-12AM slot has endTime "00:00" — should NOT be filtered out at 11PM
+        int slotEndMinutes = (endHour == 0 && endMinute == 0)
+            ? 1440
+            : endHour * 60 + endMinute;
         return slotEndMinutes > currentTimeMinutes;
       } catch (e) {
         return false;

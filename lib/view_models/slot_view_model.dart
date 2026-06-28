@@ -249,7 +249,11 @@ class SlotViewModel extends GetxController {
             return;
           }
         } else {
-          int slotEndMinutes = endHour * 60 + endMinute;
+          // ✅ FIX: 00:00 end time = midnight = 1440 minutes (not 0!)
+          // e.g. 11PM-12AM slot has endTime "00:00" but it's NOT past yet at 11PM
+          int slotEndMinutes = (endHour == 0 && endMinute == 0)
+              ? 1440
+              : endHour * 60 + endMinute;
           int currentTimeMinutes = now.hour * 60 + now.minute;
 
           if (currentTimeMinutes > slotEndMinutes) {
@@ -321,7 +325,11 @@ class SlotViewModel extends GetxController {
         return slot.isAvailable && now.isBefore(slotEndDateTime);
       }
 
-      int slotEndMinutes = endHour * 60 + endMinute;
+      // ✅ FIX: 00:00 end time = midnight = 1440 minutes (not 0!)
+      // e.g. 11PM-12AM slot has endTime "00:00" but it's NOT past yet at 11PM
+      int slotEndMinutes = (endHour == 0 && endMinute == 0)
+          ? 1440
+          : endHour * 60 + endMinute;
       int currentTimeMinutes = now.hour * 60 + now.minute;
 
       return slot.isAvailable && (slotEndMinutes > currentTimeMinutes);

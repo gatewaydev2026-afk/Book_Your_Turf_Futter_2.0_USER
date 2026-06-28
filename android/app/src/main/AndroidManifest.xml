@@ -12,6 +12,9 @@
     <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
 
+    <!-- POST_NOTIFICATIONS for Android 13+ -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
     <!-- Optional: Needed if using photo capture -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -40,7 +43,6 @@
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
         </intent>
-        <!-- ✅ Keep the PROCESS_TEXT query from first manifest -->
         <intent>
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
@@ -79,6 +81,34 @@
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyAmaDiy7rbKN9XHJnH9WCZ5VWoH87L9Zs4" />
 
+        <!-- ✅ FIREBASE MESSAGING - DEFAULT CHANNEL -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="book_your_turf_channel" />
+
+        <!-- ✅ FIREBASE MESSAGING - DEFAULT ICON -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_icon"
+            android:resource="@mipmap/ic_launcher" />
+
+        <!-- ✅ FIREBASE MESSAGING SERVICE - CRITICAL FOR BACKGROUND NOTIFICATIONS -->
+        <service
+            android:name="com.google.firebase.messaging.FirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
+        <!-- ✅ FLUTTER FIREBASE MESSAGING SERVICE (for FlutterFire) -->
+        <service
+            android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="com.google.firebase.MESSAGING_EVENT" />
+            </intent-filter>
+        </service>
+
         <!-- Main Activity -->
         <activity
             android:name=".MainActivity"
@@ -91,7 +121,7 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
 
-            <!-- ✅ Edge-to-edge flag for modern Android -->
+            <!-- Edge-to-edge flag for modern Android -->
             <meta-data
                 android:name="android.window.enableEdgeToEdge"
                 android:value="true" />
@@ -107,7 +137,7 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
-            <!-- ✅ DEEP LINKING - From first manifest (ADD THESE BACK) -->
+            <!-- DEEP LINKING -->
             <intent-filter android:autoVerify="true">
                 <action android:name="android.intent.action.VIEW" />
                 <category android:name="android.intent.category.DEFAULT" />

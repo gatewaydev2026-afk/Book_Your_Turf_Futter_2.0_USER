@@ -486,9 +486,6 @@ class BookingSummaryView extends StatelessWidget {
             Text('Amount: ₹${_formatPrice(vm.payableAmount)}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             const SizedBox(height: 8),
-            if (vm.selectedPaymentType == 'advance')
-              Text('Advance Payment: ₹${_formatPrice(vm.payableAmount)}',
-                  style: const TextStyle(fontSize: 12)),
             const SizedBox(height: 8),
             const Text('You will be redirected to Razorpay payment gateway.'),
           ],
@@ -520,9 +517,7 @@ class BookingSummaryView extends StatelessWidget {
             Text('Amount: ₹${_formatPrice(vm.payableAmount)}',
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             if (vm.selectedPaymentType == 'advance')
-              Text('Advance Payment: ₹${_formatPrice(vm.payableAmount)}',
-                  style: const TextStyle(fontSize: 12)),
-            const SizedBox(height: 8),
+
             Text('Wallet Balance: ₹${_formatPrice(profileVm.walletBalance.value)}',
                 style: TextStyle(color: Colors.green.shade700)),
             const SizedBox(height: 8),
