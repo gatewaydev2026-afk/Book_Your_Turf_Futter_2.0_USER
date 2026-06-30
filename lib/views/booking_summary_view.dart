@@ -380,9 +380,8 @@ class BookingSummaryView extends StatelessWidget {
               _infoRow(Icons.payment, 'Advance to Pay', '₹${_formatPrice(vm.payableAmount)}',
                   iconColor: Colors.green),
               const SizedBox(height: 8),
-              // FIXED: Show exact balance amount with proper decimals
-              _infoRow(Icons.receipt, 'Balance to pay', '₹${_formatPrice(vm.totalAmount - vm.payableAmount)}',
-                  iconColor: Colors.orange),
+              // FIXED: ENTIRE "Balance to pay" LINE IN RED COLOR
+              _balanceToPayRow(vm),
             ],
             const Divider(),
             // FIXED: Show exact payable amount with proper decimals
@@ -391,6 +390,33 @@ class BookingSummaryView extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  // NEW: Custom row for "Balance to pay" with FULL RED COLOR
+  Widget _balanceToPayRow(BookingSummaryViewModel vm) {
+    return Row(
+      children: [
+        const Icon(Icons.receipt, size: 18, color: Colors.red),
+        const SizedBox(width: 8),
+        SizedBox(
+          width: 100,
+          child: Text(
+            'Balance to pay',
+            style: const TextStyle(color: Colors.red, fontSize: 14), // RED LABEL
+          ),
+        ),
+        Expanded(
+          child: Text(
+            '₹${_formatPrice(vm.totalAmount - vm.payableAmount)}',
+            style: const TextStyle(
+              fontWeight: FontWeight.w500,
+              fontSize: 14,
+              color: Colors.red, // RED AMOUNT
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -518,8 +544,8 @@ class BookingSummaryView extends StatelessWidget {
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
             if (vm.selectedPaymentType == 'advance')
 
-            Text('Wallet Balance: ₹${_formatPrice(profileVm.walletBalance.value)}',
-                style: TextStyle(color: Colors.green.shade700)),
+              Text('Wallet Balance: ₹${_formatPrice(profileVm.walletBalance.value)}',
+                  style: TextStyle(color: Colors.green.shade700)),
             const SizedBox(height: 8),
             Text('After Payment: ₹${_formatPrice(profileVm.walletBalance.value - vm.payableAmount)}',
                 style: TextStyle(color: Colors.grey.shade700)),

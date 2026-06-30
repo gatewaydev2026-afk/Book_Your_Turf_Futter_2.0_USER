@@ -108,12 +108,24 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
       final openParts = openTime.split(':');
       final closeParts = closeTime.split(':');
 
-      int openHour = int.parse(openParts[0]);
-      int closeHour = int.parse(closeParts[0]);
+      if (openParts.isEmpty || closeParts.isEmpty) return false;
 
-      // If closing hour is less than opening hour, it's next day
-      // Also handle early morning closing (0-5)
-      return closeHour < openHour || closeHour < 6;
+      int openHour = int.parse(openParts[0]);
+      int openMinute = openParts.length > 1 ? int.parse(openParts[1]) : 0;
+
+      int closeHour = int.parse(closeParts[0]);
+      int closeMinute = closeParts.length > 1 ? int.parse(closeParts[1]) : 0;
+
+      // Handle 24:00 as next day midnight (same as 00:00 next day)
+      if (closeHour == 24) return true;
+
+      // Convert to total minutes for accurate comparison
+      int openTotalMinutes = openHour * 60 + openMinute;
+      int closeTotalMinutes = closeHour * 60 + closeMinute;
+
+      // If closing time (in minutes) is less than or equal to opening time,
+      // it means closing is on the next day
+      return closeTotalMinutes <= openTotalMinutes;
     } catch (e) {
       return false;
     }

@@ -51,7 +51,7 @@ class SlotViewModel extends GetxController {
     final startDate = normalizedToday.subtract(Duration(days: 1));
 
     // Generate 60 days starting from yesterday
-    dates = List.generate(60, (i) => startDate.add(Duration(days: i)));
+    dates = List.generate(30, (i) => startDate.add(Duration(days: i)));
 
     print('📅 Dates generated from: ${_formatDate(dates.first)} to ${_formatDate(dates.last)}');
     print('📅 Today is: ${_formatDate(normalizedToday)}');

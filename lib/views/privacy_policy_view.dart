@@ -8,9 +8,33 @@ class PrivacyPolicyView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
-    double horizontalPadding = screenWidth > 600 ? screenWidth * 0.15 : 20.0;
+    bool isTablet = screenWidth > 600;
+    double horizontalPadding = isTablet ? screenWidth * 0.15 : 20.0;
 
     return Scaffold(
+      // ✅ Pinned AppBar — header never scrolls away
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          'Privacy Policy',
+          style: TextStyle(
+            fontSize: isTablet ? 22 : 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: Colors.grey.shade200),
+        ),
+      ),
       body: Container(
         height: double.infinity,
         width: double.infinity,
@@ -22,6 +46,7 @@ class PrivacyPolicyView extends StatelessWidget {
           ),
         ),
         child: SafeArea(
+          top: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
@@ -29,30 +54,23 @@ class PrivacyPolicyView extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 padding: EdgeInsets.symmetric(
                   horizontal: horizontalPadding,
-                  vertical: 20,
+                  vertical: 24,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      children: [
-                        IconButton(
-                          onPressed: () => Get.back(),
-                          icon: const Icon(Icons.arrow_back_ios_new),
-                        ),
-                        const Text(
-                          'Privacy Policy',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
+                    // ✅ Big decorative title
+                    Text(
+                      'Privacy Policy',
+                      style: TextStyle(
+                        fontSize: isTablet ? 32 : 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    // ✅ Underline starts from left edge — no margin offset
                     Container(
-                      margin: const EdgeInsets.only(left: 10),
                       height: 4,
                       width: 60,
                       decoration: BoxDecoration(
@@ -64,7 +82,7 @@ class PrivacyPolicyView extends StatelessWidget {
                     Text(
                       "Book Your Turf is committed to protecting your privacy. This policy explains how we handle your information.",
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: isTablet ? 16 : 15,
                         height: 1.5,
                         color: Colors.grey[800],
                         fontStyle: FontStyle.italic,
@@ -76,53 +94,66 @@ class PrivacyPolicyView extends StatelessWidget {
                       "Booking: Turf schedules and Transaction history.",
                       "Location: To show nearby venues and turfs.",
                       "Device: OS type, app statistics, and IP address.",
-                    ]),
+                    ], isTablet),
                     _buildSection("How We Use Your Information", [
                       "To process bookings and secure payments.",
                       "To display nearby venues based on location.",
                       "To send booking confirmations and reminders.",
                       "To improve app experience and prevent fraud.",
-                    ]),
+                    ], isTablet),
                     _buildSection("Payment Security", [
                       "Supported: GPay, PhonePe, UPI, Cards, Netbanking.",
                       "We do NOT store sensitive payment details locally.",
                       "All transactions are processed via secure 3rd-party gateways.",
-                    ]),
+                    ], isTablet),
                     _buildSection("Data Sharing", [
                       "Shared only with Turf Owners (booking details only).",
                       "Shared with payment gateways for transactions.",
                       "We never sell, rent, or trade your personal data.",
-                    ]),
+                    ], isTablet),
                     _buildSection("User Rights", [
                       "Access and update your personal data anytime.",
                       "Opt-out of promotional notifications.",
                       "Directly delete your account from the app.",
-                    ]),
+                    ], isTablet),
                     const Divider(height: 60, thickness: 1),
                     Center(
                       child: Column(
                         children: [
-                          const Text(
+                          Text(
                             "CONTACT US",
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               letterSpacing: 1.2,
+                              fontSize: isTablet ? 15 : 13,
                             ),
                           ),
                           const SizedBox(height: 10),
-                          const Text(
+                          Text(
                             "Email: nottaminfotech@gmail.com",
-                            style: TextStyle(color: Colors.blueAccent),
+                            style: TextStyle(
+                              color: Colors.blueAccent,
+                              fontSize: isTablet ? 15 : 13,
+                            ),
                           ),
                           const SizedBox(height: 15),
-                          const Text('Owned by'),
-                          const Text(
+                          Text(
+                            'Owned by',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: isTablet ? 13 : 12,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
                             "NOTTAM INFOTECH PRIVATE LIMITED",
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontFamily: 'Balloon',
-                              fontSize: 14,
-                              color: Color(0xFF387135),
+                              fontWeight: FontWeight.bold,
+                              fontSize: isTablet ? 16 : 14,
+                              letterSpacing: 1.1,
+                              color: const Color(0xFF387135),
                             ),
                           ),
                         ],
@@ -139,7 +170,7 @@ class PrivacyPolicyView extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(String title, List<String> points) {
+  Widget _buildSection(String title, List<String> points, bool isTablet) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
@@ -147,15 +178,15 @@ class PrivacyPolicyView extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: isTablet ? 20 : 18,
               fontWeight: FontWeight.bold,
               color: AppColors.primary,
             ),
           ),
           const SizedBox(height: 12),
           ...points.map(
-            (point) => Padding(
+                (point) => Padding(
               padding: const EdgeInsets.only(bottom: 10.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -172,9 +203,9 @@ class PrivacyPolicyView extends StatelessWidget {
                   Expanded(
                     child: Text(
                       point,
-                      style: const TextStyle(
-                        fontSize: 14,
-                        height: 1.4,
+                      style: TextStyle(
+                        fontSize: isTablet ? 15 : 14,
+                        height: 1.5,
                         color: Colors.black87,
                       ),
                     ),

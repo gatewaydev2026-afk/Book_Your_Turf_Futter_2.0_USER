@@ -1,4 +1,4 @@
-// widgets/turf_card.dart - COMPLETE FIX (Space removed below button)
+// widgets/turf_card.dart - RenderFlex Overflow Fixed
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -44,17 +44,17 @@ class TurfCard extends StatelessWidget {
             ),
           ],
         ),
+        // ✅ Column fills the grid cell — no mainAxisSize: min
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Section
+            // ── Image Section ──────────────────────────────────────
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
               child: SizedBox(
-                height: 150,
+                height: 130, // ✅ Reduced from 150 → gives content more room
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
@@ -76,8 +76,11 @@ class TurfCard extends StatelessWidget {
                     )
                         : Container(
                       color: Colors.grey[200],
-                      child: const Icon(Icons.sports_soccer, size: 30),
+                      child:
+                      const Icon(Icons.sports_soccer, size: 30),
                     ),
+
+                    // Verified badge
                     if (latestTurf.showVerifiedBadge)
                       Positioned(
                         top: 6,
@@ -101,6 +104,8 @@ class TurfCard extends StatelessWidget {
                           ),
                         ),
                       ),
+
+                    // Favourite button
                     if (latestTurf.isBookable)
                       Positioned(
                         top: 6,
@@ -124,12 +129,15 @@ class TurfCard extends StatelessWidget {
                               isFavorited
                                   ? Icons.favorite
                                   : Icons.favorite_border,
-                              color: isFavorited ? Colors.red : Colors.grey,
-                              size: 18,
+                              color:
+                              isFavorited ? Colors.red : Colors.grey,
+                              size: 16,
                             ),
                           ),
                         ),
                       ),
+
+                    // Enquiry badge
                     if (!latestTurf.isBookable)
                       Positioned(
                         bottom: 4,
@@ -158,143 +166,153 @@ class TurfCard extends StatelessWidget {
               ),
             ),
 
-            // Content Section
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Turf name
-                  Text(
-                    latestTurf.name,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 12,
-                    ),
-                  ),
-                  const SizedBox(height: 2),
-                  // Address
-                  Row(
-                    children: [
-                      const Icon(
-                        Icons.location_on,
-                        size: 9,
-                        color: Colors.grey,
-                      ),
-                      const SizedBox(width: 2),
-                      Expanded(
-                        child: Text(
-                          "${latestTurf.address.split(',').length > 1 ? latestTurf.address.split(',')[1].trim() : latestTurf.address}, "
-                              "${latestTurf.district}",
-                          style: const TextStyle(
-                            fontSize: 9,
-                            color: Colors.grey,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                        ),
-                      ),
-                    ],
-                  ),
-                  // Distance
-                  if (latestTurf.showVerifiedBadge &&
-                      homeVm.currentLocation.value != null &&
-                      latestTurf.latitude != null &&
-                      latestTurf.longitude != null)
-                    Padding(
-                      padding: const EdgeInsets.only(top: 1),
-                      child: Row(
-                        children: [
-                          Icon(
-                            Icons.directions_walk,
-                            size: 9,
-                            color: Colors.green.shade600,
-                          ),
-                          const SizedBox(width: 2),
-                          Expanded(
-                            child: Text(
-                              homeVm.getDistanceString(latestTurf),
-                              style: TextStyle(
-                                fontSize: 8,
-                                color: Colors.green.shade600,
-                              ),
-                              maxLines: 1,
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  const SizedBox(height: 2),
-                  // Game type chip
-                  Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 5,
-                      vertical: 1,
-                    ),
-                    decoration: BoxDecoration(
-                      color: Colors.green.shade50,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      latestTurf.gameType.isNotEmpty
-                          ? latestTurf.gameType
-                          : 'Contact',
-                      style: TextStyle(
-                        fontSize: 8,
-                        color: Colors.green.shade700,
-                      ),
+            // ── Content Section ────────────────────────────────────
+            // ✅ Expanded fills remaining height → no overflow
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Turf name
+                    Text(
+                      latestTurf.name,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  // Action Button - SPACE REMOVED
-                  SizedBox(
-                    width: double.infinity,
-                    height: 26,
-                    child: ElevatedButton(
-                      onPressed: _handleTap,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: latestTurf.isBookable
-                            ? Colors.green
-                            : Colors.blue,
-                        foregroundColor: Colors.white,
-                        padding: EdgeInsets.zero,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(5),
-                        ),
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        minimumSize: const Size(0, 26),
-                        elevation: 0, // ✅ Remove shadow that creates space
-                        shadowColor: Colors.transparent, // ✅ Transparent shadow
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12,
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.center,
-                        children: [
-                          Icon(
-                            latestTurf.isBookable
-                                ? Icons.calendar_today
-                                : Icons.info,
-                            size: 9,
-                          ),
-                          const SizedBox(width: 3),
-                          Text(
-                            latestTurf.isBookable ? 'Book Now' : 'View Details',
+                    ),
+                    const SizedBox(height: 3),
+
+                    // Address
+                    Row(
+                      children: [
+                        const Icon(
+                          Icons.location_on,
+                          size: 9,
+                          color: Colors.grey,
+                        ),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Text(
+                            "${latestTurf.address.split(',').length > 1 ? latestTurf.address.split(',')[1].trim() : latestTurf.address}, "
+                                "${latestTurf.district}",
                             style: const TextStyle(
                               fontSize: 9,
-                              fontWeight: FontWeight.bold,
+                              color: Colors.grey,
                             ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
                           ),
-                        ],
+                        ),
+                      ],
+                    ),
+
+                    // Distance (conditional)
+                    if (latestTurf.showVerifiedBadge &&
+                        homeVm.currentLocation.value != null &&
+                        latestTurf.latitude != null &&
+                        latestTurf.longitude != null)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 2),
+                        child: Row(
+                          children: [
+                            Icon(
+                              Icons.directions_walk,
+                              size: 9,
+                              color: Colors.green.shade600,
+                            ),
+                            const SizedBox(width: 2),
+                            Expanded(
+                              child: Text(
+                                homeVm.getDistanceString(latestTurf),
+                                style: TextStyle(
+                                  fontSize: 8,
+                                  color: Colors.green.shade600,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+
+                    const SizedBox(height: 4),
+
+                    // Game type chip
+                    Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 5,
+                        vertical: 2,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.green.shade50,
+                        borderRadius: BorderRadius.circular(6),
+                      ),
+                      child: Text(
+                        latestTurf.gameType.isNotEmpty
+                            ? latestTurf.gameType
+                            : 'Contact',
+                        style: TextStyle(
+                          fontSize: 8,
+                          color: Colors.green.shade700,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                  ),
-                  // ✅ NO space after button
-                ],
+
+                    // ✅ Spacer pushes button to bottom of Expanded area
+                    const Spacer(),
+
+                    // Action Button
+                    SizedBox(
+                      width: double.infinity,
+                      height: 26,
+                      child: ElevatedButton(
+                        onPressed: _handleTap,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: latestTurf.isBookable
+                              ? Colors.green
+                              : Colors.blue,
+                          foregroundColor: Colors.white,
+                          padding: EdgeInsets.zero,
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(5),
+                          ),
+                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                          minimumSize: const Size(0, 26),
+                          elevation: 0,
+                          shadowColor: Colors.transparent,
+                        ),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              latestTurf.isBookable
+                                  ? Icons.calendar_today
+                                  : Icons.info,
+                              size: 9,
+                            ),
+                            const SizedBox(width: 3),
+                            Text(
+                              latestTurf.isBookable
+                                  ? 'Book Now'
+                                  : 'View Details',
+                              style: const TextStyle(
+                                fontSize: 9,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ],

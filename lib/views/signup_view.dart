@@ -725,6 +725,7 @@ class _SignupViewState extends State<SignupView> {
                   ),
                 ),
               ),
+              SizedBox(height: 30,)
             ],
           ),
         );
@@ -757,6 +758,7 @@ class _SignupViewState extends State<SignupView> {
                   ),
                 ),
               ),
+              SizedBox(height: 30,)
             ],
           ),
         );

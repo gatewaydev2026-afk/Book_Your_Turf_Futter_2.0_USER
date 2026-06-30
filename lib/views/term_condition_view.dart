@@ -8,9 +8,41 @@ class TermConditionView extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     double screenWidth = MediaQuery.of(context).size.width;
-    double horizontalPadding = screenWidth > 600 ? screenWidth * 0.15 : 20.0;
+    bool isTablet = screenWidth > 600;
+    double horizontalPadding = isTablet ? screenWidth * 0.15 : 20.0;
+
+    double titleFontSize = isTablet ? 32 : 28;
+    double headerFontSize = isTablet ? 22 : 20;
+    double sectionTitleFontSize = isTablet ? 20 : 18;
+    double bodyFontSize = isTablet ? 16 : 14;
+    double subTextFontSize = isTablet ? 16 : 15;
+    double companyFontSize = isTablet ? 16 : 14;
+    double ownedByFontSize = isTablet ? 13 : 12;
 
     return Scaffold(
+      // ✅ Pinned AppBar — header never scrolls away
+      appBar: AppBar(
+        backgroundColor: Colors.white,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
+          onPressed: () => Get.back(),
+        ),
+        title: Text(
+          'Terms & Conditions',
+          style: TextStyle(
+            fontSize: isTablet ? 22 : 18,
+            fontWeight: FontWeight.bold,
+            color: Colors.black,
+          ),
+        ),
+        centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: Colors.grey.shade200),
+        ),
+      ),
       body: Container(
         height: double.infinity,
         width: double.infinity,
@@ -22,6 +54,7 @@ class TermConditionView extends StatelessWidget {
           ),
         ),
         child: SafeArea(
+          top: false,
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
@@ -29,32 +62,23 @@ class TermConditionView extends StatelessWidget {
                 physics: const BouncingScrollPhysics(),
                 padding: EdgeInsets.symmetric(
                   horizontal: horizontalPadding,
-                  vertical: 20,
+                  vertical: 24,
                 ),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.start,
-                      children: [
-                        IconButton(
-                          icon: const Icon(Icons.arrow_back_ios_new),
-                          onPressed: () => Get.back(),
-                        ),
-                        const SizedBox(width: 4),
-                        const Text(
-                          'Terms & Conditions',
-                          style: TextStyle(
-                            fontSize: 28,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black,
-                          ),
-                        ),
-                      ],
+                    // ✅ Big title inside scroll (decorative)
+                    Text(
+                      'Terms & Conditions',
+                      style: TextStyle(
+                        fontSize: titleFontSize,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black,
+                      ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 6),
+                    // ✅ Underline starts from left edge — no offset margin
                     Container(
-                      margin: const EdgeInsets.only(left: 50),
                       height: 4,
                       width: 60,
                       decoration: BoxDecoration(
@@ -63,11 +87,11 @@ class TermConditionView extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 25),
-                    _buildHeader("Welcome to Book Your Turf"),
+                    _buildHeader("Welcome to Book Your Turf", headerFontSize),
                     Text(
                       "The online platform that helps you easily book your sports venues for Box Cricket, Football, Badminton & more.",
                       style: TextStyle(
-                        fontSize: 15,
+                        fontSize: subTextFontSize,
                         height: 1.5,
                         color: Colors.grey[800],
                       ),
@@ -78,36 +102,36 @@ class TermConditionView extends StatelessWidget {
                       "Valid only for the selected time slot & date.",
                       "Arrive 10–15 minutes before the slot time.",
                       "Playtime starts and ends as per the allotted schedule.",
-                    ]),
+                    ], sectionTitleFontSize, bodyFontSize),
                     _buildSection("Payment Terms", [
                       "Payments must be made through our secure gateway.",
                       "Prices include applicable taxes and convenience charges.",
                       "We are not responsible for network-related payment failures.",
-                    ]),
+                    ], sectionTitleFontSize, bodyFontSize),
                     _buildSection("Cancellation & Refund", [
-                      " Cancellation is NOT allowed for bookings made within 6 hours of the slot start time (instant bookings).",
-                      " For advance bookings (made more than 6 hours before slot time), cancellation is allowed up to 6 hours before the start time.",
-                      " No cancellation charges apply for eligible cancellations.",
-                      " Upon successful cancellation, the full money will be credited to your wallet as refund credits.",
-                      "️ Wallet credits can be used for future bookings and have no expiry date.",
-                      " Refund credits will be processed instantly to your wallet upon cancellation confirmation.",
-                      " Once booked, if you do not show up or fail to play, no refund or wallet credit will be provided.",
-                    ]),
+                      "Cancellation is NOT allowed for bookings made within 6 hours of the slot start time (instant bookings).",
+                      "For advance bookings (made more than 6 hours before slot time), cancellation is allowed up to 6 hours before the start time.",
+                      "No cancellation charges apply for eligible cancellations.",
+                      "Upon successful cancellation, the full money will be credited to your wallet as refund credits.",
+                      "Wallet credits can be used for future bookings and have no expiry date.",
+                      "Refund credits will be processed instantly to your wallet upon cancellation confirmation.",
+                      "Once booked, if you do not show up or fail to play, no refund or wallet credit will be provided.",
+                    ], sectionTitleFontSize, bodyFontSize),
                     _buildSection("User Responsibilities", [
                       "Follow venue rules (dress code, footwear, etc.).",
                       "Damage to property (nets, lights, grass) will be charged.",
                       "Alcohol, smoking, or abusive behavior is strictly prohibited.",
-                    ]),
+                    ], sectionTitleFontSize, bodyFontSize),
                     _buildSection("Liability Disclaimer", [
                       "Book Your Turf is a platform; we are not liable for on-ground injuries.",
                       "Venue management is responsible for safety and maintenance.",
-                    ]),
+                    ], sectionTitleFontSize, bodyFontSize),
                     _buildSection("Wallet Credits Policy", [
                       "Wallet credits are non-transferable to other accounts.",
                       "Credits cannot be withdrawn as cash - only usable for bookings.",
                       "Credits will be automatically applied to your next booking.",
                       "In case of disputes, the decision of Book Your Turf management will be final.",
-                    ]),
+                    ], sectionTitleFontSize, bodyFontSize),
                     const Divider(height: 60, thickness: 1),
                     Center(
                       child: Column(
@@ -116,7 +140,7 @@ class TermConditionView extends StatelessWidget {
                             'Owned by',
                             style: TextStyle(
                               color: Colors.grey[700],
-                              fontSize: 12,
+                              fontSize: ownedByFontSize,
                             ),
                           ),
                           const SizedBox(height: 4),
@@ -126,7 +150,7 @@ class TermConditionView extends StatelessWidget {
                             style: TextStyle(
                               fontFamily: 'Balloon',
                               fontWeight: FontWeight.bold,
-                              fontSize: 14,
+                              fontSize: companyFontSize,
                               letterSpacing: 1.1,
                               color: AppColors.primary,
                             ),
@@ -145,7 +169,8 @@ class TermConditionView extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(String title, List<String> points) {
+  Widget _buildSection(String title, List<String> points,
+      double sectionTitleFontSize, double bodyFontSize) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
@@ -153,8 +178,8 @@ class TermConditionView extends StatelessWidget {
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
+            style: TextStyle(
+              fontSize: sectionTitleFontSize,
               fontWeight: FontWeight.bold,
               color: AppColors.primary,
             ),
@@ -177,7 +202,10 @@ class TermConditionView extends StatelessWidget {
                       point.startsWith('🔄') ? Icons.refresh :
                       point.startsWith('🚫') ? Icons.block :
                       Icons.circle,
-                      size: point.startsWith('❌') || point.startsWith('✅') || point.startsWith('💰') || point.startsWith('💳') || point.startsWith('⏱️') || point.startsWith('🔄') || point.startsWith('🚫') ? 16 : 6,
+                      size: point.startsWith('❌') || point.startsWith('✅') ||
+                          point.startsWith('💰') || point.startsWith('💳') ||
+                          point.startsWith('⏱️') || point.startsWith('🔄') ||
+                          point.startsWith('🚫') ? 16 : 6,
                       color: point.startsWith('❌') ? Colors.red :
                       point.startsWith('✅') ? Colors.green :
                       point.startsWith('💰') ? Colors.orange :
@@ -191,11 +219,11 @@ class TermConditionView extends StatelessWidget {
                   const SizedBox(width: 12),
                   Expanded(
                     child: Text(
-                      point,
+                      _stripLeadingEmoji(point),
                       style: TextStyle(
-                        fontSize: 14,
-                        height: 1.4,
-                        color: Colors.grey[800], // Common color for all text
+                        fontSize: bodyFontSize,
+                        height: 1.5,
+                        color: Colors.grey[800],
                       ),
                     ),
                   ),
@@ -208,13 +236,24 @@ class TermConditionView extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(String text) {
+  String _stripLeadingEmoji(String point) {
+    final prefixes = ['❌ ', '✅ ', '💰 ', '💳 ', '⏱️ ', '🔄 ', '🚫 ',
+      '❌', '✅', '💰', '💳', '⏱️', '🔄', '🚫', '️ '];
+    for (final prefix in prefixes) {
+      if (point.startsWith(prefix)) {
+        return point.substring(prefix.length).trim();
+      }
+    }
+    return point;
+  }
+
+  Widget _buildHeader(String text, double fontSize) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 10.0),
       child: Text(
         text,
-        style: const TextStyle(
-          fontSize: 20,
+        style: TextStyle(
+          fontSize: fontSize,
           fontWeight: FontWeight.bold,
           letterSpacing: -0.5,
           color: Colors.black87,

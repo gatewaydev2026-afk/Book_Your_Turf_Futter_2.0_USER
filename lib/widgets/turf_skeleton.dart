@@ -1,4 +1,4 @@
-// widgets/turf_skeleton.dart - MATCHES TURFCARD EXACTLY
+// widgets/turf_skeleton.dart - Matches fixed TurfCard exactly
 
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -23,73 +23,76 @@ class TurfSkeleton extends StatelessWidget {
             ),
           ],
         ),
+        // ✅ Column (no mainAxisSize: min) — matches fixed TurfCard
         child: Column(
-          mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            // Image Section - matches TurfCard height
+            // Image skeleton — matches reduced height 130
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
               child: Container(
-                height: 120,
+                height: 130,
                 width: double.infinity,
                 color: Colors.white,
               ),
             ),
 
-            // Content Section - matches TurfCard padding
-            Padding(
-              padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  // Turf name skeleton
-                  Container(
-                    width: double.infinity,
-                    height: 14, // matches font size 12 + some margin
-                    color: Colors.white,
-                  ),
-                  const SizedBox(height: 2),
+            // Content skeleton — Expanded like TurfCard
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    // Name skeleton
+                    Container(
+                      width: double.infinity,
+                      height: 12,
+                      color: Colors.white,
+                    ),
+                    const SizedBox(height: 3),
 
-                  // Address skeleton
-                  Row(
-                    children: [
-                      Container(width: 9, height: 9, color: Colors.white), // icon placeholder
-                      const SizedBox(width: 2),
-                      Expanded(
-                        child: Container(
-                          height: 11, // matches font size 9 + margin
-                          color: Colors.white,
+                    // Address skeleton
+                    Row(
+                      children: [
+                        Container(width: 9, height: 9, color: Colors.white),
+                        const SizedBox(width: 2),
+                        Expanded(
+                          child: Container(
+                            height: 9,
+                            color: Colors.white,
+                          ),
                         ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+
+                    // Game type chip skeleton
+                    Container(
+                      width: 60,
+                      height: 16,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(6),
                       ),
-                    ],
-                  ),
-                  const SizedBox(height: 2),
-
-                  // Game type chip skeleton
-                  Container(
-                    width: 60, // approximate width for game type
-                    height: 16, // matches chip height
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(6),
                     ),
-                  ),
-                  const SizedBox(height: 4),
 
-                  // Action Button skeleton - matches button height
-                  Container(
-                    width: double.infinity,
-                    height: 26, // matches button height
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(5),
+                    // Spacer matches TurfCard
+                    const Spacer(),
+
+                    // Button skeleton
+                    Container(
+                      width: double.infinity,
+                      height: 26,
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(5),
+                      ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],

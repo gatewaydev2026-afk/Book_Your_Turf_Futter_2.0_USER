@@ -13,6 +13,29 @@ class AboutUsView extends StatelessWidget {
     double horizontalPadding = screenWidth > 600 ? screenWidth * 0.15 : 20.0;
 
     return Scaffold(
+      // ✅ Pinned AppBar — always visible, never scrolls away
+      appBar: AppBar(
+        backgroundColor: Colors.green,
+        elevation: 0,
+        surfaceTintColor: Colors.transparent,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back_ios_new, color: Colors.black),
+          onPressed: () => Get.back(),
+        ),
+        title: const Text(
+          "App Info",
+          style: TextStyle(
+            color: Colors.black,
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        centerTitle: false,
+        bottom: PreferredSize(
+          preferredSize: const Size.fromHeight(1),
+          child: Divider(height: 1, color: Colors.grey.shade200),
+        ),
+      ),
       body: Container(
         height: double.infinity,
         width: double.infinity,
@@ -24,7 +47,7 @@ class AboutUsView extends StatelessWidget {
           ),
         ),
         child: SafeArea(
-          top: false,
+          top: false, // AppBar handles top safe area
           child: Center(
             child: ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 800),
@@ -36,26 +59,7 @@ class AboutUsView extends StatelessWidget {
                 ),
                 child: Column(
                   children: [
-                    Row(
-                      children: [
-                        GestureDetector(
-                          onTap: () => Get.back(),
-                          child: const Icon(
-                            Icons.arrow_back_ios_new,
-                            color: Colors.black,
-                          ),
-                        ),
-                        const SizedBox(width: 10),
-                        const Text(
-                          "App Info",
-                          style: TextStyle(
-                            color: Colors.black,
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ],
-                    ),
+                    // Logo
                     Image.asset(
                       'assets/logo.png',
                       height: 120,
@@ -90,7 +94,7 @@ class AboutUsView extends StatelessWidget {
                         ),
                         const SizedBox(height: 10),
                         Text(
-                          "book_your_turf is a smart and modern sports booking app designed for players, teams, and sports enthusiasts who want quick, easy, and reliable access to nearby sports venues. The app helps you discover sports courts, grounds, turfs, and arenas around you — with real-time availability, transparent pricing, and instant online booking.",
+                          "Book Your Turf is a smart and modern sports booking app designed for players, teams, and sports enthusiasts who want quick, easy, and reliable access to nearby sports venues. The app helps you discover sports courts, grounds, turfs, and arenas around you — with real-time availability, transparent pricing, and instant online booking.",
                           style: TextStyle(
                             fontSize: 15,
                             height: 1.5,
@@ -99,7 +103,7 @@ class AboutUsView extends StatelessWidget {
                         ),
                         const SizedBox(height: 15),
                         Text(
-                          "Whether you play Football, Box Cricket, Badminton, Futsal and soon Tennis, Pickle Ball, Basketball, Skating, Billiards, Swimming, or any other indoor/outdoor sport — book_your_turf helps you find and book the perfect spot, slot and sports in seconds.",
+                          "Whether you play Football, Box Cricket, Badminton, Futsal and soon Tennis, Pickle Ball, Basketball, Skating, Billiards, Swimming, or any other indoor/outdoor sport — Book Your Turf helps you find and book the perfect spot, slot and sport in seconds.",
                           style: TextStyle(
                             fontSize: 15,
                             height: 1.5,
@@ -110,7 +114,7 @@ class AboutUsView extends StatelessWidget {
                         _buildFeatureBox(
                           title: "Secure Payments",
                           content:
-                              "To make the experience even smoother, book_your_turf offers easy-access payment options including GPay, PhonePe, UPI QR, and Cards.",
+                          "To make the experience even smoother, Book Your Turf offers easy-access payment options including GPay, PhonePe, UPI QR, and Cards.",
                           icon: Icons.account_balance_wallet_outlined,
                         ),
                       ],
@@ -132,7 +136,6 @@ class AboutUsView extends StatelessWidget {
                         color: Color(0xFF387135),
                       ),
                     ),
-
                     const SizedBox(height: 40),
                   ],
                 ),
