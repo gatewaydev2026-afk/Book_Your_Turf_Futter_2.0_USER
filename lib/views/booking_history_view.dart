@@ -108,18 +108,11 @@ class BookingHistoryView extends StatelessWidget {
       DateTime slotStartDateTime;
       if (isNextDay) {
         slotStartDateTime = DateTime(
-            slotDate.year,
-            slotDate.month,
-            slotDate.day,
-            hour, minute
-        ).add(const Duration(days: 1));
+            slotDate.year, slotDate.month, slotDate.day, hour, minute)
+            .add(const Duration(days: 1));
       } else {
         slotStartDateTime = DateTime(
-            slotDate.year,
-            slotDate.month,
-            slotDate.day,
-            hour, minute
-        );
+            slotDate.year, slotDate.month, slotDate.day, hour, minute);
       }
 
       final minutesDifference = slotStartDateTime.difference(now).inMinutes;
@@ -562,17 +555,24 @@ class BookingHistoryView extends StatelessWidget {
     final canCancel = !b.isCancelled && !b.isCompleted && canCancelByRule;
 
     String? cancelDisabledReason;
+    String? cancelTimeRemainingLabel;
     if (!b.isCancelled && !b.isCompleted && !canCancelByRule) {
       final earliestSlot = _getEarliestSlotDateTime(b);
       if (earliestSlot != null) {
         final now = DateTime.now();
         final diff = earliestSlot.difference(now);
+        final totalMinutesLeft = diff.inMinutes;
         final hoursLeft = diff.inHours;
-        final minutesLeft = diff.inMinutes;
-        if (minutesLeft < 360 && minutesLeft > 0) {
-          cancelDisabledReason = 'Cancellation only allowed 6+ hours before slot time (${hoursLeft}h ${minutesLeft % 60}m left)';
-        } else if (minutesLeft <= 0) {
-          cancelDisabledReason = 'Slot time has already passed, cancellation not available';
+        final minsLeft = totalMinutesLeft % 60;
+        if (totalMinutesLeft > 0 && totalMinutesLeft < 360) {
+          cancelDisabledReason =
+          'Cancellation not allowed within 6 hours of the slot. '
+              'Your slot starts in ${hoursLeft > 0 ? '${hoursLeft}h ' : ''}${minsLeft}m.';
+          cancelTimeRemainingLabel =
+          hoursLeft > 0 ? '${hoursLeft}h ${minsLeft}m to slot' : '${minsLeft}m to slot';
+        } else if (totalMinutesLeft <= 0) {
+          cancelDisabledReason = 'Slot has already started or passed — cancellation not available';
+          cancelTimeRemainingLabel = 'Slot started';
         } else {
           cancelDisabledReason = 'Cancellation not available for this booking';
         }
@@ -723,7 +723,7 @@ class BookingHistoryView extends StatelessWidget {
                     if (canCancel)
                       Expanded(
                         child: OutlinedButton(
-                          onPressed: () => _showCancelConfirmDialog(b.id, b.bookingId),
+                          onPressed: () => _showCancelConfirmDialog(b),
                           style: OutlinedButton.styleFrom(
                             foregroundColor: Colors.red,
                             side: const BorderSide(color: Colors.red),
@@ -746,23 +746,43 @@ class BookingHistoryView extends StatelessWidget {
                       Expanded(
                         child: Tooltip(
                           message: cancelDisabledReason,
-                          child: OutlinedButton(
-                            onPressed: null,
-                            style: OutlinedButton.styleFrom(
-                              foregroundColor: Colors.grey,
-                              side: const BorderSide(color: Colors.grey),
-                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                              padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 6 : 8),
-                              minimumSize: const Size(0, 32),
-                            ),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.center,
-                              children: [
-                                const Icon(Icons.cancel, size: 14),
-                                const SizedBox(width: 4),
-                                Text("Cancel", style: TextStyle(fontSize: isSmallScreen ? 10 : 12)),
-                              ],
-                            ),
+                          child: Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              OutlinedButton(
+                                onPressed: null,
+                                style: OutlinedButton.styleFrom(
+                                  foregroundColor: Colors.grey,
+                                  side: const BorderSide(color: Colors.grey),
+                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                  padding: EdgeInsets.symmetric(vertical: isSmallScreen ? 6 : 8),
+                                  minimumSize: const Size(0, 32),
+                                ),
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    Icon(Icons.lock_clock, size: 14, color: Colors.grey.shade400),
+                                    const SizedBox(width: 4),
+                                    Text("Cancel", style: TextStyle(fontSize: isSmallScreen ? 10 : 12, color: Colors.grey.shade400)),
+                                  ],
+                                ),
+                              ),
+                              if (cancelTimeRemainingLabel != null)
+                                Padding(
+                                  padding: const EdgeInsets.only(top: 3),
+                                  child: Row(
+                                    mainAxisAlignment: MainAxisAlignment.center,
+                                    children: [
+                                      Icon(Icons.timer_outlined, size: 10, color: Colors.red.shade400),
+                                      const SizedBox(width: 3),
+                                      Text(
+                                        cancelTimeRemainingLabel!,
+                                        style: TextStyle(fontSize: isSmallScreen ? 8 : 9, color: Colors.red.shade400, fontWeight: FontWeight.w600),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                            ],
                           ),
                         ),
                       ),
@@ -1154,27 +1174,156 @@ class BookingHistoryView extends StatelessWidget {
 
   // ==================== CANCEL CONFIRMATION ====================
 
-  void _showCancelConfirmDialog(int bookingId, String bookingCode) {
+  void _showCancelConfirmDialog(BookingModel booking) {
+    final bookingId = booking.id;
+    final bookingCode = booking.bookingId;
+    final isFullyPaid = booking.paymentStatus == "Fully Paid";
+    final isAdvancePaid = booking.paymentStatus == "Advance Paid";
+    final paidAmount = booking.paidAmount;
+
+    // Build refund message based on payment type
+    Widget _refundInfoWidget() {
+      if (isFullyPaid) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.green.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.check_circle, size: 14, color: Colors.green.shade700),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Full Payment Refund',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₹${_formatPrice(paidAmount)} will be refunded to your wallet',
+                    style: TextStyle(fontSize: 11, color: Colors.green.shade700),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }
+
+      if (isAdvancePaid) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Colors.orange.shade50,
+                borderRadius: BorderRadius.circular(8),
+                border: Border.all(color: Colors.orange.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.info_outline, size: 14, color: Colors.orange.shade700),
+                      const SizedBox(width: 6),
+                      Text(
+                        'Advance Payment Refund',
+                        style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    '₹${_formatPrice(paidAmount)} (advance paid) will be refunded to your wallet',
+                    style: TextStyle(fontSize: 11, color: Colors.orange.shade700),
+                  ),
+                  const SizedBox(height: 2),
+                  Text(
+                    'Remaining balance payment is not required after cancellation',
+                    style: TextStyle(fontSize: 10, color: Colors.orange.shade600),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }
+
+      // No payment made (pending state)
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(10),
+        decoration: BoxDecoration(
+          color: Colors.grey.shade50,
+          borderRadius: BorderRadius.circular(8),
+          border: Border.all(color: Colors.grey.shade300),
+        ),
+        child: Row(
+          children: [
+            Icon(Icons.info_outline, size: 14, color: Colors.grey.shade600),
+            const SizedBox(width: 6),
+            Expanded(
+              child: Text(
+                'No payment was made — booking will be cancelled',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text("Cancel Booking"),
         content: Column(
           mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text("Cancel booking #$bookingCode?", style: const TextStyle(fontSize: 16)),
+            Text("Cancel booking #$bookingCode?", style: const TextStyle(fontSize: 15)),
             const SizedBox(height: 12),
+            _refundInfoWidget(),
+            const SizedBox(height: 10),
             Container(
+              width: double.infinity,
               padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
-              child: const Text("Refund will be credited to your wallet", style: TextStyle(fontSize: 11, color: Colors.orange)),
+              decoration: BoxDecoration(
+                color: Colors.red.shade50,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 14, color: Colors.red.shade700),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'This action cannot be undone',
+                      style: TextStyle(fontSize: 10, color: Colors.red.shade700),
+                    ),
+                  ),
+                ],
+              ),
             ),
           ],
         ),
         actions: [
           TextButton(
-              onPressed: () => Get.back(),
-              child: const Text("No")
+            onPressed: () => Get.back(),
+            child: const Text("No"),
           ),
           Obx(
                 () => ElevatedButton(
@@ -1192,7 +1341,7 @@ class BookingHistoryView extends StatelessWidget {
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
               child: vm.isCancelling.value
                   ? const SizedBox(width: 20, height: 20, child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                  : const Text("Yes",style: TextStyle(color: Colors.white),),
+                  : const Text("Yes, Cancel", style: TextStyle(color: Colors.white)),
             ),
           ),
         ],
@@ -1503,7 +1652,7 @@ class BookingHistoryView extends StatelessWidget {
                       child: ElevatedButton(
                         onPressed: () {
                           Get.back();
-                          _showCancelConfirmDialog(b.id, b.bookingId);
+                          _showCancelConfirmDialog(b);
                         },
                         style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
                         child: const Text("Cancel Booking"),
