@@ -1,6 +1,8 @@
-// main.dart - Complete Final Version with Permanent Device ID
+// main.dart - Complete Final Version with Permanent Device ID & Discount Support
 // ✅ Device ID stored in SharedPreferences - NEVER changes
 // ✅ ONE ID PER DEVICE - FOREVER
+// ✅ DiscountViewModel registered
+// ✅ FavoritesViewModel registered
 
 import 'package:book_your_turf/services/chat_bot_service.dart';
 import 'package:book_your_turf/services/device_manager.dart';
@@ -29,10 +31,20 @@ import 'view_models/profile_view_model.dart';
 import 'view_models/main_page_view_model.dart';
 import 'view_models/wallet_view_model.dart';
 import 'view_models/coin_view_model.dart';
+import 'view_models/discount_view_model.dart';
+import 'view_models/favorites_view_model.dart'; // ✅ NEW: FavoritesViewModel
 import 'firebase_options.dart';
 
 bool _isAppInitialized = false;
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
+
+// ✅ Razorpay configuration using environment variables
+class RazorpayConfig {
+  static const String key = String.fromEnvironment(
+    'RAZORPAY_KEY',
+    defaultValue: 'rzp_test_xxxxxx', // Test key for development
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -183,7 +195,7 @@ Future<void> initDependencies() async {
   print('╚════════════════════════════════════════════════════════════╝');
 
   final dio = Dio(BaseOptions(
-    baseUrl: 'https://backend.arcmedialabs.in/api',
+    baseUrl: 'https://test.backend.arcmedialabs.in/api',
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(seconds: 30),
     sendTimeout: const Duration(seconds: 30),
@@ -199,6 +211,8 @@ Future<void> initDependencies() async {
       }
       if (kDebugMode) {
         print('📡 API ${options.method} ${options.path}');
+        print('📡 FULL URL: ${options.uri}');
+        print('📡 AUTH TOKEN: ${options.headers['Authorization']}');
       }
       return handler.next(options);
     },
@@ -273,6 +287,18 @@ Future<void> initDependencies() async {
   if (!Get.isRegistered<CoinViewModel>()) {
     Get.put(CoinViewModel(), permanent: true);
     print('✅ CoinViewModel registered');
+  }
+
+  // ✅ NEW: Register DiscountViewModel
+  if (!Get.isRegistered<DiscountViewModel>()) {
+    Get.put(DiscountViewModel(), permanent: true);
+    print('✅ DiscountViewModel registered');
+  }
+
+  // ✅ NEW: Register FavoritesViewModel
+  if (!Get.isRegistered<FavoritesViewModel>()) {
+    Get.put(FavoritesViewModel(), permanent: true);
+    print('✅ FavoritesViewModel registered');
   }
 
   if (!Get.isRegistered<NotificationService>()) {

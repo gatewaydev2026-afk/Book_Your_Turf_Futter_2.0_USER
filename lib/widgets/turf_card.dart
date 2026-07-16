@@ -1,4 +1,6 @@
 // widgets/turf_card.dart - RenderFlex Overflow Fixed
+// ✅ Added Discount Badge from API (best_discount_label)
+// ✅ No other changes made
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -29,6 +31,9 @@ class TurfCard extends StatelessWidget {
           (t) => t.id == turf.id,
       orElse: () => turf,
     );
+
+    // ✅ Get discount label from API
+    String discountLabel = latestTurf.bestDiscountLabel ?? '';
 
     return GestureDetector(
       onTap: _handleTap,
@@ -133,6 +138,54 @@ class TurfCard extends StatelessWidget {
                               isFavorited ? Colors.red : Colors.grey,
                               size: 16,
                             ),
+                          ),
+                        ),
+                      ),
+
+                    // ✅ NEW: Discount Badge from API (best_discount_label)
+                    if (discountLabel.isNotEmpty)
+                      Positioned(
+                        bottom: 4,
+                        left: 4,
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [Color(0xFFE65100), Color(0xFFFF6F00)],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(10),
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black.withOpacity(0.2),
+                                blurRadius: 4,
+                              ),
+                            ],
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              const Icon(
+                                Icons.local_offer,
+                                size: 8,
+                                color: Colors.white,
+                              ),
+                              const SizedBox(width: 3),
+                              Text(
+                                discountLabel,
+                                style: const TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 7,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ],
                           ),
                         ),
                       ),

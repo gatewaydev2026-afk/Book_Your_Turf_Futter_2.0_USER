@@ -119,7 +119,7 @@ class DeviceManager extends GetxService {
   }) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -159,7 +159,7 @@ class DeviceManager extends GetxService {
   }) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -236,7 +236,7 @@ class DeviceManager extends GetxService {
   Future<bool> _isSameDevice(String jwtToken, String currentDeviceName) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -271,7 +271,7 @@ class DeviceManager extends GetxService {
   Future<String?> _getExistingDeviceIdByName(String jwtToken, String deviceName) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -451,7 +451,7 @@ class DeviceManager extends GetxService {
       }
 
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -498,7 +498,7 @@ class DeviceManager extends GetxService {
     isLoading.value = true;
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
       final response = await dio.get('/api/user/devices/');
@@ -526,7 +526,7 @@ class DeviceManager extends GetxService {
     isLoading.value = true;
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in',
+        baseUrl: 'https://test.backend.arcmedialabs.in',
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
 

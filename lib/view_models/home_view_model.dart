@@ -1,4 +1,10 @@
-// home_view_model.dart - Complete Optimized Version with Duplicate Call Prevention
+// home_view_model.dart - Complete with Pagination & Location Support
+// ✅ Based on API documentation: /api/user/turfs/
+// ✅ Supports lat, lng, radius, search, pagination
+// ✅ Fixed pagination using next URL from API
+// ✅ Shows ONLY nearby turfs based on current location
+// ✅ Public getters for _hasMoreData and _currentPage
+// ✅ Sync with FavoritesViewModel
 
 import 'dart:async';
 import 'dart:convert';
@@ -19,6 +25,7 @@ class HomeViewModel extends GetxController {
   final nearbyTurfs = <TurfModel>[].obs;
   final isLoading = false.obs;
   final isRefreshing = false.obs;
+  final isLoadingMore = false.obs;
   final searchQuery = ''.obs;
   final selectedCategory = ''.obs;
   final showSuggestions = false.obs;
@@ -36,7 +43,7 @@ class HomeViewModel extends GetxController {
   bool _isRefreshingLock = false;
 
   bool _initialFetchDone = false;
-  bool _isFetching = false;  // ✅ PREVENT DUPLICATE CALLS
+  bool _isFetching = false;
   int _apiCallCount = 0;
 
   DateTime? _lastFetchTime;
@@ -45,14 +52,69 @@ class HomeViewModel extends GetxController {
   final Set<int> _favoriteIds = <int>{};
   final isFavoritesLoading = false.obs;
 
+  // ✅ Pagination - Private fields
+  int _currentPage = 1;
+  int _totalPages = 1;
+  bool _hasMoreData = true;
+  static const int _pageSize = 20;
+
+  // ✅ Public getters for pagination
+  int get currentPage => _currentPage;
+  int get totalPages => _totalPages;
+  bool get hasMoreData => _hasMoreData;
+  int get pageSize => _pageSize;
+
   static const String googleMapsApiKey = 'AIzaSyBQ6kiaROyTfm7TLKG2c_FA1XER8IVaMlY';
-  static const double MAX_DISTANCE_KM = 20.0;
+  static const double MAX_DISTANCE_KM = 25.0;
 
   @override
   void onInit() {
     super.onInit();
     print('🏠 HomeViewModel initialized');
     _loadFavoritesFromStorage();
+
+    // ✅ Get location immediately on init
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _initializeLocationAndFetch();
+    });
+  }
+
+  // ✅ New method: Initialize location and fetch turfs
+  Future<void> _initializeLocationAndFetch() async {
+    print('📍 Initializing location and fetching turfs...');
+    await getUserLocation();
+    if (currentLocation.value != null) {
+      print('📍 Location available, fetching turfs...');
+      await fetchTurfs(forceRefresh: true);
+    } else {
+      print('⚠️ Location not available, using cache if available');
+      // Try to load from cache as fallback
+      _loadFromCache();
+    }
+  }
+
+  // ✅ Load from cache as fallback
+  void _loadFromCache() {
+    if (SharedPrefsHelper.isTurfsCacheValid()) {
+      final cachedTurfsJson = SharedPrefsHelper.getCachedTurfs();
+      if (cachedTurfsJson != null) {
+        print('📦 Loading turfs from cache as fallback');
+        try {
+          final List<dynamic> cachedData = jsonDecode(cachedTurfsJson);
+          final cachedTurfs = cachedData.map((json) => TurfModel.fromJson(json)).toList();
+          final turfsWithFavorites = cachedTurfs.map((turf) {
+            return turf.copyWith(isFavorite: _favoriteIds.contains(turf.id));
+          }).toList();
+          allTurfs.assignAll(turfsWithFavorites);
+          _initialFetchDone = true;
+          _applyLocationFilter();
+          _lastFetchTime = DateTime.now();
+          print('✅ Loaded ${allTurfs.length} turfs from cache');
+        } catch (e) {
+          print('❌ Error parsing cached turfs: $e');
+        }
+      }
+    }
   }
 
   @override
@@ -70,19 +132,25 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    // ✅ Check token validity
     if (!SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired, skipping home data load');
       await SharedPrefsHelper.clearToken();
       return;
     }
 
-    // ✅ Prevent duplicate calls while fetching
     if (_isFetching && !forceRefresh) {
       print('⏭️ Home data already being fetched, skipping duplicate...');
       return;
     }
 
+    // ✅ Always fetch fresh if location is available
+    if (currentLocation.value != null) {
+      print('📍 Location available, fetching fresh data...');
+      await fetchTurfs(forceRefresh: true);
+      return;
+    }
+
+    // ✅ If no location, try cache
     if (!forceRefresh && _initialFetchDone && allTurfs.isNotEmpty) {
       if (_lastFetchTime != null) {
         final age = DateTime.now().difference(_lastFetchTime!);
@@ -91,6 +159,12 @@ class HomeViewModel extends GetxController {
           return;
         }
       }
+    }
+
+    if (forceRefresh) {
+      _currentPage = 1;
+      _hasMoreData = true;
+      _totalPages = 1;
     }
 
     if (!forceRefresh && SharedPrefsHelper.isTurfsCacheValid()) {
@@ -124,7 +198,6 @@ class HomeViewModel extends GetxController {
 
   // ========== GET USER LOCATION ==========
   Future<void> getUserLocation() async {
-    // ✅ First check cached location
     final cachedLocation = SharedPrefsHelper.getDeviceLocation();
     final isLocationValid = await SharedPrefsHelper.isLocationValid();
 
@@ -138,7 +211,6 @@ class HomeViewModel extends GetxController {
     isLocationLoading.value = true;
 
     try {
-      // Request permission first
       LocationPermission permission = await Geolocator.checkPermission();
       if (permission == LocationPermission.denied) {
         permission = await Geolocator.requestPermission();
@@ -157,7 +229,6 @@ class HomeViewModel extends GetxController {
         return;
       }
 
-      // Get current position
       final position = await Geolocator.getCurrentPosition(
         desiredAccuracy: LocationAccuracy.medium,
         timeLimit: const Duration(seconds: 15),
@@ -167,7 +238,6 @@ class HomeViewModel extends GetxController {
       locationError.value = '';
       print('📍 Got coordinates: ${position.latitude}, ${position.longitude}');
 
-      // Get location name from Google Maps
       await _updateLocationNameFromCoordinates(position);
 
     } catch (e) {
@@ -188,6 +258,8 @@ class HomeViewModel extends GetxController {
       if (position != null) {
         currentLocation.value = position;
         await _updateLocationNameFromCoordinates(position);
+        // ✅ Refresh turfs with new location
+        await fetchTurfs(forceRefresh: true);
       }
     } catch (e) {
       print('⚠️ Background location fetch failed: $e');
@@ -243,8 +315,6 @@ class HomeViewModel extends GetxController {
             }
 
             currentLocationName.value = locationName;
-
-            // ✅ Save to SharedPreferences
             await SharedPrefsHelper.saveDeviceLocation(locationName);
             print('📍 Location saved: "$locationName"');
           }
@@ -259,131 +329,257 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ========== FETCH TURFS ==========
-
-  Future<void> fetchTurfs({bool forceRefresh = false}) async {
+  // ========== FETCH TURFS WITH PAGINATION & LOCATION ==========
+  Future<void> fetchTurfs({
+    bool forceRefresh = false,
+    bool loadMore = false,
+  }) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       print('🚫 User not logged in');
       return;
     }
 
-    // ✅ Check token validity
     if (!SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired, skipping turfs fetch');
       await SharedPrefsHelper.clearToken();
       return;
     }
 
-    // ✅ Prevent duplicate calls
+    // ✅ Check if location is available - if not, fetch location first
+    if (currentLocation.value == null && !loadMore) {
+      print('📍 No location, fetching location first...');
+      await getUserLocation();
+      if (currentLocation.value == null) {
+        print('⚠️ Still no location, skipping API call');
+        return;
+      }
+    }
+
     if (_isFetching) {
       print('⏳ Fetch already in progress');
       return;
     }
 
-    if (!forceRefresh && _initialFetchDone && allTurfs.isNotEmpty) {
+    if (!loadMore && !forceRefresh && _initialFetchDone && allTurfs.isNotEmpty) {
       print('✅ Data already loaded');
       return;
     }
 
+    if (loadMore && !_hasMoreData) {
+      print('⏭️ No more data to load');
+      return;
+    }
+
     _isFetching = true;
+    if (loadMore) {
+      isLoadingMore.value = true;
+    } else {
+      isLoading.value = true;
+      _currentPage = 1;
+      _hasMoreData = true;
+    }
     _apiCallCount++;
+    homeError.value = '';
+
     print('\n╔════════════════════════════════════════════════════════════╗');
     print('║  🏟️ FETCH TURFS API CALL #$_apiCallCount                     ║');
+    print('║  📄 Page: $_currentPage, Page Size: $_pageSize                ║');
+    print('║  📍 Location: ${currentLocation.value != null ? "Available" : "None"}');
     print('╚════════════════════════════════════════════════════════════╝');
-
-    isLoading.value = true;
-    homeError.value = '';
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.get('/user/turfs/');
+
+      Map<String, dynamic> queryParams = {
+        'page': _currentPage,
+        'page_size': _pageSize,
+      };
+
+      // ✅ ALWAYS add location parameters if available
+      if (currentLocation.value != null) {
+        queryParams['lat'] = currentLocation.value!.latitude.toString();
+        queryParams['lng'] = currentLocation.value!.longitude.toString();
+        queryParams['radius'] = MAX_DISTANCE_KM.toString();
+        print('📍 Location params: lat=${queryParams['lat']}, lng=${queryParams['lng']}, radius=${queryParams['radius']}');
+      } else {
+        print('⚠️ No location available - API will return all turfs without distance');
+      }
+
+      // ✅ Add search query if available
+      if (searchQuery.value.isNotEmpty) {
+        queryParams['search'] = searchQuery.value;
+        print('🔍 Search query: ${searchQuery.value}');
+      }
+
+      print('📡 API GET /user/turfs/ with params: $queryParams');
+
+      final response = await dio.get(
+        '/user/turfs/',
+        queryParameters: queryParams,
+      );
+
+      print('📥 API Response Status: ${response.statusCode}');
 
       if (response.data['result'] == 'success') {
-        final List<dynamic> data = response.data['data'];
-        print('📦 Received ${data.length} turfs');
+        final data = response.data['data'];
+        final List<dynamic> results = data['results'] ?? [];
+        final int count = data['count'] ?? 0;
+        final String? next = data['next'];
+        final String? previous = data['previous'];
 
-        final fetchedTurfs = data.map((json) => TurfModel.fromJson(json)).toList();
+        // ✅ Use next URL to determine hasMoreData
+        _hasMoreData = next != null && next.isNotEmpty;
+
+        // ✅ Calculate total pages
+        _totalPages = (count / _pageSize).ceil();
+
+        // ✅ Extract current page from response or use our value
+        _currentPage = data['current_page'] ?? _currentPage;
+
+        print('📊 Pagination: Total=$count, Pages=$_totalPages, Current=${_currentPage}, HasMore=$_hasMoreData');
+        print('📦 Received ${results.length} turfs');
+
+        final fetchedTurfs = results.map((json) => TurfModel.fromJson(json)).toList();
         final turfsWithFavorites = fetchedTurfs.map((turf) {
           return turf.copyWith(isFavorite: _favoriteIds.contains(turf.id));
         }).toList();
 
-        allTurfs.assignAll(turfsWithFavorites);
+        if (loadMore) {
+          allTurfs.addAll(turfsWithFavorites);
+          print('✅ Added ${turfsWithFavorites.length} turfs (total: ${allTurfs.length})');
+        } else {
+          allTurfs.assignAll(turfsWithFavorites);
+          print('✅ Loaded ${allTurfs.length} turfs');
+        }
+
         _initialFetchDone = true;
+
+        // ✅ Apply location filter to show only nearby turfs
         _applyLocationFilter();
+
         _lastRefreshTime = DateTime.now();
         _lastFetchTime = DateTime.now();
 
-        await SharedPrefsHelper.cacheTurfs(jsonEncode(data));
-        print('✅ Turfs cached');
+        if (!loadMore) {
+          await SharedPrefsHelper.cacheTurfs(jsonEncode(results));
+          print('✅ Turfs cached');
+        }
+
+        // ✅ Only increment if there is more data
+        if (_hasMoreData) {
+          _currentPage++;
+          print('📄 Next page will be: $_currentPage');
+        } else {
+          print('📄 No more pages');
+        }
+
       } else {
         homeError.value = 'Failed to load turfs';
+        print('❌ API Error: ${response.data['message']}');
       }
     } catch (e) {
       print('❌ Error: $e');
       homeError.value = 'Failed to load turfs';
     } finally {
       isLoading.value = false;
+      isLoadingMore.value = false;
       _isFetching = false;
     }
   }
 
+  // ✅ Load more turfs (pagination)
+  Future<void> loadMoreTurfs() async {
+    if (_isFetching || isLoadingMore.value || !_hasMoreData) return;
+    print('📄 Loading more turfs... (Page $_currentPage)');
+    await fetchTurfs(loadMore: true);
+  }
+
+  // ✅ FIXED: Apply location filter - shows ONLY nearby turfs
   void _applyLocationFilter() {
     if (currentLocation.value == null) {
-      locationError.value = 'Location unavailable';
+      // ✅ If no location, show all turfs but mark them as not nearby
+      locationError.value = 'Location unavailable - showing all turfs';
+      nearbyTurfs.assignAll(allTurfs);
+      turfs.assignAll(allTurfs);
+      print('⚠️ No location: showing all ${allTurfs.length} turfs');
       return;
     }
 
     final userPos = currentLocation.value!;
     final nearbyTurfsList = <TurfModel>[];
 
+    print('📍 Filtering turfs within ${MAX_DISTANCE_KM}km of (${userPos.latitude}, ${userPos.longitude})');
+    print('   Total turfs to filter: ${allTurfs.length}');
+
     for (var turf in allTurfs) {
-      if (turf.latitude != null && turf.longitude != null) {
-        final distance = LocationService.calculateDistance(
+      double? distance;
+
+      // ✅ Use distance_km from API if available
+      if (turf.distanceKm != null) {
+        distance = turf.distanceKm;
+      }
+      // ✅ Fallback to calculated distance
+      else if (turf.latitude != null && turf.longitude != null) {
+        distance = LocationService.calculateDistance(
           userPos.latitude,
           userPos.longitude,
           turf.latitude!,
           turf.longitude!,
         );
-        if (distance <= MAX_DISTANCE_KM) {
+      }
+
+      // ✅ Check if within radius
+      if (distance != null && distance <= MAX_DISTANCE_KM) {
+        // ✅ Update turf with distance if from API
+        if (turf.distanceKm == null && distance != null) {
+          final updatedTurf = turf.copyWith(distanceKm: distance);
+          nearbyTurfsList.add(updatedTurf);
+        } else {
           nearbyTurfsList.add(turf);
         }
       }
     }
 
+    // ✅ Sort by distance (nearest first)
+    nearbyTurfsList.sort((a, b) {
+      final aDist = a.distanceKm ?? double.infinity;
+      final bDist = b.distanceKm ?? double.infinity;
+      return aDist.compareTo(bDist);
+    });
+
+    // ✅ Move favorites to top
     _sortWithFavoritesFirst(nearbyTurfsList);
+
     nearbyTurfs.assignAll(nearbyTurfsList);
-    turfs.assignAll(nearbyTurfsList);
+
+    // ✅ Update the displayed turfs
     _applySearchAndFilters();
+
+    print('✅ Found ${nearbyTurfsList.length} turfs within ${MAX_DISTANCE_KM}km');
+
+    // ✅ Show info message if no nearby turfs
+    if (nearbyTurfsList.isEmpty && allTurfs.isNotEmpty) {
+      Get.snackbar(
+        'No nearby turfs',
+        'No turfs found within ${MAX_DISTANCE_KM}km of your location',
+        backgroundColor: Colors.orange,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+    }
   }
 
   void _sortWithFavoritesFirst(List<TurfModel> turfList) {
-    if (currentLocation.value == null) return;
-
     turfList.sort((a, b) {
       final aIsFavorite = _favoriteIds.contains(a.id);
       final bIsFavorite = _favoriteIds.contains(b.id);
       if (aIsFavorite && !bIsFavorite) return -1;
       if (!aIsFavorite && bIsFavorite) return 1;
 
-      if (a.latitude == null || a.longitude == null ||
-          b.latitude == null || b.longitude == null) {
-        return 0;
-      }
-
-      final distanceA = LocationService.calculateDistance(
-        currentLocation.value!.latitude,
-        currentLocation.value!.longitude,
-        a.latitude!,
-        a.longitude!,
-      );
-      final distanceB = LocationService.calculateDistance(
-        currentLocation.value!.latitude,
-        currentLocation.value!.longitude,
-        b.latitude!,
-        b.longitude!,
-      );
-      return distanceA.compareTo(distanceB);
+      final aDist = a.distanceKm ?? double.infinity;
+      final bDist = b.distanceKm ?? double.infinity;
+      return aDist.compareTo(bDist);
     });
   }
 
@@ -476,7 +672,6 @@ class HomeViewModel extends GetxController {
         snackPosition: SnackPosition.BOTTOM,
       );
 
-      // Sync with backend
       final dio = Get.find<Dio>();
       await dio.post('/user/favorites/toggle/', data: {'turf_id': turfId});
 
@@ -502,6 +697,27 @@ class HomeViewModel extends GetxController {
 
   int get favoriteCount => _favoriteIds.length;
 
+  // ========== FAVORITE SYNC METHODS ==========
+
+  void refreshFavoritesList() {
+    allTurfs.refresh();
+    turfs.refresh();
+  }
+
+  void addFavoriteLocally(TurfModel turf) {
+    if (!_favoriteIds.contains(turf.id)) {
+      _favoriteIds.add(turf.id);
+      _updateSingleTurfFavoriteStatus(turf.id, true);
+    }
+  }
+
+  void removeFavoriteLocally(int turfId) {
+    if (_favoriteIds.contains(turfId)) {
+      _favoriteIds.remove(turfId);
+      _updateSingleTurfFavoriteStatus(turfId, false);
+    }
+  }
+
   // ========== SEARCH ==========
 
   void onSearchTextChanged(String query) {
@@ -518,7 +734,10 @@ class HomeViewModel extends GetxController {
   }
 
   void _applySearchAndFilters() {
-    var filtered = searchQuery.value.trim().isNotEmpty ? allTurfs.toList() : nearbyTurfs.toList();
+    // ✅ Start with nearby turfs (already filtered by location)
+    var filtered = searchQuery.value.trim().isNotEmpty
+        ? allTurfs.where((t) => nearbyTurfs.contains(t)).toList()
+        : nearbyTurfs.toList();
 
     if (searchQuery.value.isNotEmpty) {
       final query = searchQuery.value.toLowerCase().trim();
@@ -560,7 +779,6 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    // ✅ Check token validity
     if (!SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired, redirecting to login');
       await SharedPrefsHelper.clearToken();
@@ -568,7 +786,6 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    // ✅ Prevent duplicate refresh calls
     if (_isRefreshingLock || _isFetching) {
       print('⏳ Refresh already in progress');
       return;
@@ -579,11 +796,13 @@ class HomeViewModel extends GetxController {
     if (showLoading) isRefreshing.value = true;
 
     try {
-      if (currentLocation.value == null) {
-        await getUserLocation();
-      }
+      // ✅ Refresh location first
+      await getUserLocation();
 
+      // ✅ Then fetch turfs with new location
       _initialFetchDone = false;
+      _currentPage = 1;
+      _hasMoreData = true;
       await fetchTurfs(forceRefresh: true);
       _lastRefreshTime = DateTime.now();
       _lastFetchTime = DateTime.now();
@@ -609,6 +828,13 @@ class HomeViewModel extends GetxController {
   }
 
   String getDistanceString(TurfModel turf) {
+    if (turf.distanceKm != null && turf.distanceKm! > 0) {
+      if (turf.distanceKm! < 1) {
+        return '${(turf.distanceKm! * 1000).toInt()} m away';
+      }
+      return '${turf.distanceKm!.toStringAsFixed(1)} km away';
+    }
+
     if (currentLocation.value == null || turf.latitude == null || turf.longitude == null) {
       return '';
     }
@@ -624,72 +850,7 @@ class HomeViewModel extends GetxController {
     return '${distance.toStringAsFixed(1)} km away';
   }
 
-  // ========== RESET CACHE ==========
   static void resetCache() {
     // This will force fresh fetch on next load
-    // Static flags need to be reset
-  }
-}
-
-// TurfModel copyWith extension
-extension TurfModelCopyWith on TurfModel {
-  TurfModel copyWith({
-    int? id,
-    String? name,
-    String? address,
-    String? gameType,
-    String? description,
-    String? achievements,
-    int? maxPersons,
-    int? courts,
-    Map<String, dynamic>? facilities,
-    String? openTime,
-    String? closeTime,
-    double? latitude,
-    double? longitude,
-    String? state,
-    String? district,
-    String? pincode,
-    List<String>? images,
-    String? turfCode,
-    bool? isFavorite,
-    bool? isVerified,
-    String? type,
-    String? status,
-    bool? isBookable,
-    String? phoneNumber,
-    String? advanceType,
-    String? advanceValue,
-    int? minSlots,
-  }) {
-    return TurfModel(
-      id: id ?? this.id,
-      name: name ?? this.name,
-      address: address ?? this.address,
-      gameType: gameType ?? this.gameType,
-      description: description ?? this.description,
-      achievements: achievements ?? this.achievements,
-      maxPersons: maxPersons ?? this.maxPersons,
-      courts: courts ?? this.courts,
-      facilities: facilities ?? this.facilities,
-      openTime: openTime ?? this.openTime,
-      closeTime: closeTime ?? this.closeTime,
-      latitude: latitude ?? this.latitude,
-      longitude: longitude ?? this.longitude,
-      state: state ?? this.state,
-      district: district ?? this.district,
-      pincode: pincode ?? this.pincode,
-      images: images ?? this.images,
-      turfCode: turfCode ?? this.turfCode,
-      isFavorite: isFavorite ?? this.isFavorite,
-      isVerified: isVerified ?? this.isVerified,
-      type: type ?? this.type,
-      status: status ?? this.status,
-      isBookable: isBookable ?? this.isBookable,
-      phoneNumber: phoneNumber ?? this.phoneNumber,
-      advanceType: advanceType ?? this.advanceType,
-      advanceValue: advanceValue ?? this.advanceValue,
-      minSlots: minSlots ?? this.minSlots,
-    );
   }
 }

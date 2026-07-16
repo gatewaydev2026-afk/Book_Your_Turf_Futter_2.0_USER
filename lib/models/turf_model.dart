@@ -1,4 +1,6 @@
 // models/turf_model.dart
+// ✅ Fixed: images parsing from API - handles both String and Object formats
+
 import 'dart:convert';
 
 class TurfModel {
@@ -32,6 +34,10 @@ class TurfModel {
   final String advanceValue;
   final int minSlots;
 
+  // ✅ New fields from API
+  final String? bestDiscountLabel;
+  final double? distanceKm;
+
   TurfModel({
     required this.id,
     required this.name,
@@ -60,6 +66,8 @@ class TurfModel {
     this.advanceType = 'percentage',
     this.advanceValue = '0',
     this.minSlots = 1,
+    this.bestDiscountLabel,
+    this.distanceKm,
   });
 
   factory TurfModel.fromJson(Map<String, dynamic> json) {
@@ -73,7 +81,6 @@ class TurfModel {
     print('🔍 PARSING TURF: ${json['name']}');
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    // ========== CHECK EACH FIELD ==========
     print('\n📌 BASIC FIELDS:');
     print('   id: ${json['id']}');
     print('   name: ${json['name']}');
@@ -84,16 +91,18 @@ class TurfModel {
     print('   advance_type: "${json['advance_type']}"');
     print('   advance_value: "${json['advance_value']}"');
     print('   min_slots: ${json['min_slots']}');
-    print('   commission_type: ${json['commission_type']}');
-    print('   commission_value: ${json['commission_value']}');
 
-    // Check if fields exist
-    print('\n📌 FIELD EXISTENCE CHECK:');
-    print('   advance_type exists? ${json.containsKey('advance_type')}');
-    print('   advance_value exists? ${json.containsKey('advance_value')}');
-    print('   min_slots exists? ${json.containsKey('min_slots')}');
+    // ✅ Parse new fields
+    String? bestDiscountLabel = json['best_discount_label']?.toString();
+    double? distanceKm = json['distance_km'] != null
+        ? double.tryParse(json['distance_km'].toString())
+        : null;
 
-    // Parse advance fields - DIRECT from API
+    print('\n📌 NEW API FIELDS:');
+    print('   best_discount_label: "${bestDiscountLabel ?? "null"}"');
+    print('   distance_km: ${distanceKm ?? "null"}');
+
+    // Parse advance fields
     String advanceType = json['advance_type']?.toString() ?? 'percentage';
     String advanceValue = json['advance_value']?.toString() ?? '0';
     int minSlots = json['min_slots'] ?? 1;
@@ -103,13 +112,23 @@ class TurfModel {
     print('   advanceValue: "$advanceValue"');
     print('   minSlots: $minSlots');
 
-    // Parse images
+    // ✅ FIXED: Parse images - handles both String list and Object list
     List<String> imageList = [];
     if (json['images'] != null) {
-      if (json['images'] is String) {
+      if (json['images'] is List) {
+        for (var item in json['images']) {
+          if (item is String) {
+            imageList.add(item);
+          } else if (item is Map) {
+            // ✅ Handle {id: 1, url: "https://..."} format
+            final url = item['url'] ?? item['image_url'] ?? item['path'];
+            if (url != null && url is String && url.isNotEmpty) {
+              imageList.add(url);
+            }
+          }
+        }
+      } else if (json['images'] is String) {
         imageList = [json['images'] as String];
-      } else if (json['images'] is List) {
-        imageList = List<String>.from(json['images']);
       }
     }
     print('\n📌 IMAGES: ${imageList.length} images');
@@ -154,6 +173,8 @@ class TurfModel {
       advanceType: advanceType,
       advanceValue: advanceValue,
       minSlots: minSlots,
+      bestDiscountLabel: bestDiscountLabel,
+      distanceKm: distanceKm,
     );
 
     print('\n╔════════════════════════════════════════════════════════════╗');
@@ -164,6 +185,9 @@ class TurfModel {
     print('   advanceType: ${turf.advanceType}');
     print('   advanceValue: ${turf.advanceValue}');
     print('   minSlots: ${turf.minSlots}');
+    print('   bestDiscountLabel: "${turf.bestDiscountLabel ?? "null"}"');
+    print('   distanceKm: ${turf.distanceKm ?? "null"}');
+    print('   images count: ${turf.images.length}');
     print('   getAdvanceDisplayText(): ${turf.getAdvanceDisplayText()}');
     print('   getMinSlotsDisplayText(): ${turf.getMinSlotsDisplayText()}');
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
@@ -244,8 +268,77 @@ class TurfModel {
     print('   advanceType: $advanceType');
     print('   advanceValue: $advanceValue');
     print('   minSlots: $minSlots');
+    print('   bestDiscountLabel: "$bestDiscountLabel"');
+    print('   distanceKm: $distanceKm');
     print('   getAdvanceDisplayText(): ${getAdvanceDisplayText()}');
     print('   getMinSlotsDisplayText(): ${getMinSlotsDisplayText()}');
     print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+  }
+}
+
+// TurfModel copyWith extension
+extension TurfModelCopyWith on TurfModel {
+  TurfModel copyWith({
+    int? id,
+    String? name,
+    String? address,
+    String? gameType,
+    String? description,
+    String? achievements,
+    int? maxPersons,
+    int? courts,
+    Map<String, dynamic>? facilities,
+    String? openTime,
+    String? closeTime,
+    double? latitude,
+    double? longitude,
+    String? state,
+    String? district,
+    String? pincode,
+    List<String>? images,
+    String? turfCode,
+    bool? isFavorite,
+    bool? isVerified,
+    String? type,
+    String? status,
+    bool? isBookable,
+    String? phoneNumber,
+    String? advanceType,
+    String? advanceValue,
+    int? minSlots,
+    String? bestDiscountLabel,
+    double? distanceKm,
+  }) {
+    return TurfModel(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      address: address ?? this.address,
+      gameType: gameType ?? this.gameType,
+      description: description ?? this.description,
+      achievements: achievements ?? this.achievements,
+      maxPersons: maxPersons ?? this.maxPersons,
+      courts: courts ?? this.courts,
+      facilities: facilities ?? this.facilities,
+      openTime: openTime ?? this.openTime,
+      closeTime: closeTime ?? this.closeTime,
+      latitude: latitude ?? this.latitude,
+      longitude: longitude ?? this.longitude,
+      state: state ?? this.state,
+      district: district ?? this.district,
+      pincode: pincode ?? this.pincode,
+      images: images ?? this.images,
+      turfCode: turfCode ?? this.turfCode,
+      isFavorite: isFavorite ?? this.isFavorite,
+      isVerified: isVerified ?? this.isVerified,
+      type: type ?? this.type,
+      status: status ?? this.status,
+      isBookable: isBookable ?? this.isBookable,
+      phoneNumber: phoneNumber ?? this.phoneNumber,
+      advanceType: advanceType ?? this.advanceType,
+      advanceValue: advanceValue ?? this.advanceValue,
+      minSlots: minSlots ?? this.minSlots,
+      bestDiscountLabel: bestDiscountLabel ?? this.bestDiscountLabel,
+      distanceKm: distanceKm ?? this.distanceKm,
+    );
   }
 }

@@ -1,5 +1,7 @@
-// booking_history_view.dart - COMPLETE WITH LAZY LOADING
+// booking_history_view.dart - COMPLETE WITH LAZY LOADING & DISCOUNT SUPPORT
 // FIXED: Uses loadBookings() instead of fetch() for lazy loading
+// ADDED: Discount display with strikethrough pricing
+// ADDED: Discount breakdown in booking details
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -660,6 +662,7 @@ class BookingHistoryView extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
+                // ========== UPDATED: Amount with Discount Display ==========
                 Row(
                   children: [
                     Expanded(
@@ -667,7 +670,55 @@ class BookingHistoryView extends StatelessWidget {
                         children: [
                           Icon(Icons.currency_rupee, size: isSmallScreen ? 10 : 12, color: Colors.green),
                           const SizedBox(width: 4),
-                          Text("${_formatPrice(b.totalAmount)}", style: TextStyle(fontSize: isSmallScreen ? 10 : 11, fontWeight: FontWeight.w500, color: Colors.green)),
+                          if (b.hasDiscount) ...[
+                            // Original price with strikethrough
+                            Text(
+                              "₹${_formatPrice(b.totalAmount)}",
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 10 : 11,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.grey.shade500,
+                                decoration: TextDecoration.lineThrough,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            // Discounted price (actual amount)
+                            Text(
+                              "₹${_formatPrice(b.discountedTotalAmount)}",
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 10 : 11,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.green,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            // Discount percentage badge
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                              decoration: BoxDecoration(
+                                color: Colors.green.shade100,
+                                borderRadius: BorderRadius.circular(4),
+                              ),
+                              child: Text(
+                                "-${((b.totalDiscountAmount ?? 0) / b.totalAmount * 100).toInt()}%",
+                                style: TextStyle(
+                                  fontSize: isSmallScreen ? 7 : 8,
+                                  color: Colors.green.shade700,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ),
+                          ] else ...[
+                            // No discount - show regular price
+                            Text(
+                              "₹${_formatPrice(b.discountedTotalAmount)}",
+                              style: TextStyle(
+                                fontSize: isSmallScreen ? 10 : 11,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.green,
+                              ),
+                            ),
+                          ],
                         ],
                       ),
                     ),
@@ -829,13 +880,14 @@ class BookingHistoryView extends StatelessWidget {
               alignment: Alignment.center,
               children: [
                 CircularProgressIndicator(
-                  value: b.paidAmount / b.totalAmount,
+                  // Use discounted total amount for percentage
+                  value: b.paidAmount / b.discountedTotalAmount,
                   strokeWidth: isSmallScreen ? 4 : 5,
                   backgroundColor: Colors.grey.shade200,
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
                 ),
-                Text("${((b.paidAmount / b.totalAmount) * 100).toInt()}%", style: TextStyle(fontSize: isSmallScreen ? 8 : 9, fontWeight: FontWeight.bold)),
-              ],
+              
+        ],
             ),
           ),
           const SizedBox(height: 4),
@@ -936,7 +988,7 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // ==================== BALANCE PAYMENT METHODS WITH NOTIFICATIONS ====================
+  // ==================== BALANCE PAYMENT METHODS ====================
 
   void _showBalancePaymentMethodSelection(BookingModel booking) {
     showModalBottomSheet(
@@ -962,7 +1014,33 @@ class BookingHistoryView extends StatelessWidget {
               'Pay Balance Amount',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 8),
+            // Show discount info if applicable
+            if (booking.hasDiscount) ...[
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.green.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.local_offer, size: 14, color: Colors.green.shade700),
+                    const SizedBox(width: 4),
+                    Text(
+                      'You saved ₹${_formatPrice(booking.totalDiscountAmount!)} (${((booking.totalDiscountAmount! / booking.totalAmount) * 100).toInt()}%)',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              const SizedBox(height: 12),
+            ],
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
@@ -1068,7 +1146,7 @@ class BookingHistoryView extends StatelessWidget {
                 showDialog(context: Get.context!, builder: (context) => const WalletRechargeDialog());
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
-              child: const Text('Recharge Now',style: TextStyle(color: Colors.white),),
+              child: const Text('Recharge Now', style: TextStyle(color: Colors.white)),
             ),
           ],
         ),
@@ -1086,13 +1164,49 @@ class BookingHistoryView extends StatelessWidget {
           children: [
             Text('Booking ID: ${booking.bookingId}', style: const TextStyle(fontSize: 12, color: Colors.grey)),
             const SizedBox(height: 12),
-            Text('Amount to Pay: ₹${_formatPrice(booking.remainingAmount)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            if (booking.hasDiscount) ...[
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Original Price:', style: TextStyle(fontSize: 12)),
+                  Text('₹${_formatPrice(booking.totalAmount)}', style: TextStyle(fontSize: 12, decoration: TextDecoration.lineThrough, color: Colors.grey)),
+                ],
+              ),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  const Text('Discount:', style: TextStyle(fontSize: 12, color: Colors.green)),
+                  Text('-₹${_formatPrice(booking.totalDiscountAmount!)}', style: TextStyle(fontSize: 12, color: Colors.green)),
+                ],
+              ),
+              const Divider(),
+            ],
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Amount to Pay:', style: TextStyle(fontSize: 14)),
+                Text('₹${_formatPrice(booking.remainingAmount)}', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+              ],
+            ),
             const SizedBox(height: 8),
-            Text('Wallet Balance: ₹${_formatPrice(profileVm.walletBalance.value)}', style: TextStyle(color: Colors.green.shade700)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Wallet Balance:', style: TextStyle(fontSize: 12, color: Colors.green.shade700)),
+                Text('₹${_formatPrice(profileVm.walletBalance.value)}', style: TextStyle(fontSize: 12, color: Colors.green.shade700)),
+              ],
+            ),
             const SizedBox(height: 16),
             const Divider(),
             const SizedBox(height: 8),
-            Text('Amount after payment: ₹${_formatPrice(profileVm.walletBalance.value - booking.remainingAmount)}', style: const TextStyle(fontSize: 12)),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('Amount after payment:', style: TextStyle(fontSize: 12)),
+                Text('₹${_formatPrice(profileVm.walletBalance.value - booking.remainingAmount)}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+              ],
+            ),
           ],
         ),
         actions: [
@@ -1123,7 +1237,7 @@ class BookingHistoryView extends StatelessWidget {
         '/user/bookings/pay-balance-wallet/',
         data: {
           'booking_id': booking.id,
-          'amount': booking.remainingAmount,
+          'amount': booking.remainingAmount.toString(),
         },
       );
 
@@ -1568,6 +1682,8 @@ class BookingHistoryView extends StatelessWidget {
     return gameType;
   }
 
+  // ==================== UPDATED: Booking Details with Discount Breakdown ====================
+
   void _showBookingDetails(BookingModel b, bool isSmallScreen) {
     final sortedSlots = _getSortedSlots(b.slots);
     final isCricketOrFootball = _isCricketOrFootball(b.gameType);
@@ -1607,7 +1723,102 @@ class BookingHistoryView extends StatelessWidget {
               _detailRow("Turf Name", b.turfName, isSmallScreen),
               _detailRow("$courtTurfLabel Number", "$courtTurfLabel ${b.courtNumber}", isSmallScreen),
               _detailRow("Payment Status", b.paymentStatus, isSmallScreen),
-              _detailRow("Total Amount", "₹${_formatPrice(b.totalAmount)}", isSmallScreen),
+
+              // ========== DISCOUNT BREAKDOWN SECTION ==========
+              if (b.hasDiscount) ...[
+                const SizedBox(height: 8),
+                Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.green.shade50,
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.green.shade200),
+                  ),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          Icon(Icons.local_offer, size: 16, color: Colors.green.shade700),
+                          const SizedBox(width: 8),
+                          Text(
+                            'Discount Details',
+                            style: TextStyle(
+                              fontSize: 14,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green.shade700,
+                            ),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 8),
+                      if (b.adminDiscountAmount != null && b.adminDiscountAmount! > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Admin Discount', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                              Text(
+                                '-₹${_formatPrice(b.adminDiscountAmount!)}',
+                                style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      if (b.partnerDiscountAmount != null && b.partnerDiscountAmount! > 0)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 4),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text('Partner Discount', style: TextStyle(fontSize: 12, color: Colors.grey.shade700)),
+                              Text(
+                                '-₹${_formatPrice(b.partnerDiscountAmount!)}',
+                                style: TextStyle(fontSize: 12, color: Colors.green.shade700),
+                              ),
+                            ],
+                          ),
+                        ),
+                      const Divider(),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Total Discount', style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600)),
+                          Text(
+                            '-₹${_formatPrice(b.totalDiscountAmount!)}',
+                            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.green.shade700),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 4),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Original Price', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
+                          Text(
+                            '₹${_formatPrice(b.totalAmount)}',
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600, decoration: TextDecoration.lineThrough),
+                          ),
+                        ],
+                      ),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Text('Final Price', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                          Text(
+                            '₹${_formatPrice(b.discountedTotalAmount)}',
+                            style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.green),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(height: 8),
+              ],
+
+              _detailRow("Total Amount", "₹${_formatPrice(b.discountedTotalAmount)}", isSmallScreen),
               _detailRow("Paid Amount", "₹${_formatPrice(b.paidAmount)}", isSmallScreen),
               _detailRow("Pending Amount", "₹${_formatPrice(b.remainingAmount)}", isSmallScreen),
               _detailRow("Booking Date", b.formattedDate, isSmallScreen),
@@ -1687,7 +1898,7 @@ class BookingHistoryView extends StatelessWidget {
     final upcoming = vm.getUpcomingCount();
     final completed = vm.getCompletedCount();
     final cancelled = vm.getCancelledCount();
-    final totalAmount = vm.bookings.fold(0.0, (sum, b) => sum + b.totalAmount);
+    final totalAmount = vm.bookings.fold(0.0, (sum, b) => sum + b.discountedTotalAmount);
     final paidAmount = vm.bookings.fold(0.0, (sum, b) => sum + b.paidAmount);
 
     Get.dialog(

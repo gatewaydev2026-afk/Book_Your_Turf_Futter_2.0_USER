@@ -684,6 +684,9 @@ class SlotView extends StatelessWidget {
     );
   }
 
+  // ============================================================
+  // ✅ BOTTOM BAR - FIXED: Properly passes payment type
+  // ============================================================
   Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf, double width) {
     return Container(
       padding: const EdgeInsets.all(12),
@@ -701,10 +704,15 @@ class SlotView extends StatelessWidget {
         children: [
           Row(
             children: [
+              // ✅ Advance Payment Button
               Expanded(
                 child: Obx(
                       () => GestureDetector(
-                    onTap: () => vm.selectedPaymentType.value = 'advance',
+                    onTap: () {
+                      print('🟠 Advance Payment Selected');
+                      vm.selectedPaymentType.value = 'advance';
+                      print('   Payment Type: ${vm.selectedPaymentType.value}');
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
@@ -757,10 +765,15 @@ class SlotView extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
+              // ✅ Full Payment Button
               Expanded(
                 child: Obx(
                       () => GestureDetector(
-                    onTap: () => vm.selectedPaymentType.value = 'full',
+                    onTap: () {
+                      print('🔵 Full Payment Selected');
+                      vm.selectedPaymentType.value = 'full';
+                      print('   Payment Type: ${vm.selectedPaymentType.value}');
+                    },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8),
                       decoration: BoxDecoration(
@@ -902,6 +915,9 @@ class SlotView extends StatelessWidget {
     );
   }
 
+  // ============================================================
+  // ✅ PROCEED TO SUMMARY - FIXED: Logs payment type
+  // ============================================================
   void _proceedToSummary(BuildContext context, SlotViewModel vm, TurfModel turf) {
     final selectedPaymentType = vm.selectedPaymentType.value;
     final totalAmount = vm.totalPrice;
@@ -917,6 +933,18 @@ class SlotView extends StatelessWidget {
     final selectedSlots = vm.selectedSlots.toList();
     final selectedCourt = vm.selectedCourt.value + 1;
     final selectedDate = vm.dates[vm.selectedDateIndex.value];
+
+    // ✅ DEBUG: Log the payment type being passed
+    print('\n╔════════════════════════════════════════════════════════════╗');
+    print('║  🔍 PROCEEDING TO BOOKING SUMMARY                           ║');
+    print('╚════════════════════════════════════════════════════════════╝');
+    print('   📌 Payment Type: "$selectedPaymentType"');
+    print('   💰 Total Amount: ₹$totalAmount');
+    print('   💵 Payable Amount: ₹$payableAmount');
+    print('   📅 Date: ${selectedDate.toIso8601String().split('T').first}');
+    print('   🏟️ Turf: ${turf.name}');
+    print('   📋 Slots Selected: ${selectedSlots.length}');
+    print('═══════════════════════════════════════════════════════════════\n');
 
     Get.toNamed(
       AppRoutes.bookingSummary,

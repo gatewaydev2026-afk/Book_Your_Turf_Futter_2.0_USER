@@ -11,7 +11,7 @@ import 'package:get/get.dart';
 
 class UpdateService {
   // ✅ CORRECT ENDPOINT - Use the one that exists
-  static const String _baseUrl = 'https://backend.arcmedialabs.in';
+  static const String _baseUrl = 'https://test.backend.arcmedialabs.in';
   static const String _updateEndpoint = '/api/user/app-version/';  // ✅ CORRECTED
 
   // Set to 'user' for User App

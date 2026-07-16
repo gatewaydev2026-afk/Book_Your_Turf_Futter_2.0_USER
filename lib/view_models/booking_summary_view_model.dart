@@ -1,5 +1,6 @@
-// booking_summary_view_model.dart - COMPLETE FIXED WITH PROPER DECIMAL HANDLING
-// ✅ Fixed: toStringAsFixed called on String error
+// lib/view_models/booking_summary_view_model.dart
+// ✅ Complete as per API documentation
+// ✅ Full Payment Discount Support
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -7,6 +8,9 @@ import 'package:dio/dio.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../models/turf_model.dart';
 import '../models/slot_model.dart';
+import '../models/discount_model.dart';
+import '../services/price_formatter.dart';
+import '../view_models/discount_view_model.dart';
 import '../services/facebook_events.dart';
 import '../services/notification_service.dart';
 import '../services/shared_prefs_helper.dart';
@@ -14,8 +18,14 @@ import '../view_models/profile_view_model.dart';
 import '../view_models/booking_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../routes/app_routes.dart';
-// 🔥 Import Facebook App Events
 import 'package:book_your_turf/main.dart' show facebookAppEvents;
+
+class RazorpayConfig {
+  static const String key = String.fromEnvironment(
+    'RAZORPAY_KEY',
+    defaultValue: 'rzp_live_Rn1hHzY0kkjXFj',
+  );
+}
 
 class BookingSummaryViewModel extends GetxController {
   late TurfModel turf;
@@ -32,6 +42,11 @@ class BookingSummaryViewModel extends GetxController {
   final isUILocked = false.obs;
   final paymentSuccessConfirmed = false.obs;
   final hasShownSuccessPopup = false.obs;
+
+  final DiscountViewModel discountVm = Get.find<DiscountViewModel>();
+  final isLoadingDiscounts = false.obs;
+  final discountedTotal = 0.0.obs;
+  final discountedAdvanceAmount = 0.0.obs;
 
   late Razorpay _razorpay;
   String? _currentOrderId;
@@ -58,23 +73,31 @@ class BookingSummaryViewModel extends GetxController {
     selectedSlots = args['selectedSlots'];
     selectedCourt = args['selectedCourt'];
     selectedDate = args['selectedDate'];
-    selectedPaymentType = args['selectedPaymentType'];
+
+    selectedPaymentType = (args['selectedPaymentType'] ?? 'full')
+        .toString()
+        .trim()
+        .toLowerCase();
     totalAmount = args['totalAmount'];
 
-    // ✅ FIX: Convert to double first, then round
     double rawPayableAmount = args['payableAmount'] is double
         ? args['payableAmount']
         : double.tryParse(args['payableAmount'].toString()) ?? 0.0;
     payableAmount = double.parse(rawPayableAmount.toStringAsFixed(2));
 
-    // ✅ FIX: Convert to double first, then round
     double rawMinimumAdvance = args['requiredAdvance'] is double
         ? args['requiredAdvance']
         : double.tryParse(args['requiredAdvance'].toString()) ?? 0.0;
     minimumAdvance = double.parse(rawMinimumAdvance.toStringAsFixed(2));
 
-    // 🔥 Facebook View Content Event
+    discountedTotal.value = totalAmount;
+    discountedAdvanceAmount.value = payableAmount;
+
     _logViewContentEvent();
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      loadDiscounts(forceRefresh: true);
+    });
 
     print('\n=== BOOKING SUMMARY VIEW MODEL ===');
     print('Turf: ${turf.name}');
@@ -85,7 +108,6 @@ class BookingSummaryViewModel extends GetxController {
     print('==================================\n');
   }
 
-  // 🔥 Facebook View Content Event
   Future<void> _logViewContentEvent() async {
     try {
       await facebookAppEvents.logEvent(
@@ -107,23 +129,124 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
-  // ✅ Helper: Format price with proper rounding
-  String _formatPrice(double price) {
-    // Round to 2 decimal places first
-    double roundedPrice = double.parse(price.toStringAsFixed(2));
-    if (roundedPrice == roundedPrice.toInt()) {
-      return roundedPrice.toInt().toString();
+  Future<void> loadDiscounts({bool forceRefresh = false}) async {
+    if (selectedSlots.isEmpty) return;
+
+    isLoadingDiscounts.value = true;
+
+    try {
+      await discountVm.fetchApplicableDiscounts(
+        turfId: turf.id,
+        date: selectedDate,
+        slots: selectedSlots,
+        totalAmount: totalAmount,
+        forceRefresh: forceRefresh,
+      );
+
+      discountVm.clearAllSelections();
+      discountedTotal.value = totalAmount;
+      discountedAdvanceAmount.value = payableAmount;
+
+      final adminCount = discountVm.adminDiscounts.length;
+      final partnerCount = discountVm.partnerDiscounts.length;
+
+      if (adminCount > 0 || partnerCount > 0) {
+        print('✅ $adminCount admin discounts and $partnerCount partner discounts available');
+        print('   ⚠️ User must tap to select');
+      }
+
+    } catch (e) {
+      print('Error loading discounts: $e');
+    } finally {
+      isLoadingDiscounts.value = false;
     }
-    String formatted = roundedPrice.toStringAsFixed(2);
-    formatted = formatted.replaceAll(RegExp(r'\.?0+$'), '');
-    if (formatted.endsWith('.')) {
-      formatted = formatted.substring(0, formatted.length - 1);
-    }
-    return formatted;
   }
 
-  // ✅ Helper: Get properly formatted amount for API (2 decimal places)
+  void toggleAdminDiscount(int discountId) {
+    discountVm.toggleAdminDiscount(discountId);
+    _updateDiscountedAmounts();
+    _logDiscountApplied();
+  }
+
+  void togglePartnerDiscount(int discountId) {
+    discountVm.togglePartnerDiscount(discountId);
+    _updateDiscountedAmounts();
+    _logDiscountApplied();
+  }
+
+  void _updateDiscountedAmounts() {
+    final overallDiscount = discountVm.overallDiscountAmount;
+    final payableDiscount = discountVm.payableDiscountAmount;
+
+    print('========================================');
+    print('✅ DISCOUNT CALCULATION:');
+    print('   Overall Discount: ₹${overallDiscount.toStringAsFixed(2)}');
+    print('   Payable Discount: ₹${payableDiscount.toStringAsFixed(2)}');
+    print('   Total Amount: ₹$totalAmount');
+    print('   Payable Amount (Original): ₹$payableAmount');
+    print('   Payment Type: $selectedPaymentType');
+
+    discountedTotal.value = totalAmount - overallDiscount;
+    if (discountedTotal.value < 0) {
+      discountedTotal.value = 0;
+    }
+
+    if (selectedPaymentType == 'full') {
+      double discountedFullTotal = totalAmount - overallDiscount - payableDiscount;
+      if (discountedFullTotal < 0) {
+        discountedFullTotal = 0;
+      }
+      discountedTotal.value = discountedFullTotal;
+      discountedAdvanceAmount.value = payableAmount;
+
+      print('   Discounted Total (Full Payment): ₹${discountedTotal.value}');
+      print('   (Overall Discount: ₹$overallDiscount + Payable Discount: ₹$payableDiscount)');
+    } else {
+      double discountedAdvance = payableAmount - overallDiscount - payableDiscount;
+      if (discountedAdvance < 0) {
+        discountedAdvance = 0;
+      }
+      discountedAdvanceAmount.value = discountedAdvance;
+
+      print('   Original Advance: ₹$payableAmount');
+      print('   Discounted Advance: ₹${discountedAdvanceAmount.value}');
+      print('   (Overall Discount: ₹$overallDiscount + Payable Discount: ₹$payableDiscount)');
+      print('   Discounted Total: ₹${discountedTotal.value}');
+    }
+    print('========================================');
+  }
+
+  void _logDiscountApplied() {
+    if (!discountVm.hasSelectedDiscount) return;
+
+    try {
+      facebookAppEvents.logEvent(
+        name: 'discount_applied',
+        parameters: {
+          'admin_discount_id': discountVm.selectedAdminDiscountId.value?.toString() ?? '',
+          'partner_discount_id': discountVm.selectedPartnerDiscountId.value?.toString() ?? '',
+          'total_discount': discountVm.totalDiscountAmount.toString(),
+          'payment_type': selectedPaymentType,
+          'turf_id': turf.id.toString(),
+        },
+      );
+      print('✅ Discount usage logged to Facebook');
+    } catch (e) {
+      print('❌ Error logging discount: $e');
+    }
+  }
+
+  void removeAllDiscounts() {
+    discountVm.clearAllSelections();
+    discountedTotal.value = totalAmount;
+    discountedAdvanceAmount.value = payableAmount;
+    print('✅ All discounts removed');
+  }
+
+  String _formatPrice(double price) => PriceFormatter.format(price);
+
   String _getFormattedAmount(double amount) {
+    if (amount < 0) return '0.00';
     return amount.toStringAsFixed(2);
   }
 
@@ -149,7 +272,6 @@ class BookingSummaryViewModel extends GetxController {
     return sorted;
   }
 
-  // ==================== WALLET PAYMENT - FIXED ====================
   Future<void> initiateWalletPayment() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -158,7 +280,6 @@ class BookingSummaryViewModel extends GetxController {
       return;
     }
 
-    // ✅ Check token validity
     if (!SharedPrefsHelper.isTokenValid()) {
       Get.snackbar('Session Expired', 'Please login again',
           backgroundColor: Colors.red, colorText: Colors.white);
@@ -168,15 +289,25 @@ class BookingSummaryViewModel extends GetxController {
     }
 
     final profileVm = Get.find<ProfileViewModel>();
-
-    // ✅ Refresh wallet balance before checking
     await profileVm.fetchUser(forceRefresh: true);
 
-    // ✅ Check if wallet balance is sufficient
-    if (profileVm.walletBalance.value < payableAmount) {
+    final amountToPay = _getAmountToPay();
+
+    if (amountToPay <= 0) {
+      Get.snackbar(
+        'Invalid Amount',
+        'Amount cannot be zero or negative. Please adjust.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
+      );
+      return;
+    }
+
+    if (profileVm.walletBalance.value < amountToPay) {
       Get.snackbar(
         'Insufficient Balance',
-        'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(payableAmount)}',
+        'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(amountToPay)}',
         backgroundColor: Colors.red,
         colorText: Colors.white,
         duration: const Duration(seconds: 4),
@@ -189,50 +320,44 @@ class BookingSummaryViewModel extends GetxController {
     isLoading.value = true;
     isUILocked.value = true;
 
-    // Store initial balance to check if payment went through
     final double initialBalance = profileVm.walletBalance.value;
 
     try {
       final dio = Get.find<Dio>();
       final dateStr = formattedDate;
 
-      // ✅ Format slots data correctly with 2 decimal places
       final slotsData = selectedSlots.map((slot) => ({
         'start_time': slot.startTime,
         'end_time': slot.endTime,
-        // ✅ Use priceAsDouble which is already a double
         'price': slot.priceAsDouble.toStringAsFixed(2),
       })).toList();
 
-      // ✅ FIX: Format amounts to 2 decimal places for API
-      final formattedTotalAmount = totalAmount.toStringAsFixed(2);
-      final formattedPayableAmount = payableAmount.toStringAsFixed(2);
-
-      // ✅ Prepare request body with proper field names
       final requestBody = {
         'turf_id': turf.id,
         'court_number': selectedCourt,
         'date': dateStr,
         'slots': slotsData,
-        'total_amount': formattedTotalAmount,
-        'amount_to_pay': formattedPayableAmount,
+        'total_amount': totalAmount.toStringAsFixed(2),
+        'amount_to_pay': _getFormattedAmount(amountToPay),
       };
 
-      print('📤 Wallet Booking Request:');
-      print('   turf_id: ${turf.id}');
-      print('   court_number: $selectedCourt');
-      print('   date: $dateStr');
-      print('   slots: ${slotsData.length} slots');
-      print('   total_amount: $formattedTotalAmount');
-      print('   amount_to_pay: $formattedPayableAmount');
+      if (discountVm.selectedAdminDiscountId.value != null) {
+        requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value!;
+      }
+      if (discountVm.selectedPartnerDiscountId.value != null) {
+        requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value!;
+      }
+
+      print('📤 Wallet Booking Request: $requestBody');
+      print('   Payment Type: $selectedPaymentType');
+      print('   Amount to Pay: $amountToPay');
 
       final response = await dio.post(
         '/user/bookings/wallet-book/',
         data: requestBody,
       );
 
-      print('📥 Wallet Booking Response Status: ${response.statusCode}');
-      print('📥 Wallet Booking Response Data: ${response.data}');
+      print('📥 Wallet Booking Response: ${response.data}');
 
       final data = response.data;
       final result = data is Map ? data['result'] : null;
@@ -240,7 +365,6 @@ class BookingSummaryViewModel extends GetxController {
       if (result == 'success') {
         _handleWalletSuccess();
       } else {
-        // ✅ If failed, check if balance was deducted anyway
         await Future.delayed(const Duration(milliseconds: 500));
         await profileVm.fetchUser(forceRefresh: true);
 
@@ -253,48 +377,48 @@ class BookingSummaryViewModel extends GetxController {
         }
       }
     } on DioException catch (e) {
-      print('❌ Wallet Booking Dio Error: ${e.response?.statusCode}');
-      print('❌ Error Data: ${e.response?.data}');
-
+      print('❌ Wallet Booking Error: ${e.response?.data}');
       String errorMsg = 'Something went wrong. Please try again.';
       if (e.response?.data != null) {
         final data = e.response?.data;
         if (data is Map && data['message'] != null) {
           errorMsg = data['message'];
         }
-        // ✅ Check if it's a validation error
-        if (data is Map && data['data'] != null) {
-          final errorData = data['data'];
-          if (errorData is Map) {
-            final errors = errorData.entries.map((e) => '${e.key}: ${e.value}').join('\n');
-            errorMsg = 'Validation Error:\n$errors';
-          }
-        }
       }
-
-      // ✅ Check if balance was deducted despite error
       await Future.delayed(const Duration(milliseconds: 500));
       await profileVm.fetchUser(forceRefresh: true);
 
       if (profileVm.walletBalance.value < initialBalance) {
-        print('✅ Wallet payment successful despite error - balance decreased');
+        print('✅ Wallet payment successful despite error');
         _handleWalletSuccess();
       } else {
         _showWalletError(errorMsg);
       }
     } catch (e) {
       print('❌ Wallet Booking Error: $e');
-
-      // ✅ Check if balance was deducted despite error
       await Future.delayed(const Duration(milliseconds: 500));
       await profileVm.fetchUser(forceRefresh: true);
 
       if (profileVm.walletBalance.value < initialBalance) {
-        print('✅ Wallet payment successful despite error - balance decreased');
+        print('✅ Wallet payment successful despite error');
         _handleWalletSuccess();
       } else {
         _showWalletError('Payment failed. Please try again.');
       }
+    }
+  }
+
+  double _getAmountToPay() {
+    if (selectedPaymentType == 'advance') {
+      if (discountVm.hasSelectedDiscount && discountedAdvanceAmount.value < payableAmount) {
+        return discountedAdvanceAmount.value;
+      }
+      return payableAmount;
+    } else {
+      if (discountVm.hasSelectedDiscount && discountedTotal.value < totalAmount) {
+        return discountedTotal.value;
+      }
+      return payableAmount;
     }
   }
 
@@ -306,7 +430,6 @@ class BookingSummaryViewModel extends GetxController {
       _showWalletSuccessDialog();
     }
 
-    // ✅ Refresh profile and bookings
     await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
     if (Get.isRegistered<BookingViewModel>()) {
       await Get.find<BookingViewModel>().refreshBookings();
@@ -331,6 +454,8 @@ class BookingSummaryViewModel extends GetxController {
   void _showWalletSuccessDialog() {
     if (Get.isDialogOpen ?? false) return;
 
+    final amountPaid = _getAmountToPay();
+
     Get.dialog(
       PopScope(
         canPop: false,
@@ -354,8 +479,16 @@ class BookingSummaryViewModel extends GetxController {
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
               ),
               const SizedBox(height: 8),
-              Text('Amount: ₹${_formatPrice(payableAmount)}',
+              Text('Amount: ₹${_formatPrice(amountPaid)}',
                   style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              if (discountVm.hasSelectedDiscount)
+                Padding(
+                  padding: const EdgeInsets.only(top: 4),
+                  child: Text(
+                    'Total Discount: ₹${_formatPrice(discountVm.totalDiscountAmount)}',
+                    style: TextStyle(fontSize: 13, color: Colors.green.shade700),
+                  ),
+                ),
               const SizedBox(height: 16),
               if (selectedPaymentType == 'advance')
                 const Text(
@@ -421,33 +554,20 @@ class BookingSummaryViewModel extends GetxController {
     );
   }
 
-  // ==================== ONLINE PAYMENT (Razorpay) ====================
   Future<void> initiatePayment() async {
     if (_isProcessing) return;
-    if (payableAmount <= 0) {
-      Get.snackbar('Error', 'Invalid payment amount',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      return;
-    }
 
-    // 🔥 Facebook Add to Cart Event
-    try {
-      await facebookAppEvents.logEvent(
-        name: 'fb_mobile_add_to_cart',
-        parameters: {
-          'content_type': 'turf_booking',
-          'content_id': turf.id.toString(),
-          'content_name': turf.name,
-          'content_category': turf.gameType,
-          'currency': 'INR',
-          'num_items': selectedSlots.length.toString(),
-          'booking_type': selectedPaymentType,
-        },
-        valueToSum: totalAmount,
+    final amountToPay = _getAmountToPay();
+
+    if (amountToPay <= 0) {
+      Get.snackbar(
+        'Invalid Amount',
+        'Amount cannot be zero or negative. Please adjust.',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 3),
       );
-      print('✅ Facebook add to cart event logged');
-    } catch (e) {
-      print('❌ Facebook add to cart error: $e');
+      return;
     }
 
     _isProcessing = true;
@@ -470,12 +590,14 @@ class BookingSummaryViewModel extends GetxController {
         'date': dateStr,
         'slots': slotsData,
         'total_amount': totalAmount.toStringAsFixed(2),
+        'advance_amount': _getFormattedAmount(amountToPay),
       };
 
-      if (selectedPaymentType == 'advance') {
-        requestBody['advance_amount'] = payableAmount.toStringAsFixed(2);
-      } else {
-        requestBody['advance_amount'] = payableAmount.toStringAsFixed(2);
+      if (discountVm.selectedAdminDiscountId.value != null) {
+        requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value;
+      }
+      if (discountVm.selectedPartnerDiscountId.value != null) {
+        requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value;
       }
 
       print('📤 Initiate Booking Request: $requestBody');
@@ -493,36 +615,14 @@ class BookingSummaryViewModel extends GetxController {
           _currentOrderId = orderData['razorpay_order_id'];
           _currentSlotsData = slotsData;
           _currentTotalAmount = totalAmount;
-          _currentPayableAmount = payableAmount;
+          _currentPayableAmount = amountToPay;
           _currentTurfId = turf.id;
           _currentCourtNumber = selectedCourt;
           _currentDate = dateStr;
           _currentPaymentType = selectedPaymentType;
 
-          // 🔥 Facebook Initiate Checkout Event
-          try {
-            await facebookAppEvents.logEvent(
-              name: 'fb_mobile_initiated_checkout',
-              parameters: {
-                'content_type': 'turf_booking',
-                'content_id': turf.id.toString(),
-                'content_name': turf.name,
-                'content_category': turf.gameType,
-                'currency': 'INR',
-                'num_items': selectedSlots.length.toString(),
-                'payment_method': 'razorpay',
-                'booking_type': selectedPaymentType,
-                'amount': payableAmount.toStringAsFixed(2),
-              },
-              valueToSum: payableAmount,
-            );
-            print('✅ Facebook initiate checkout event logged');
-          } catch (e) {
-            print('❌ Facebook initiate checkout error: $e');
-          }
-
           isLoading.value = false;
-          _openRazorpayCheckout(orderData, payableAmount);
+          _openRazorpayCheckout(orderData, amountToPay);
         } else {
           String errorMsg = response.data['message'] ?? 'Failed to initiate payment';
           Get.snackbar('Error', errorMsg,
@@ -564,9 +664,8 @@ class BookingSummaryViewModel extends GetxController {
   }
 
   void _openRazorpayCheckout(Map<String, dynamic> orderData, double amount) {
-    const String razorpayKey = 'rzp_live_Rn1hHzY0kkjXFj';
+    const String razorpayKey = RazorpayConfig.key;
 
-    // ✅ Round amount properly for Razorpay
     double finalAmount = double.parse(amount.toStringAsFixed(2));
     if (finalAmount < 1) finalAmount = 1.0;
     int amountInPaise = (finalAmount * 100).toInt();
@@ -575,6 +674,10 @@ class BookingSummaryViewModel extends GetxController {
     String description = selectedPaymentType == 'advance'
         ? 'Advance Payment - ₹${_formatPrice(finalAmount)}'
         : 'Full Payment - ₹${_formatPrice(finalAmount)}';
+
+    if (discountVm.hasSelectedDiscount) {
+      description += ' (Discount Applied)';
+    }
 
     final options = {
       'key': razorpayKey,
@@ -594,7 +697,6 @@ class BookingSummaryViewModel extends GetxController {
     };
 
     print('🎯 Opening Razorpay: ₹${_formatPrice(finalAmount)} (${amountInPaise} paise)');
-    print('🎯 Order ID: ${orderData['razorpay_order_id']}');
 
     try {
       _razorpay.open(options);
@@ -609,7 +711,6 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
-  // ==================== PAYMENT SUCCESS ====================
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     print('=== ✅ PAYMENT SUCCESS ===');
     print('Payment ID: ${response.paymentId}');
@@ -625,27 +726,7 @@ class BookingSummaryViewModel extends GetxController {
     _successPaymentId = response.paymentId;
     _successOrderId = response.orderId;
 
-    // 🔥 Facebook Purchase Event
-    try {
-      await facebookAppEvents.logPurchase(
-        amount: _currentPayableAmount ?? payableAmount,
-        currency: 'INR',
-        parameters: {
-          'content_type': 'turf_booking',
-          'content_id': _currentTurfId?.toString() ?? turf.id.toString(),
-          'content_name': turf.name,
-          'content_category': turf.gameType,
-          'num_items': selectedSlots.length.toString(),
-          'payment_method': 'razorpay',
-          'booking_type': _currentPaymentType ?? selectedPaymentType,
-          'payment_id': response.paymentId ?? '',
-          'order_id': response.orderId ?? '',
-        },
-      );
-      print('✅ Facebook purchase event logged');
-    } catch (e) {
-      print('❌ Facebook purchase event error: $e');
-    }
+    final amountPaid = _currentPayableAmount ?? _getAmountToPay();
 
     if (!hasShownSuccessPopup.value) {
       hasShownSuccessPopup.value = true;
@@ -664,12 +745,14 @@ class BookingSummaryViewModel extends GetxController {
         'date': _currentDate,
         'slots': _currentSlotsData,
         'total_amount': _currentTotalAmount?.toStringAsFixed(2),
+        'advance_amount': _currentPayableAmount?.toStringAsFixed(2),
       };
 
-      if (_currentPaymentType == 'advance') {
-        confirmData['advance_amount'] = _currentPayableAmount?.toStringAsFixed(2);
-      } else {
-        confirmData['advance_amount'] = _currentPayableAmount?.toStringAsFixed(2);
+      if (discountVm.selectedAdminDiscountId.value != null) {
+        confirmData['admin_discount_id'] = discountVm.selectedAdminDiscountId.value;
+      }
+      if (discountVm.selectedPartnerDiscountId.value != null) {
+        confirmData['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value;
       }
 
       print('📤 Confirm Booking: $confirmData');
@@ -682,7 +765,6 @@ class BookingSummaryViewModel extends GetxController {
       print('⚠️ Confirmation error: $e');
     }
 
-    // ✅ Use refreshBookings instead of fetch
     await Get.find<BookingViewModel>().refreshBookings();
     await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
 
@@ -732,4 +814,37 @@ class BookingSummaryViewModel extends GetxController {
     _razorpay.clear();
     super.onClose();
   }
+
+  double get walletAmountToPay => _getAmountToPay();
+  double get razorpayAmountToPay => _getAmountToPay();
+
+  bool get isDiscountApplied {
+    return discountVm.hasSelectedDiscount && discountVm.totalDiscountAmount > 0;
+  }
+
+  String get discountDisplayText {
+    if (!discountVm.hasSelectedDiscount) return '';
+
+    final admin = discountVm.selectedAdminDiscount;
+    final partner = discountVm.selectedPartnerDiscount;
+    final parts = <String>[];
+    if (admin != null) parts.add('${admin.getDisplayText()} (Platform)');
+    if (partner != null) parts.add('${partner.getDisplayText()} (Venue)');
+    return parts.join(' + ');
+  }
+
+  String get discountAmountText {
+    if (!discountVm.hasSelectedDiscount) return '';
+    return '₹${_formatPrice(discountVm.totalDiscountAmount)}';
+  }
+
+  bool isAdminDiscountSelected(int discountId) {
+    return discountVm.selectedAdminDiscountId.value == discountId;
+  }
+
+  bool isPartnerDiscountSelected(int discountId) {
+    return discountVm.selectedPartnerDiscountId.value == discountId;
+  }
+
+  double get discountedAdvance => discountedAdvanceAmount.value;
 }

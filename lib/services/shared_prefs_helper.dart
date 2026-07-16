@@ -215,7 +215,7 @@ class SharedPrefsHelper {
   static Future<void> syncDeviceIdWithBackend(String jwtToken) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: 'https://test.backend.arcmedialabs.in/api',
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
       final response = await dio.get('/user/device-id/');

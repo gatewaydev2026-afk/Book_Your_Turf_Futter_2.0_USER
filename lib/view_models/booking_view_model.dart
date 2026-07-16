@@ -1,4 +1,4 @@
-// view_models/booking_view_model.dart - LAZY LOADING
+// view_models/booking_view_model.dart - With Lazy Loading + Caching
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -9,6 +9,7 @@ import '../models/booking_model.dart';
 import '../services/shared_prefs_helper.dart';
 
 class BookingViewModel extends GetxController {
+  // Observable state
   final bookings = <BookingModel>[].obs;
   final filteredBookings = <BookingModel>[].obs;
   final selectedTab = "upcoming".obs;
@@ -16,18 +17,20 @@ class BookingViewModel extends GetxController {
   final isPayingBalance = false.obs;
   final isCancelling = false.obs;
 
+  // Filter state
   final selectedDate = Rx<DateTime?>(null);
   final startDate = Rx<DateTime?>(null);
   final endDate = Rx<DateTime?>(null);
   final selectedPaymentStatus = "All".obs;
   final hasActiveFilters = false.obs;
-
   final paymentStatusOptions = ["All", "Pending", "Advance Paid", "Fully Paid"];
 
+  // Razorpay
   late Razorpay _razorpay;
   int? _currentBookingId;
   double? _currentBalanceAmount;
 
+  // Cache control
   static bool _dataLoaded = false;
   static DateTime? _lastFetchTime;
   static const _cacheDuration = Duration(minutes: 1);
@@ -36,7 +39,7 @@ class BookingViewModel extends GetxController {
   void onInit() {
     super.onInit();
     _initRazorpay();
-    print('📋 BookingViewModel initialized (lazy loading - will fetch when needed)');
+    print('📋 BookingViewModel initialized (lazy loading)');
   }
 
   void _initRazorpay() {
@@ -46,7 +49,9 @@ class BookingViewModel extends GetxController {
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
-  // ✅ Call this method ONLY when user opens Booking screen
+  // ==================== LAZY LOADING ====================
+
+  /// Call this ONLY when user opens the Booking screen
   Future<void> loadBookings({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -60,7 +65,7 @@ class BookingViewModel extends GetxController {
       return;
     }
 
-    // Check cache
+    // Check cache - only if not force refresh
     if (!forceRefresh && _dataLoaded && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration) {
@@ -82,7 +87,7 @@ class BookingViewModel extends GetxController {
       final response = await dio.get('/user/bookings/');
 
       if (response.data['result'] == 'success') {
-        final List<dynamic> data = response.data['data'];
+        final List<dynamic> data = response.data['data']['results'] ?? [];
         bookings.value = data
             .map((json) => BookingModel.fromJson(json))
             .toList();
@@ -100,49 +105,12 @@ class BookingViewModel extends GetxController {
     }
   }
 
-  DateTime? _parseDate(String dateStr) {
-    if (dateStr.isEmpty) return null;
-
-    try {
-      String cleanDate = dateStr.trim();
-
-      if (cleanDate.contains('-')) {
-        final parts = cleanDate.split('-');
-        if (parts.length == 3) {
-          int first = int.tryParse(parts[0]) ?? 0;
-          int second = int.tryParse(parts[1]) ?? 0;
-          int third = int.tryParse(parts[2]) ?? 0;
-
-          if (first > 31) {
-            return DateTime(third, second, first);
-          } else {
-            return DateTime(third, second, first);
-          }
-        }
-      }
-
-      return DateTime.tryParse(cleanDate);
-    } catch (e) {
-      print('⚠️ Error parsing date: $dateStr - $e');
-      return null;
-    }
-  }
-
-  bool _isSameDay(DateTime? date1, DateTime? date2) {
-    if (date1 == null || date2 == null) return false;
-    return date1.year == date2.year &&
-        date1.month == date2.month &&
-        date1.day == date2.day;
-  }
-
-  bool _isDateAfter(DateTime? date, DateTime? reference) {
-    if (date == null || reference == null) return false;
-    return date.isAfter(reference);
-  }
+  // ==================== FILTERS ====================
 
   void _applyAllFilters() {
     var filtered = List<BookingModel>.from(bookings);
 
+    // Date range filter
     if (startDate.value != null && endDate.value != null) {
       filtered = filtered.where((b) {
         final bookingDate = _parseDate(b.formattedDate);
@@ -152,6 +120,7 @@ class BookingViewModel extends GetxController {
         return isAfterStart && isBeforeEnd;
       }).toList();
     }
+    // Single date filter
     else if (selectedDate.value != null) {
       filtered = filtered.where((b) {
         final bookingDate = _parseDate(b.formattedDate);
@@ -160,10 +129,12 @@ class BookingViewModel extends GetxController {
       }).toList();
     }
 
+    // Payment status filter
     if (selectedPaymentStatus.value != "All") {
       filtered = filtered.where((b) => b.paymentStatus == selectedPaymentStatus.value).toList();
     }
 
+    // Tab filter
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = DateTime(now.year, now.month, now.day - 1);
@@ -204,12 +175,6 @@ class BookingViewModel extends GetxController {
     }
 
     filteredBookings.value = filtered;
-
-    print('\n=== FILTER DEBUG ===');
-    print('Tab: ${selectedTab.value}');
-    print('Total bookings: ${bookings.length}');
-    print('Filtered bookings: ${filtered.length}');
-    print('===================\n');
   }
 
   void changeTab(String tab) {
@@ -252,6 +217,50 @@ class BookingViewModel extends GetxController {
     _applyAllFilters();
   }
 
+  // ==================== COUNT HELPERS ====================
+
+  int getTodayCount() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return bookings.where((b) {
+      if (b.isCancelled) return false;
+      final bookingDate = _parseDate(b.formattedDate);
+      if (bookingDate == null) return false;
+      return _isSameDay(bookingDate, today);
+    }).length;
+  }
+
+  int getUpcomingCount() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final yesterday = DateTime(now.year, now.month, now.day - 1);
+    return bookings.where((b) {
+      if (b.isCancelled) return false;
+      final bookingDate = _parseDate(b.formattedDate);
+      if (bookingDate == null) return false;
+      final isToday = _isSameDay(bookingDate, today);
+      final isFuture = bookingDate.isAfter(yesterday);
+      return isToday || isFuture;
+    }).length;
+  }
+
+  int getCompletedCount() {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    return bookings.where((b) {
+      if (b.isCancelled) return false;
+      final bookingDate = _parseDate(b.formattedDate);
+      if (bookingDate == null) return false;
+      return bookingDate.isBefore(today);
+    }).length;
+  }
+
+  int getCancelledCount() {
+    return bookings.where((b) => b.isCancelled).length;
+  }
+
+  // ==================== CANCEL BOOKING ====================
+
   Future<bool> cancelBooking(int bookingId) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -271,7 +280,7 @@ class BookingViewModel extends GetxController {
       if (response.data['result'] == 'success') {
         _dataLoaded = false;
         await loadBookings(forceRefresh: true);
-        Get.snackbar('Success', 'Booking cancelled successfully!',
+        Get.snackbar('Success', 'Booking cancelled and amount refunded to wallet!',
             backgroundColor: Colors.green, colorText: Colors.white);
         return true;
       } else {
@@ -281,24 +290,6 @@ class BookingViewModel extends GetxController {
       }
     } on DioException catch (e) {
       print('Cancel error: ${e.response?.statusCode} - ${e.response?.data}');
-
-      try {
-        final dio = Get.find<Dio>();
-        final response2 = await dio.post(
-          '/user/booking/cancel/',
-          data: {'booking_id': bookingId},
-        );
-        if (response2.data['result'] == 'success') {
-          _dataLoaded = false;
-          await loadBookings(forceRefresh: true);
-          Get.snackbar('Success', 'Booking cancelled successfully!',
-              backgroundColor: Colors.green, colorText: Colors.white);
-          return true;
-        }
-      } catch (e2) {
-        print('Alternative endpoint also failed: $e2');
-      }
-
       Get.snackbar('Error', 'Failed to cancel booking. Please try again.',
           backgroundColor: Colors.red, colorText: Colors.white);
       return false;
@@ -311,6 +302,8 @@ class BookingViewModel extends GetxController {
       isCancelling.value = false;
     }
   }
+
+  // ==================== BALANCE PAYMENT (Razorpay) ====================
 
   Future<void> initiateBalancePayment(int bookingId, double amount) async {
     final token = SharedPrefsHelper.getToken();
@@ -325,7 +318,7 @@ class BookingViewModel extends GetxController {
       final dio = Get.find<Dio>();
       final response = await dio.post(
         '/user/bookings/pay-balance/',
-        data: {'booking_id': bookingId, 'amount': amount},
+        data: {'booking_id': bookingId, 'amount': amount.toString()},
       );
 
       if (response.data['result'] == 'success') {
@@ -416,48 +409,55 @@ class BookingViewModel extends GetxController {
     print('External Wallet: ${response.walletName}');
   }
 
-  int getTodayCount() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return bookings.where((b) {
-      if (b.isCancelled) return false;
-      final bookingDate = _parseDate(b.formattedDate);
-      if (bookingDate == null) return false;
-      return _isSameDay(bookingDate, today);
-    }).length;
+  // ==================== WALLET PAYMENT ====================
+
+  Future<void> payBalanceWithWallet(int bookingId, double amount) async {
+    if (isPayingBalance.value) return;
+
+    isPayingBalance.value = true;
+    try {
+      final dio = Get.find<Dio>();
+      final response = await dio.post(
+        '/user/bookings/pay-balance-wallet/',
+        data: {
+          'booking_id': bookingId,
+          'amount': amount.toString(),
+        },
+      );
+
+      if (response.data['result'] == 'success') {
+        _dataLoaded = false;
+        await loadBookings(forceRefresh: true);
+        Get.snackbar(
+          'Payment Successful',
+          '₹${amount.toStringAsFixed(2)} deducted from wallet',
+          backgroundColor: Colors.green,
+          colorText: Colors.white,
+          snackPosition: SnackPosition.BOTTOM,
+        );
+      } else {
+        Get.snackbar(
+          'Payment Failed',
+          response.data['message'] ?? 'Something went wrong',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      }
+    } catch (e) {
+      print('Wallet balance payment error: $e');
+      Get.snackbar(
+        'Error',
+        'Payment failed: ${e.toString()}',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
+    } finally {
+      isPayingBalance.value = false;
+    }
   }
 
-  int getUpcomingCount() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final yesterday = DateTime(now.year, now.month, now.day - 1);
+  // ==================== REFRESH ====================
 
-    return bookings.where((b) {
-      if (b.isCancelled) return false;
-      final bookingDate = _parseDate(b.formattedDate);
-      if (bookingDate == null) return false;
-      final isToday = _isSameDay(bookingDate, today);
-      final isFuture = bookingDate.isAfter(yesterday);
-      return isToday || isFuture;
-    }).length;
-  }
-
-  int getCompletedCount() {
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    return bookings.where((b) {
-      if (b.isCancelled) return false;
-      final bookingDate = _parseDate(b.formattedDate);
-      if (bookingDate == null) return false;
-      return bookingDate.isBefore(today);
-    }).length;
-  }
-
-  int getCancelledCount() {
-    return bookings.where((b) => b.isCancelled).length;
-  }
-
-  // ✅ Call this when user pulls to refresh
   Future<void> refreshBookings() async {
     _dataLoaded = false;
     await loadBookings(forceRefresh: true);
@@ -466,6 +466,39 @@ class BookingViewModel extends GetxController {
   static void resetCache() {
     _dataLoaded = false;
     _lastFetchTime = null;
+  }
+
+  // ==================== DATE HELPERS ====================
+
+  DateTime? _parseDate(String dateStr) {
+    if (dateStr.isEmpty) return null;
+    try {
+      String cleanDate = dateStr.trim();
+      if (cleanDate.contains('-')) {
+        final parts = cleanDate.split('-');
+        if (parts.length == 3) {
+          int first = int.tryParse(parts[0]) ?? 0;
+          int second = int.tryParse(parts[1]) ?? 0;
+          int third = int.tryParse(parts[2]) ?? 0;
+          if (first > 31) {
+            return DateTime(first, second, third);
+          } else {
+            return DateTime(third, second, first);
+          }
+        }
+      }
+      return DateTime.tryParse(cleanDate);
+    } catch (e) {
+      print('⚠️ Error parsing date: $dateStr - $e');
+      return null;
+    }
+  }
+
+  bool _isSameDay(DateTime? date1, DateTime? date2) {
+    if (date1 == null || date2 == null) return false;
+    return date1.year == date2.year &&
+        date1.month == date2.month &&
+        date1.day == date2.day;
   }
 
   @override

@@ -1,4 +1,7 @@
-// home_view.dart - Complete with notification badge, working update check
+// home_view.dart - Complete with Better Pagination Design
+// ✅ Modern loading indicator
+// ✅ Smooth pagination with shimmer effect
+// ✅ Pull to refresh with improved UI
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile_view.dart';
@@ -56,6 +59,9 @@ class _HomeViewState extends State<HomeView>
   // Stream subscription for real-time notifications
   StreamSubscription<NotificationItem>? _notificationStreamSubscription;
 
+  // ✅ Pagination loading indicator
+  bool _showLoadingMore = false;
+
   @override
   void initState() {
     super.initState();
@@ -69,7 +75,6 @@ class _HomeViewState extends State<HomeView>
       }
     });
 
-    // ✅ Run update check in background (non-blocking, with rate limiting)
     _checkForUpdatesInBackground();
 
     WidgetsBinding.instance.addObserver(this);
@@ -121,10 +126,8 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  // ✅ Non-blocking update check with rate limiting
   Future<void> _checkForUpdatesInBackground() async {
     try {
-      // ✅ Check rate limiting (once per day)
       if (!SharedPrefsHelper.shouldCheckForUpdate()) {
         final lastCheck = SharedPrefsHelper.getLastUpdateCheck();
         if (lastCheck != null) {
@@ -134,11 +137,9 @@ class _HomeViewState extends State<HomeView>
         return;
       }
 
-      // Run update check without blocking UI
       Future.delayed(const Duration(seconds: 3), () async {
         try {
           await UpdateService.checkAndShowUpdateDialog(context);
-          // Last check time is saved inside UpdateService
           _isUpdateCheckDone = true;
         } catch (e) {
           print('⚠️ Background update check failed: $e');
@@ -167,7 +168,6 @@ class _HomeViewState extends State<HomeView>
       return;
     }
 
-    // ✅ Check token validity
     if (!SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired, redirecting to login');
       await SharedPrefsHelper.clearToken();
@@ -242,7 +242,6 @@ class _HomeViewState extends State<HomeView>
     print('App state: $state - Updating notification badge only');
     if (state == AppLifecycleState.resumed) {
       _notificationService.updateUnreadCount();
-      // ✅ Refresh data if needed (but only if token is valid)
       if (SharedPrefsHelper.isLoggedIn() && SharedPrefsHelper.isTokenValid()) {
         _loadHomeData();
       }
@@ -331,7 +330,6 @@ class _HomeViewState extends State<HomeView>
 
   @override
   Widget build(BuildContext context) {
-    // ✅ No blocking - show UI immediately
     return Container(
       color: const Color(0xFFF5F7F6),
       child: Scaffold(
@@ -623,8 +621,12 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
+  // ============================================================
+  // ✅ MAIN CONTENT WITH BETTER PAGINATION DESIGN
+  // ============================================================
   Widget _buildMainContent() {
     return Obx(() {
+      // ✅ Loading State - Shimmer Effect
       if (homeVm.isLoading.value && homeVm.turfs.isEmpty) {
         return GridView.builder(
           controller: _scrollController,
@@ -640,32 +642,54 @@ class _HomeViewState extends State<HomeView>
         );
       }
 
+      // ✅ Data Loaded
       if (homeVm.turfs.isNotEmpty) {
         return RefreshIndicator(
           onRefresh: _handleRefresh,
           color: Colors.green,
-          child: GridView.builder(
-            controller: _scrollController,
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-              crossAxisCount: getCrossAxisCount(context),
-              childAspectRatio: 0.68,
-              crossAxisSpacing: 12,
-              mainAxisSpacing: 12,
+          child: NotificationListener<ScrollNotification>(
+            onNotification: (scrollInfo) {
+              // ✅ Load more when reaching the end - using public getter
+              if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
+                if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
+                  homeVm.loadMoreTurfs();
+                }
+              }
+              return true;
+            },
+            child: GridView.builder(
+              controller: _scrollController,
+              padding: const EdgeInsets.symmetric(horizontal: 16),
+              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                crossAxisCount: getCrossAxisCount(context),
+                childAspectRatio: 0.68,
+                crossAxisSpacing: 12,
+                mainAxisSpacing: 12,
+              ),
+              itemCount: homeVm.turfs.length + (homeVm.isLoadingMore.value ? 1 : 0),
+              itemBuilder: (_, index) {
+                // ✅ Show Loading More Indicator
+                if (index == homeVm.turfs.length && homeVm.isLoadingMore.value) {
+                  return _buildLoadingMoreIndicator();
+                }
+                return TurfCard(homeVm.turfs[index]);
+              },
             ),
-            itemCount: homeVm.turfs.length,
-            itemBuilder: (_, index) => TurfCard(homeVm.turfs[index]),
           ),
         );
       }
 
+      // ✅ Empty State
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Lottie.asset('assets/lottie/no.json', height: 80, errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80)),
             const SizedBox(height: 16),
-            const Text("No Turfs Found", style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const Text(
+              "No Turfs Found",
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             Text(
               homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
@@ -687,7 +711,49 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  // Header with Notification Badge
+  // ✅ Loading More Indicator Widget
+  Widget _buildLoadingMoreIndicator() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 30,
+            height: 30,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.green,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Loading more turfs...',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // HEADER SECTION
+  // ============================================================
   Widget _headerSection(BuildContext context) {
     final profileImage = profileVm.profileImageUrl.value;
 
