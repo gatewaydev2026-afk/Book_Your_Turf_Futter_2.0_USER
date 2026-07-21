@@ -2,6 +2,7 @@
 // ✅ Modern loading indicator
 // ✅ Smooth pagination with shimmer effect
 // ✅ Pull to refresh with improved UI
+// ✅ FIXED: Search shows ALL turfs (any distance)
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile_view.dart';
@@ -56,19 +57,16 @@ class _HomeViewState extends State<HomeView>
   bool _dataLoaded = false;
   bool _isUpdateCheckDone = false;
 
-  // Stream subscription for real-time notifications
   StreamSubscription<NotificationItem>? _notificationStreamSubscription;
-
-  // ✅ Pagination loading indicator
-  bool _showLoadingMore = false;
 
   @override
   void initState() {
     super.initState();
 
+    homeVm.setSearchController(_searchController);
+
     _notificationService = Get.find<NotificationService>();
 
-    // Listen to real-time notifications
     _notificationStreamSubscription = _notificationService.onNotificationReceived.listen((notification) {
       if (mounted) {
         _notificationService.updateUnreadCount();
@@ -83,7 +81,6 @@ class _HomeViewState extends State<HomeView>
         ? profileVm.name.value
         : (SharedPrefsHelper.getUserName() ?? 'Guest');
 
-    // Greeting animation
     _greetingAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 2000),
@@ -98,7 +95,6 @@ class _HomeViewState extends State<HomeView>
       if (mounted) setState(() => _showGreeting = false);
     });
 
-    // Category animation
     _categoryAnimationController = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 250),
@@ -129,11 +125,6 @@ class _HomeViewState extends State<HomeView>
   Future<void> _checkForUpdatesInBackground() async {
     try {
       if (!SharedPrefsHelper.shouldCheckForUpdate()) {
-        final lastCheck = SharedPrefsHelper.getLastUpdateCheck();
-        if (lastCheck != null) {
-          final diff = DateTime.now().difference(lastCheck);
-          print('⏭️ Update check skipped (${diff.inHours}h ago)');
-        }
         return;
       }
 
@@ -391,7 +382,6 @@ class _HomeViewState extends State<HomeView>
                 ),
               ),
             ),
-            // Chatbot Button
             Positioned(
               bottom: 20,
               right: 16,
@@ -622,7 +612,7 @@ class _HomeViewState extends State<HomeView>
   }
 
   // ============================================================
-  // ✅ MAIN CONTENT WITH BETTER PAGINATION DESIGN
+  // ✅ MAIN CONTENT WITH SEARCH SUPPORT
   // ============================================================
   Widget _buildMainContent() {
     return Obx(() {
@@ -642,14 +632,20 @@ class _HomeViewState extends State<HomeView>
         );
       }
 
-      // ✅ Data Loaded
+      // ✅ Search Empty State - Show when search has no results
+      if (homeVm.searchQuery.value.isNotEmpty &&
+          homeVm.turfs.isEmpty &&
+          !homeVm.isLoading.value) {
+        return _buildSearchEmptyState();
+      }
+
+      // ✅ Search Results or Nearby Turfs
       if (homeVm.turfs.isNotEmpty) {
         return RefreshIndicator(
           onRefresh: _handleRefresh,
           color: Colors.green,
           child: NotificationListener<ScrollNotification>(
             onNotification: (scrollInfo) {
-              // ✅ Load more when reaching the end - using public getter
               if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
                 if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
                   homeVm.loadMoreTurfs();
@@ -668,7 +664,6 @@ class _HomeViewState extends State<HomeView>
               ),
               itemCount: homeVm.turfs.length + (homeVm.isLoadingMore.value ? 1 : 0),
               itemBuilder: (_, index) {
-                // ✅ Show Loading More Indicator
                 if (index == homeVm.turfs.length && homeVm.isLoadingMore.value) {
                   return _buildLoadingMoreIndicator();
                 }
@@ -679,39 +674,52 @@ class _HomeViewState extends State<HomeView>
         );
       }
 
-      // ✅ Empty State
-      return Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            Lottie.asset('assets/lottie/no.json', height: 80, errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80)),
-            const SizedBox(height: 16),
-            const Text(
-              "No Turfs Found",
-              style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 8),
-            Text(
-              homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
-              style: const TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: () => _handleRefresh(),
-              icon: const Icon(Icons.refresh, color: Colors.white),
-              label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
-              style: ElevatedButton.styleFrom(
-                backgroundColor: Colors.green,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              ),
-            ),
-          ],
-        ),
-      );
+      // ✅ Default Empty State
+      return _buildEmptyState();
     });
   }
 
-  // ✅ Loading More Indicator Widget
+  // ✅ Search Empty State
+  Widget _buildSearchEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Lottie.asset(
+            'assets/lottie/no.json',
+            height: 120,
+            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No turfs found for "${homeVm.searchQuery.value}"',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Try adjusting your search terms',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () {
+              _searchController.clear();
+              homeVm.clearSearch();
+              _searchFocusNode.unfocus();
+            },
+            icon: const Icon(Icons.close, color: Colors.white),
+            label: const Text("Clear Search", style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildLoadingMoreIndicator() {
     return Container(
       margin: const EdgeInsets.symmetric(vertical: 16),
@@ -744,6 +752,41 @@ class _HomeViewState extends State<HomeView>
             style: TextStyle(
               fontSize: 12,
               color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Lottie.asset(
+            'assets/lottie/no.json',
+            height: 120,
+            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "No Turfs Found",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _handleRefresh(),
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ],
@@ -872,7 +915,6 @@ class _HomeViewState extends State<HomeView>
                     },
                   ),
                 ),
-                // ✅ Notification Badge
                 if (count > 0)
                   Positioned(
                     right: -2,
@@ -963,6 +1005,20 @@ class _HomeViewState extends State<HomeView>
               ),
             ),
           ),
+          // ✅ Search loading indicator
+          Obx(() {
+            if (homeVm.isSearching.value) {
+              return const SizedBox(
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.green,
+                ),
+              );
+            }
+            return const SizedBox.shrink();
+          }),
         ],
       ),
     );

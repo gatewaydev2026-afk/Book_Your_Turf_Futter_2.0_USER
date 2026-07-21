@@ -1,4 +1,5 @@
 // turf_details_view.dart - NO API CALL, Use passed data only
+// ✅ Added Lemon Yellow Blinking Discount Badge below Verified badge
 
 import 'package:book_your_turf/widgets/sports_amentites.dart';
 import 'dart:async';
@@ -18,7 +19,7 @@ class TurfDetailsView extends StatefulWidget {
   State<TurfDetailsView> createState() => _TurfDetailsViewState();
 }
 
-class _TurfDetailsViewState extends State<TurfDetailsView> {
+class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProviderStateMixin {
   int _currentImageIndex = 0;
   late CarouselSliderController _carouselController;
   bool _isCarouselInitialized = false;
@@ -26,7 +27,11 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
   bool _isAutoSliding = true;
   int _imageCount = 0;
 
-  // Scroll controller for animation
+  // ✅ Blinking animation for discount badge
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
+  late Animation<double> _scaleAnimation;
+
   final ScrollController _scrollController = ScrollController();
   double _cardElevation = 4.0;
   double _cardMargin = 16.0;
@@ -37,7 +42,28 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
     super.initState();
     _carouselController = CarouselSliderController();
 
-    // Start auto slide after a short delay to ensure carousel is ready
+    // ✅ Initialize blinking animation
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
+    _blinkAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _blinkController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(
+        parent: _blinkController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _blinkController.repeat(reverse: true);
+
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) {
         _isCarouselInitialized = true;
@@ -45,7 +71,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
       }
     });
 
-    // Add scroll listener
     _scrollController.addListener(_onScroll);
   }
 
@@ -79,20 +104,17 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
     final scrollOffset = _scrollController.offset;
     setState(() {
       _scrollOffset = scrollOffset;
-      // Calculate elevation based on scroll
       _cardElevation = 4.0 + (scrollOffset / 50).clamp(0.0, 8.0);
       _cardMargin = 16.0 - (scrollOffset / 100).clamp(0.0, 12.0);
       if (_cardMargin < 4) _cardMargin = 4;
     });
   }
 
-  // Helper to determine if sport is Cricket or Football
   bool _isCricketOrFootball(String gameType) {
     final type = gameType.toLowerCase();
     return type.contains('cricket') || type.contains('football');
   }
 
-  // Get appropriate label (Court vs Turf)
   String _getCourtTurfLabel(TurfModel turf) {
     if (_isCricketOrFootball(turf.gameType)) {
       return "Turf";
@@ -100,7 +122,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
     return "Court";
   }
 
-  // Helper to check if closing time is on next day
   bool _isClosingTimeNextDay(String openTime, String closeTime) {
     if (openTime.isEmpty || closeTime.isEmpty) return false;
 
@@ -116,15 +137,11 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
       int closeHour = int.parse(closeParts[0]);
       int closeMinute = closeParts.length > 1 ? int.parse(closeParts[1]) : 0;
 
-      // Handle 24:00 as next day midnight (same as 00:00 next day)
       if (closeHour == 24) return true;
 
-      // Convert to total minutes for accurate comparison
       int openTotalMinutes = openHour * 60 + openMinute;
       int closeTotalMinutes = closeHour * 60 + closeMinute;
 
-      // If closing time (in minutes) is less than or equal to opening time,
-      // it means closing is on the next day
       return closeTotalMinutes <= openTotalMinutes;
     } catch (e) {
       return false;
@@ -195,27 +212,24 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
   @override
   void dispose() {
     _autoSlideTimer?.cancel();
+    _blinkController.dispose();
     _scrollController.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    // ✅ Get turf data from arguments - NO API CALL
     final dynamic args = Get.arguments;
 
     TurfModel turf;
 
     if (args is TurfModel) {
-      // ✅ Direct TurfModel object - Best case
       turf = args;
       print('✅ Using passed TurfModel: ${turf.name}');
     } else if (args is Map<String, dynamic>) {
-      // ✅ Map to TurfModel
       turf = TurfModel.fromJson(args);
       print('✅ Converted Map to TurfModel: ${turf.name}');
     } else {
-      // ❌ Error - No valid data
       print('❌ No valid turf data passed');
       return Scaffold(
         body: SafeArea(
@@ -258,16 +272,17 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
     final isCricketOrFootball = _isCricketOrFootball(turf.gameType);
     final isNextDayClose = _isClosingTimeNextDay(turf.openTime, turf.closeTime);
 
-    // Get advance display text
     final advanceDisplayText = turf.getAdvanceDisplayText();
     final minSlotsDisplayText = turf.getMinSlotsDisplayText();
+
+    // ✅ Get discount label from API
+    String discountLabel = turf.bestDiscountLabel ?? '';
 
     return Scaffold(
       backgroundColor: Colors.white,
       body: CustomScrollView(
         controller: _scrollController,
         slivers: [
-          // App Bar
           SliverAppBar(
             expandedHeight: 0,
             pinned: true,
@@ -292,7 +307,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
             ),
           ),
 
-          // Content
           SliverToBoxAdapter(
             child: Column(
               children: [
@@ -310,7 +324,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                     clipBehavior: Clip.antiAlias,
                     child: Column(
                       children: [
-                        // Auto-slide Image Section - FIXED VERSION
                         Container(
                           height: 280,
                           width: double.infinity,
@@ -391,7 +404,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                           ),
                         ),
 
-                        // Image Dots Indicator
                         if (hasMultipleImages)
                           Padding(
                             padding: const EdgeInsets.symmetric(vertical: 12),
@@ -436,30 +448,126 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                       ),
                       const SizedBox(height: 8),
 
-                      // Verified Badge
-                      if (turf.showVerifiedBadge)
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                          decoration: BoxDecoration(
-                            color: Colors.green,
-                            borderRadius: BorderRadius.circular(20),
-                          ),
-                          child: const Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.verified, size: 14, color: Colors.white),
-                              SizedBox(width: 4),
-                              Text(
-                                'Verified',
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 12,
-                                  fontWeight: FontWeight.w500,
-                                ),
+                      // ✅ Verified Badge + Lemon Yellow Discount Badge Row
+                      Row(
+                        children: [
+                          // Verified Badge
+                          if (turf.showVerifiedBadge)
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(20),
                               ),
-                            ],
-                          ),
-                        ),
+                              child: const Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.verified, size: 14, color: Colors.white),
+                                  SizedBox(width: 4),
+                                  Text(
+                                    'Verified',
+                                    style: TextStyle(
+                                      color: Colors.white,
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+
+                          const SizedBox(width: 8),
+
+                          // ✅ LEMON YELLOW BLINKING DISCOUNT BADGE
+                          if (discountLabel.isNotEmpty)
+                            AnimatedBuilder(
+                              animation: _blinkAnimation,
+                              builder: (context, child) {
+                                return Transform.scale(
+                                  scale: _scaleAnimation.value,
+                                  child: Opacity(
+                                    opacity: _blinkAnimation.value,
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                        vertical: 4,
+                                      ),
+                                      decoration: BoxDecoration(
+                                        color: const Color(0xFFFFEB3B), // ✅ Pure Lemon Yellow
+                                        borderRadius: BorderRadius.circular(20),
+                                        boxShadow: [
+                                          BoxShadow(
+                                            color: const Color(0xFFFFEB3B).withOpacity(0.5),
+                                            blurRadius: 10,
+                                            offset: const Offset(0, 2),
+                                          ),
+                                          BoxShadow(
+                                            color: Colors.black.withOpacity(0.15),
+                                            blurRadius: 4,
+                                            offset: const Offset(0, 1),
+                                          ),
+                                        ],
+                                        border: Border.all(
+                                          color: const Color(0xFFFFD600),
+                                          width: 1.2,
+                                        ),
+                                      ),
+                                      child: Row(
+                                        mainAxisSize: MainAxisSize.min,
+                                        children: [
+                                          Container(
+                                            padding: const EdgeInsets.all(2),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.red,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.local_offer,
+                                              size: 10,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                          const SizedBox(width: 6),
+                                          Text(
+                                            discountLabel,
+                                            style: const TextStyle(
+                                              color: Colors.black87,
+                                              fontSize: 11,
+                                              fontWeight: FontWeight.bold,
+                                              letterSpacing: 0.3,
+                                              shadows: [
+                                                Shadow(
+                                                  color: Colors.white70,
+                                                  blurRadius: 3,
+                                                  offset: Offset(0, 1),
+                                                ),
+                                              ],
+                                            ),
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                          Container(
+                                            margin: const EdgeInsets.only(left: 4),
+                                            padding: const EdgeInsets.all(2),
+                                            decoration: const BoxDecoration(
+                                              color: Colors.black26,
+                                              shape: BoxShape.circle,
+                                            ),
+                                            child: const Icon(
+                                              Icons.arrow_forward_ios,
+                                              size: 8,
+                                              color: Colors.white,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                  ),
+                                );
+                              },
+                            ),
+                        ],
+                      ),
                       const SizedBox(height: 8),
 
                       // Address with Map Link
@@ -588,7 +696,6 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
                                               fontWeight: FontWeight.bold,
                                             ),
                                           ),
-                                          // ✅ NEXT DAY LABEL - RIGHT SIDE OF TIME
                                           if (isNextDayClose) ...[
                                             const SizedBox(width: 8),
                                             Container(

@@ -1,6 +1,11 @@
-// widgets/turf_card.dart - RenderFlex Overflow Fixed
+// widgets/turf_card.dart - With Responsive Lemon Yellow Blinking Discount Badge
 // ✅ Added Discount Badge from API (best_discount_label)
-// ✅ No other changes made
+// ✅ ONLY LEMON YELLOW color for discount badge
+// ✅ Yellow blinking animation with clean label design
+// ✅ NO extra symbols (arrow, offer icon removed)
+// ✅ FULLY RESPONSIVE - shows complete text in one line
+// ✅ Auto-adjusts font size based on text length
+// ✅ RenderFlex Overflow Fixed
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -9,31 +14,74 @@ import '../models/turf_model.dart';
 import '../view_models/home_view_model.dart';
 import '../routes/app_routes.dart';
 
-class TurfCard extends StatelessWidget {
+class TurfCard extends StatefulWidget {
   final TurfModel turf;
   const TurfCard(this.turf, {super.key});
 
+  @override
+  State<TurfCard> createState() => _TurfCardState();
+}
+
+class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin {
+  late AnimationController _blinkController;
+  late Animation<double> _blinkAnimation;
+  late Animation<double> _scaleAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _blinkController = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 700),
+    );
+
+    _blinkAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
+      CurvedAnimation(
+        parent: _blinkController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
+      CurvedAnimation(
+        parent: _blinkController,
+        curve: Curves.easeInOut,
+      ),
+    );
+
+    _blinkController.repeat(reverse: true);
+  }
+
+  @override
+  void dispose() {
+    _blinkController.dispose();
+    super.dispose();
+  }
+
   void _handleTap() {
-    Get.toNamed(AppRoutes.turfDetail, arguments: turf);
+    Get.toNamed(AppRoutes.turfDetail, arguments: widget.turf);
   }
 
   Future<void> _handleFavoriteTap() async {
     final homeVm = Get.find<HomeViewModel>();
-    await homeVm.toggleFavorite(turf.id);
+    await homeVm.toggleFavorite(widget.turf.id);
   }
 
   @override
   Widget build(BuildContext context) {
     final homeVm = Get.find<HomeViewModel>();
-    final isFavorited = homeVm.isFavorite(turf.id);
+    final isFavorited = homeVm.isFavorite(widget.turf.id);
 
     final latestTurf = homeVm.allTurfs.firstWhere(
-          (t) => t.id == turf.id,
-      orElse: () => turf,
+          (t) => t.id == widget.turf.id,
+      orElse: () => widget.turf,
     );
 
-    // ✅ Get discount label from API
     String discountLabel = latestTurf.bestDiscountLabel ?? '';
+
+    // Get screen width for responsive sizing
+    final screenWidth = MediaQuery.of(context).size.width;
+    final isSmallScreen = screenWidth < 360;
 
     return GestureDetector(
       onTap: _handleTap,
@@ -49,7 +97,6 @@ class TurfCard extends StatelessWidget {
             ),
           ],
         ),
-        // ✅ Column fills the grid cell — no mainAxisSize: min
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -59,7 +106,7 @@ class TurfCard extends StatelessWidget {
                 top: Radius.circular(12),
               ),
               child: SizedBox(
-                height: 130, // ✅ Reduced from 150 → gives content more room
+                height: 120,
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
@@ -81,8 +128,7 @@ class TurfCard extends StatelessWidget {
                     )
                         : Container(
                       color: Colors.grey[200],
-                      child:
-                      const Icon(Icons.sports_soccer, size: 30),
+                      child: const Icon(Icons.sports_soccer, size: 30),
                     ),
 
                     // Verified badge
@@ -134,59 +180,84 @@ class TurfCard extends StatelessWidget {
                               isFavorited
                                   ? Icons.favorite
                                   : Icons.favorite_border,
-                              color:
-                              isFavorited ? Colors.red : Colors.grey,
+                              color: isFavorited ? Colors.red : Colors.grey,
                               size: 16,
                             ),
                           ),
                         ),
                       ),
 
-                    // ✅ NEW: Discount Badge from API (best_discount_label)
+                    // ✅ RESPONSIVE LEMON YELLOW BLINKING DISCOUNT BADGE
                     if (discountLabel.isNotEmpty)
                       Positioned(
-                        bottom: 4,
-                        left: 4,
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
-                          decoration: BoxDecoration(
-                            gradient: const LinearGradient(
-                              colors: [Color(0xFFE65100), Color(0xFFFF6F00)],
-                              begin: Alignment.topLeft,
-                              end: Alignment.bottomRight,
-                            ),
-                            borderRadius: BorderRadius.circular(10),
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.2),
-                                blurRadius: 4,
-                              ),
-                            ],
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              const Icon(
-                                Icons.local_offer,
-                                size: 8,
-                                color: Colors.white,
-                              ),
-                              const SizedBox(width: 3),
-                              Text(
-                                discountLabel,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 7,
-                                  fontWeight: FontWeight.bold,
+                        bottom: 6,
+                        left: 0,
+                        right: 0, // Allow full width
+                        child: AnimatedBuilder(
+                          animation: _blinkAnimation,
+                          builder: (context, child) {
+                            return Transform.scale(
+                              scale: _scaleAnimation.value,
+                              child: Opacity(
+                                opacity: _blinkAnimation.value,
+                                child: Container(
+                                  padding: EdgeInsets.symmetric(
+                                    horizontal: isSmallScreen ? 6 : 10,
+                                    vertical: isSmallScreen ? 3 : 4,
+                                  ),
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFFFFEB3B), // ✅ Pure Lemon Yellow
+                                    borderRadius: const BorderRadius.only(
+                                      topRight: Radius.circular(8),
+                                      bottomRight: Radius.circular(8),
+                                    ),
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: const Color(0xFFFFEB3B).withOpacity(0.5),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 2),
+                                      ),
+                                      BoxShadow(
+                                        color: Colors.black.withOpacity(0.15),
+                                        blurRadius: 3,
+                                        offset: const Offset(0, 1),
+                                      ),
+                                    ],
+                                    border: Border.all(
+                                      color: const Color(0xFFFFD600),
+                                      width: 1.2,
+                                    ),
+                                  ),
+                                  // Use ConstrainedBox to limit width and allow text to fit
+                                  constraints: BoxConstraints(
+                                    maxWidth: screenWidth * 0.6, // Max 60% of screen
+                                  ),
+                                  child: FittedBox(
+                                    fit: BoxFit.scaleDown, // Shrink text if needed
+                                    child: Text(
+                                      discountLabel,
+                                      style: TextStyle(
+                                        color: Colors.black87,
+                                        fontSize: isSmallScreen ? 8 : 10,
+                                        fontWeight: FontWeight.bold,
+                                        letterSpacing: 0.5,
+                                        shadows: const [
+                                          Shadow(
+                                            color: Colors.white70,
+                                            blurRadius: 3,
+                                            offset: Offset(0, 1),
+                                          ),
+                                        ],
+                                      ),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.visible,
+                                      softWrap: false,
+                                    ),
+                                  ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
                               ),
-                            ],
-                          ),
+                            );
+                          },
                         ),
                       ),
 
@@ -197,12 +268,16 @@ class TurfCard extends StatelessWidget {
                         left: 4,
                         child: Container(
                           padding: const EdgeInsets.symmetric(
-                            horizontal: 5,
+                            horizontal: 6,
                             vertical: 2,
                           ),
                           decoration: BoxDecoration(
                             color: Colors.orange,
-                            borderRadius: BorderRadius.circular(8),
+                            borderRadius: BorderRadius.circular(6),
+                            border: Border.all(
+                              color: Colors.white.withOpacity(0.5),
+                              width: 1,
+                            ),
                           ),
                           child: const Text(
                             'Enquiry',
@@ -220,12 +295,12 @@ class TurfCard extends StatelessWidget {
             ),
 
             // ── Content Section ────────────────────────────────────
-            // ✅ Expanded fills remaining height → no overflow
-            Expanded(
+            Flexible(
               child: Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
                   children: [
                     // Turf name
                     Text(
@@ -234,27 +309,29 @@ class TurfCard extends StatelessWidget {
                       overflow: TextOverflow.ellipsis,
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
-                        fontSize: 12,
+                        fontSize: 13,
+                        color: Colors.black87,
                       ),
                     ),
-                    const SizedBox(height: 3),
+                    const SizedBox(height: 2),
 
                     // Address
                     Row(
                       children: [
                         const Icon(
                           Icons.location_on,
-                          size: 9,
+                          size: 10,
                           color: Colors.grey,
                         ),
-                        const SizedBox(width: 2),
+                        const SizedBox(width: 3),
                         Expanded(
                           child: Text(
                             "${latestTurf.address.split(',').length > 1 ? latestTurf.address.split(',')[1].trim() : latestTurf.address}, "
                                 "${latestTurf.district}",
                             style: const TextStyle(
-                              fontSize: 9,
+                              fontSize: 10,
                               color: Colors.grey,
+                              fontWeight: FontWeight.w500,
                             ),
                             maxLines: 1,
                             overflow: TextOverflow.ellipsis,
@@ -263,7 +340,7 @@ class TurfCard extends StatelessWidget {
                       ],
                     ),
 
-                    // Distance (conditional)
+                    // Distance
                     if (latestTurf.showVerifiedBadge &&
                         homeVm.currentLocation.value != null &&
                         latestTurf.latitude != null &&
@@ -274,16 +351,17 @@ class TurfCard extends StatelessWidget {
                           children: [
                             Icon(
                               Icons.directions_walk,
-                              size: 9,
+                              size: 10,
                               color: Colors.green.shade600,
                             ),
-                            const SizedBox(width: 2),
+                            const SizedBox(width: 3),
                             Expanded(
                               child: Text(
                                 homeVm.getDistanceString(latestTurf),
                                 style: TextStyle(
-                                  fontSize: 8,
+                                  fontSize: 9,
                                   color: Colors.green.shade600,
+                                  fontWeight: FontWeight.w500,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -298,28 +376,32 @@ class TurfCard extends StatelessWidget {
                     // Game type chip
                     Container(
                       padding: const EdgeInsets.symmetric(
-                        horizontal: 5,
+                        horizontal: 6,
                         vertical: 2,
                       ),
                       decoration: BoxDecoration(
                         color: Colors.green.shade50,
                         borderRadius: BorderRadius.circular(6),
+                        border: Border.all(
+                          color: Colors.green.shade200,
+                          width: 0.5,
+                        ),
                       ),
                       child: Text(
                         latestTurf.gameType.isNotEmpty
                             ? latestTurf.gameType
                             : 'Contact',
                         style: TextStyle(
-                          fontSize: 8,
+                          fontSize: 9,
                           color: Colors.green.shade700,
+                          fontWeight: FontWeight.w600,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
                     ),
 
-                    // ✅ Spacer pushes button to bottom of Expanded area
-                    const Spacer(),
+                    const SizedBox(height: 4),
 
                     // Action Button
                     SizedBox(
@@ -334,7 +416,7 @@ class TurfCard extends StatelessWidget {
                           foregroundColor: Colors.white,
                           padding: EdgeInsets.zero,
                           shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(5),
+                            borderRadius: BorderRadius.circular(6),
                           ),
                           tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                           minimumSize: const Size(0, 26),
@@ -348,15 +430,15 @@ class TurfCard extends StatelessWidget {
                               latestTurf.isBookable
                                   ? Icons.calendar_today
                                   : Icons.info,
-                              size: 9,
+                              size: 10,
                             ),
-                            const SizedBox(width: 3),
+                            const SizedBox(width: 4),
                             Text(
                               latestTurf.isBookable
                                   ? 'Book Now'
                                   : 'View Details',
                               style: const TextStyle(
-                                fontSize: 9,
+                                fontSize: 10,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),

@@ -1,5 +1,9 @@
 // lib/views/booking_summary_view.dart
-// ✅ Fixed: Full payment discounts (isFull: true) are now displayed properly
+// ✅ Fixed: Payment summary with correct balance to pay calculation
+// ✅ Rupee symbol with different style and color
+// ✅ Advance shows only percentage
+// ✅ Fixed type casting error in _buildStyledRupeeText
+// ✅ Fixed: Full payment now shows correctly (no advance/balance sections)
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -26,6 +30,62 @@ class BookingSummaryView extends StatelessWidget {
       return 'Maximum 99% discount allowed';
     }
     return null;
+  }
+
+  // ✅ Helper method to build styled rupee text (for String values)
+  Widget _buildStyledRupeeText(String amount, {Color? color, double? fontSize, FontWeight? fontWeight}) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: '₹',
+            style: TextStyle(
+              color: color ?? Colors.green.shade700,
+              fontSize: fontSize ?? 14,
+              fontWeight: fontWeight ?? FontWeight.bold,
+              fontFamily: 'Times New Roman',
+              letterSpacing: 0.5,
+            ),
+          ),
+          TextSpan(
+            text: amount,
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: fontSize ?? 14,
+              fontWeight: fontWeight ?? FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ Helper method to build styled rupee text (for double values)
+  Widget _buildStyledRupeeAmount(double amount, {Color? color, double? fontSize, FontWeight? fontWeight}) {
+    return RichText(
+      text: TextSpan(
+        children: [
+          TextSpan(
+            text: '₹',
+            style: TextStyle(
+              color: color ?? Colors.green.shade700,
+              fontSize: fontSize ?? 14,
+              fontWeight: fontWeight ?? FontWeight.bold,
+              fontFamily: 'Georgia',
+              letterSpacing: 0.5,
+            ),
+          ),
+          TextSpan(
+            text: PriceFormatter.format(amount),
+            style: TextStyle(
+              color: Colors.black87,
+              fontSize: fontSize ?? 14,
+              fontWeight: fontWeight ?? FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -182,9 +242,16 @@ class BookingSummaryView extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 8),
-              Text(
-                'Amount: ₹${PriceFormatter.format(vm.walletAmountToPay)}',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  _buildStyledRupeeAmount(
+                    vm.walletAmountToPay,
+                    color: Colors.green.shade800,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ],
               ),
               if (vm.isDiscountApplied)
                 Padding(
@@ -1046,7 +1113,7 @@ class BookingSummaryView extends StatelessWidget {
                 ),
               ),
 
-              // ✅ Save amount
+              // ✅ Save amount with styled rupee symbol
               if (discount.calculatedDiscount != null &&
                   discount.calculatedDiscount! > 0 &&
                   !isInvalid)
@@ -1061,12 +1128,35 @@ class BookingSummaryView extends StatelessWidget {
                       width: 0.5,
                     ),
                   ),
-                  child: Text(
-                    'Save ₹${PriceFormatter.format(discount.calculatedDiscount!)}',
-                    style: TextStyle(
-                      fontSize: 9,
-                      fontWeight: FontWeight.w600,
-                      color: isSelected ? Colors.green.shade700 : isFull ? Colors.blue.shade700 : Colors.orange.shade700,
+                  child: RichText(
+                    text: TextSpan(
+                      children: [
+                        TextSpan(
+                          text: 'Save ',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w500,
+                            color: isSelected ? Colors.green.shade700 : isFull ? Colors.blue.shade700 : Colors.orange.shade700,
+                          ),
+                        ),
+                        TextSpan(
+                          text: '₹',
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: isSelected ? Colors.green.shade800 : isFull ? Colors.blue.shade800 : Colors.orange.shade800,
+                            fontFamily: 'Georgia',
+                          ),
+                        ),
+                        TextSpan(
+                          text: PriceFormatter.format(discount.calculatedDiscount!),
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.green.shade700 : isFull ? Colors.blue.shade700 : Colors.orange.shade700,
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
@@ -1123,8 +1213,279 @@ class BookingSummaryView extends StatelessWidget {
   }
 
   // ============================================================
-  // ✅ PAYMENT BREAKDOWN
+  // ✅ PAYMENT SUMMARY - FIXED: Full payment shows correctly
+  // ✅ Advance shows only percentage, not amount
   // ============================================================
+  Widget _buildPaymentSummaryCard(BookingSummaryViewModel vm) {
+    // Calculate advance WITHOUT discount
+    final double advanceWithoutDiscount = vm.totalAmount * (_calculateAdvancePercentageValue(vm) / 100);
+
+    // Calculate discount amount
+    final double totalDiscount = vm.isDiscountApplied ? vm.discountVm.totalDiscountAmount : 0.0;
+
+    // Payable Now depends on payment type
+    // For Advance: Advance Amount - Discount
+    // For Full: Total Amount - Discount
+    final double payableNow = vm.selectedPaymentType == 'advance'
+        ? advanceWithoutDiscount - totalDiscount
+        : vm.totalAmount - totalDiscount;
+
+    return Card(
+      elevation: 2,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text('Payment Summary',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
+            const SizedBox(height: 12),
+
+            // ✅ 1. Payment Method
+            _infoRow(
+              Icons.payment,
+              'Payment Method',
+              vm.selectedPaymentType == 'advance' ? 'Advance Payment' : 'Full Payment',
+              iconColor: Colors.blue,
+            ),
+            const SizedBox(height: 8),
+
+            // ✅ 2. Minimum Slots Required
+            _infoRow(
+              Icons.numbers,
+              'Min Slots',
+              '${vm.turf.minSlots} slot${vm.turf.minSlots > 1 ? 's' : ''}',
+              iconColor: Colors.orange,
+            ),
+            const SizedBox(height: 8),
+
+            const Divider(),
+            const SizedBox(height: 8),
+
+            // ✅ 3. Total Amount (With styled rupee symbol)
+            _buildStyledInfoRow(
+              Icons.currency_rupee,
+              'Total Amount',
+              vm.totalAmount,
+              iconColor: Colors.grey.shade700,
+              bold: true,
+              rupeeColor: Colors.blue.shade700,
+              rupeeSize: 16,
+            ),
+            const SizedBox(height: 8),
+
+            // ✅ 4. Discounts Applied (With styled rupee symbol)
+            if (vm.isDiscountApplied) ...[
+              if (vm.discountVm.selectedAdminDiscount != null)
+                _buildStyledInfoRow(
+                  Icons.verified,
+                  'Platform Discount',
+                  -vm.discountVm.selectedAdminDiscount!.calculatedDiscount! ?? 0,
+                  iconColor: Colors.blue,
+                  rupeeColor: Colors.blue.shade800,
+                  isNegative: true,
+                ),
+              if (vm.discountVm.selectedPartnerDiscount != null)
+                _buildStyledInfoRow(
+                  Icons.storefront,
+                  'Venue Discount',
+                  -vm.discountVm.selectedPartnerDiscount!.calculatedDiscount! ?? 0,
+                  iconColor: Colors.purple,
+                  rupeeColor: Colors.purple.shade800,
+                  isNegative: true,
+                ),
+              const SizedBox(height: 4),
+              _buildStyledInfoRow(
+                Icons.local_offer,
+                'Total Discount',
+                -totalDiscount,
+                iconColor: Colors.green,
+                rupeeColor: Colors.green.shade800,
+                bold: true,
+                isNegative: true,
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              const SizedBox(height: 8),
+            ],
+
+            // ✅ 5. Advance Amount - ONLY SHOW FOR ADVANCE PAYMENT
+            // ✅ Shows only percentage (No amount shown)
+            if (vm.selectedPaymentType == 'advance') ...[
+              _buildAdvancePercentageRow(
+                Icons.forward,
+                'Advance',
+                _calculateAdvancePercentageValue(vm),
+                iconColor: Colors.orange,
+                bold: true,
+              ),
+              const SizedBox(height: 8),
+
+              // ✅ 6. Balance to Pay = Total - Advance (ONLY FOR ADVANCE)
+              _buildStyledInfoRow(
+                Icons.balance,
+                'Balance to Pay',
+                vm.totalAmount - advanceWithoutDiscount,
+                iconColor: Colors.red,
+                rupeeColor: Colors.red.shade800,
+                bold: true,
+              ),
+              const SizedBox(height: 8),
+            ],
+
+            // ✅ 7. Payable Now = Advance - Discount (for advance) OR Total - Discount (for full)
+            const Divider(),
+            _buildStyledInfoRow(
+              Icons.account_balance_wallet,
+              'Payable Now',
+              payableNow,
+              iconColor: Colors.green,
+              rupeeColor: Colors.green.shade800,
+              bold: true,
+              fontSize: 16,
+              rupeeSize: 18,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ✅ New row for Advance - Shows only percentage
+  Widget _buildAdvancePercentageRow(
+      IconData icon,
+      String label,
+      double percentage, {
+        Color? iconColor,
+        bool bold = false,
+        double fontSize = 14,
+      }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: iconColor ?? Colors.green),
+        const SizedBox(width: 8),
+        SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
+        Expanded(
+          child: Text(
+            '${percentage.toStringAsFixed(0)}%',
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+              fontSize: fontSize,
+              color: bold ? Colors.black87 : Colors.black54,
+            ),
+            textAlign: TextAlign.end,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ✅ New styled info row with different rupee symbol style
+  Widget _buildStyledInfoRow(
+      IconData icon,
+      String label,
+      double amount, {
+        Color? iconColor,
+        bool bold = false,
+        double fontSize = 14,
+        Color? rupeeColor,
+        double? rupeeSize,
+        String? suffix,
+        bool isNegative = false,
+      }) {
+    final displayAmount = isNegative ? amount.abs() : amount;
+    final prefix = isNegative ? '-' : '';
+
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: iconColor ?? Colors.green),
+        const SizedBox(width: 8),
+        SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
+        Expanded(
+          child: RichText(
+            textAlign: TextAlign.end,
+            text: TextSpan(
+              children: [
+                if (prefix.isNotEmpty)
+                  TextSpan(
+                    text: prefix,
+                    style: TextStyle(
+                      fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                      fontSize: fontSize,
+                      color: Colors.black87,
+                    ),
+                  ),
+                TextSpan(
+                  text: '₹',
+                  style: TextStyle(
+                    color: rupeeColor ?? Colors.green.shade700,
+                    fontSize: rupeeSize ?? fontSize,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Georgia',
+                    letterSpacing: 0.5,
+                  ),
+                ),
+                TextSpan(
+                  text: PriceFormatter.format(displayAmount),
+                  style: TextStyle(
+                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                    fontSize: fontSize,
+                    color: bold ? Colors.black87 : Colors.black54,
+                  ),
+                ),
+                if (suffix != null)
+                  TextSpan(
+                    text: suffix,
+                    style: TextStyle(
+                      fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                      fontSize: fontSize,
+                      color: Colors.black54,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ✅ Helper method to get advance percentage value as double
+  double _calculateAdvancePercentageValue(BookingSummaryViewModel vm) {
+    if (vm.totalAmount <= 0) return 0.0;
+
+    final advanceType = vm.turf.advanceType ?? 'percentage';
+    final advanceValue = vm.turf.advanceValue ?? 0.0;
+
+    // Safely convert to double
+    final double advanceValueDouble = (advanceValue is double)
+        ? advanceValue
+        : (advanceValue is int)
+        ? advanceValue.toDouble()
+        : (advanceValue is String)
+        ? double.tryParse(advanceValue) ?? 0.0
+        : 0.0;
+
+    if (advanceType == 'percentage') {
+      return advanceValueDouble;
+    } else if (advanceType == 'fixed') {
+      if (vm.totalAmount > 0) {
+        return (advanceValueDouble / vm.totalAmount) * 100;
+      }
+    }
+
+    // Default: calculate from walletAmountToPay
+    if (vm.totalAmount > 0) {
+      return (vm.walletAmountToPay / vm.totalAmount) * 100;
+    }
+    return 0.0;
+  }
+
+  // ✅ Helper method to calculate advance percentage as string
+  String _calculateAdvancePercentage(BookingSummaryViewModel vm) {
+    return _calculateAdvancePercentageValue(vm).toStringAsFixed(0);
+  }
 
   // ============================================================
   // REST OF THE UI
@@ -1212,117 +1573,6 @@ class BookingSummaryView extends StatelessWidget {
     );
   }
 
-  Widget _buildPaymentSummaryCard(BookingSummaryViewModel vm) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text('Payment Summary',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
-            const SizedBox(height: 12),
-            _infoRow(Icons.currency_rupee, 'Total Amount', '₹${PriceFormatter.format(vm.totalAmount)}'),
-            const SizedBox(height: 8),
-
-            if (vm.isDiscountApplied)
-              Column(
-                children: [
-                  if (vm.discountVm.selectedAdminDiscount != null)
-                    _infoRow(
-                      Icons.verified,
-                      'Platform Discount',
-                      '-₹${PriceFormatter.format(vm.discountVm.selectedAdminDiscount!.calculatedDiscount ?? 0)}',
-                      iconColor: Colors.blue,
-                    ),
-                  if (vm.discountVm.selectedPartnerDiscount != null)
-                    _infoRow(
-                      Icons.storefront,
-                      'Venue Discount',
-                      '-₹${PriceFormatter.format(vm.discountVm.selectedPartnerDiscount!.calculatedDiscount ?? 0)}',
-                      iconColor: Colors.purple,
-                    ),
-                  const SizedBox(height: 8),
-                  _infoRow(
-                    Icons.currency_rupee,
-                    'Total Discount',
-                    '-₹${PriceFormatter.format(vm.discountVm.totalDiscountAmount)}',
-                    iconColor: Colors.green,
-                  ),
-                  const SizedBox(height: 8),
-                  _infoRow(
-                    Icons.currency_rupee,
-                    'Discounted Total',
-                    '₹${PriceFormatter.format(vm.discountedTotal.value)}',
-                    iconColor: Colors.green,
-                    bold: true,
-                  ),
-                  const SizedBox(height: 8),
-                ],
-              ),
-
-            _infoRow(Icons.info_outline, 'Payment Type',
-                vm.selectedPaymentType == 'advance' ? 'Advance Payment' : 'Full Payment'),
-
-            if (vm.selectedPaymentType == 'advance') ...[
-              const SizedBox(height: 8),
-              _infoRow(Icons.numbers, 'Min Slots', '${vm.turf.minSlots} slot${vm.turf.minSlots > 1 ? 's' : ''}'),
-              const SizedBox(height: 8),
-              _infoRow(
-                Icons.payment,
-                'Advance to Pay',
-                '₹${PriceFormatter.format(vm.walletAmountToPay)}',
-                iconColor: Colors.green,
-              ),
-              const SizedBox(height: 8),
-              _balanceToPayRow(vm),
-            ],
-
-            const Divider(),
-            _infoRow(
-              Icons.account_balance_wallet,
-              'Payable Now',
-              '₹${PriceFormatter.format(vm.walletAmountToPay)}',
-              iconColor: Colors.green,
-              bold: true,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _balanceToPayRow(BookingSummaryViewModel vm) {
-    final amountToPay = vm.walletAmountToPay;
-    final balanceToPay = vm.totalAmount - amountToPay;
-
-    return Row(
-      children: [
-        const Icon(Icons.receipt, size: 18, color: Colors.red),
-        const SizedBox(width: 8),
-        SizedBox(
-          width: 100,
-          child: const Text(
-            'Balance to pay',
-            style: TextStyle(color: Colors.red, fontSize: 14),
-          ),
-        ),
-        Expanded(
-          child: Text(
-            '₹${PriceFormatter.format(balanceToPay)}',
-            style: const TextStyle(
-              fontWeight: FontWeight.w500,
-              fontSize: 14,
-              color: Colors.red,
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-
   Widget _buildBothPaymentButtons(BuildContext context, BookingSummaryViewModel vm, ProfileViewModel profileVm) {
     final amountToPay = vm.walletAmountToPay;
 
@@ -1342,12 +1592,31 @@ class BookingSummaryView extends StatelessWidget {
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
               const Text('Wallet Balance:', style: TextStyle(fontSize: 14)),
-              Obx(() => Text(
-                '₹${PriceFormatter.format(profileVm.walletBalance.value)}',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: profileVm.walletBalance.value >= amountToPay && isValidAmount ? Colors.green : Colors.red,
+              Obx(() => RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '₹',
+                      style: TextStyle(
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                        color: profileVm.walletBalance.value >= amountToPay && isValidAmount
+                            ? Colors.green.shade700
+                            : Colors.red.shade700,
+                        fontFamily: 'Georgia',
+                      ),
+                    ),
+                    TextSpan(
+                      text: PriceFormatter.format(profileVm.walletBalance.value),
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: profileVm.walletBalance.value >= amountToPay && isValidAmount
+                            ? Colors.green
+                            : Colors.red,
+                      ),
+                    ),
+                  ],
                 ),
               )),
             ],
@@ -1374,11 +1643,44 @@ class BookingSummaryView extends StatelessWidget {
             child: vm.isLoading.value
                 ? const SizedBox(width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text(
-              isValidAmount
-                  ? 'Pay ₹${PriceFormatter.format(amountToPay)} via Wallet'
-                  : 'Invalid Amount',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                : RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Pay ',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.yellow.shade200,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(amountToPay),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' via Wallet',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         )),
@@ -1426,11 +1728,44 @@ class BookingSummaryView extends StatelessWidget {
             child: vm.isLoading.value
                 ? const SizedBox(width: 20, height: 20,
                 child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : Text(
-              isValidAmount
-                  ? 'Pay ₹${PriceFormatter.format(vm.razorpayAmountToPay)} via Razorpay'
-                  : 'Invalid Amount',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white),
+                : RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Pay ',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.yellow.shade200,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(vm.razorpayAmountToPay),
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                  TextSpan(
+                    text: ' via Razorpay',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
             ),
           ),
         )),
@@ -1464,8 +1799,33 @@ class BookingSummaryView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Amount: ₹${PriceFormatter.format(amountToPay)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Amount: ',
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.blue.shade700,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(amountToPay),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (vm.isDiscountApplied)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -1515,8 +1875,33 @@ class BookingSummaryView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Amount: ₹${PriceFormatter.format(amountToPay)}',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Amount: ',
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green.shade700,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(amountToPay),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             if (vm.isDiscountApplied)
               Padding(
                 padding: const EdgeInsets.only(top: 4),
@@ -1526,11 +1911,61 @@ class BookingSummaryView extends StatelessWidget {
                 ),
               ),
             if (vm.selectedPaymentType == 'advance')
-              Text('Wallet Balance: ₹${PriceFormatter.format(profileVm.walletBalance.value)}',
-                  style: TextStyle(color: Colors.green.shade700)),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: 'Wallet Balance: ',
+                      style: TextStyle(fontSize: 14, color: Colors.black87),
+                    ),
+                    TextSpan(
+                      text: '₹',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                        fontFamily: 'Georgia',
+                      ),
+                    ),
+                    TextSpan(
+                      text: PriceFormatter.format(profileVm.walletBalance.value),
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                        color: Colors.green.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
             const SizedBox(height: 8),
-            Text('After Payment: ₹${PriceFormatter.format(profileVm.walletBalance.value - amountToPay)}',
-                style: TextStyle(color: Colors.grey.shade700)),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'After Payment: ',
+                    style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade700,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(profileVm.walletBalance.value - amountToPay),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                ],
+              ),
+            ),
           ],
         ),
         actions: [
@@ -1558,11 +1993,61 @@ class BookingSummaryView extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text('Required: ₹${PriceFormatter.format(amountToPay)}',
-                style: const TextStyle(fontWeight: FontWeight.bold)),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Required: ',
+                    style: TextStyle(fontSize: 16, color: Colors.black87),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red.shade700,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(amountToPay),
+                    style: TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                      color: Colors.black87,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 8),
-            Text('Balance: ₹${PriceFormatter.format(profileVm.walletBalance.value)}',
-                style: const TextStyle(color: Colors.red)),
+            RichText(
+              text: TextSpan(
+                children: [
+                  TextSpan(
+                    text: 'Balance: ',
+                    style: TextStyle(fontSize: 14, color: Colors.red),
+                  ),
+                  TextSpan(
+                    text: '₹',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.red,
+                      fontFamily: 'Georgia',
+                    ),
+                  ),
+                  TextSpan(
+                    text: PriceFormatter.format(profileVm.walletBalance.value),
+                    style: TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.red,
+                    ),
+                  ),
+                ],
+              ),
+            ),
             const SizedBox(height: 16),
             const Text('Please recharge your wallet to continue.'),
           ],
@@ -1582,13 +2067,23 @@ class BookingSummaryView extends StatelessWidget {
     );
   }
 
-  Widget _infoRow(IconData icon, String label, String value, {Color? iconColor, bool bold = false}) {
+  Widget _infoRow(IconData icon, String label, String value, {Color? iconColor, bool bold = false, double fontSize = 14}) {
     return Row(
       children: [
         Icon(icon, size: 18, color: iconColor ?? Colors.green),
         const SizedBox(width: 8),
-        SizedBox(width: 100, child: Text(label, style: const TextStyle(color: Colors.grey, fontSize: 14))),
-        Expanded(child: Text(value, style: TextStyle(fontWeight: bold ? FontWeight.bold : FontWeight.w500, fontSize: 14))),
+        SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
+        Expanded(
+          child: Text(
+            value,
+            style: TextStyle(
+              fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+              fontSize: fontSize,
+              color: bold ? Colors.black87 : Colors.black54,
+            ),
+            textAlign: TextAlign.end,
+          ),
+        ),
       ],
     );
   }
@@ -1600,7 +2095,7 @@ class BookingSummaryView extends StatelessWidget {
       children: [
         const Icon(Icons.access_time, size: 18, color: Colors.green),
         const SizedBox(width: 8),
-        SizedBox(width: 100, child: Text('Slots', style: const TextStyle(color: Colors.grey, fontSize: 14))),
+        SizedBox(width: 120, child: Text('Slots', style: const TextStyle(color: Colors.grey, fontSize: 14))),
         Expanded(
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,

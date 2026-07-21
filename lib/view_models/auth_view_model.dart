@@ -1,13 +1,9 @@
-// auth_view_model.dart - COMPLETE FIXED WITH PERSISTENT DEVICE ID
-// ✅ Device ID survives reinstalls (Same as Partner App)
+// auth_view_model.dart - Complete with device registration after login
 
 import 'dart:async';
 import 'dart:convert';
-import 'package:book_your_turf/view_models/booking_view_model.dart';
-import 'package:book_your_turf/view_models/home_view_model.dart';
 import 'package:book_your_turf/view_models/profile_view_model.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -18,10 +14,11 @@ import '../services/facebook_events.dart';
 import '../services/shared_prefs_helper.dart';
 import '../services/auto_refresh_service.dart';
 import '../services/device_manager.dart';
-import '../services/secure_device_id_service.dart';
-
 import '../routes/app_routes.dart';
 import 'package:book_your_turf/main.dart' show facebookAppEvents;
+
+import 'booking_view_model.dart';
+import 'home_view_model.dart';
 
 class AuthViewModel extends GetxController {
   final isLoading = false.obs;
@@ -229,7 +226,9 @@ class AuthViewModel extends GetxController {
         }
 
         _showSuccess('Account created successfully! Please login');
-        _tempIdentifier = _tempEmail = _tempPhone = _tempName = _tempPassword = _tempReferralCode = null;
+
+        // Store registration details for auto-login
+        _tempIdentifier = null;
         clearOtpTime();
         return true;
       } else {
@@ -327,7 +326,9 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  // ==================== LOGIN ====================
+  // ============================================================
+  // ✅ LOGIN - With immediate device registration
+  // ============================================================
 
   Future<bool> login(String loginId, String password) async {
     if (loginId.isEmpty || password.isEmpty) {
@@ -392,6 +393,7 @@ class AuthViewModel extends GetxController {
           userId = idValue.toInt();
         }
 
+        // Save user data
         await SharedPrefsHelper.setToken(token);
         await SharedPrefsHelper.setUserId(userId);
         await SharedPrefsHelper.setUserName(user['name'] ?? '');
@@ -409,12 +411,6 @@ class AuthViewModel extends GetxController {
         print('   Email: ${user['email']}');
         print('   Phone: ${user['number']}');
 
-        // ✅ Get persistent device ID (survives reinstalls)
-        final persistentDeviceId = await SharedPrefsHelper.getDeviceId();
-        print('📱 Persistent Device ID: $persistentDeviceId');
-        print('   ✅ This ID is the SAME across reinstalls');
-        print('   ✅ ONE ID PER DEVICE');
-
         // Facebook Login Event
         try {
           await facebookAppEvents.logEvent(
@@ -431,8 +427,18 @@ class AuthViewModel extends GetxController {
           print('❌ Facebook login event error: $e');
         }
 
-        // Register device token with location
-        await _registerDeviceToken(token);
+        // ✅ IMMEDIATELY REGISTER DEVICE AFTER LOGIN
+        print('\n╔════════════════════════════════════════════════════════════╗');
+        print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
+        print('╚════════════════════════════════════════════════════════════╝');
+
+        final deviceRegistered = await _registerDeviceToken(token);
+
+        if (deviceRegistered) {
+          print('✅ Device registered successfully after login');
+        } else {
+          print('⚠️ Device registration failed after login - will retry on next launch');
+        }
 
         await AppInitializer.initializeApp();
 
@@ -470,7 +476,7 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  // ✅ Helper method to try individual field names
+  // Helper method to try individual field names
   Future<bool> _tryLoginWithIndividualFields(String loginId, String password, Dio dio) async {
     List<String> fieldNames = [];
     String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
@@ -523,7 +529,13 @@ class AuthViewModel extends GetxController {
           print('✅ Login successful with field: $field');
           print('   Name: ${user['name']}');
 
+          // ✅ IMMEDIATELY REGISTER DEVICE AFTER LOGIN
+          print('\n╔════════════════════════════════════════════════════════════╗');
+          print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
+          print('╚════════════════════════════════════════════════════════════╝');
+
           await _registerDeviceToken(token);
+
           await AppInitializer.initializeApp();
 
           _showSuccess('Welcome ${user['name']}!');
@@ -538,6 +550,30 @@ class AuthViewModel extends GetxController {
 
     _showError('Invalid credentials. Please check your email/phone and password.');
     return false;
+  }
+
+  // ============================================================
+  // ✅ AUTO-LOGIN AFTER REGISTRATION
+  // ============================================================
+
+  Future<bool> autoLoginAfterRegistration({
+    required String email,
+    required String phone,
+    required String password,
+    required String name,
+  }) async {
+    print('\n╔════════════════════════════════════════════════════════════╗');
+    print('║  📱 AUTO-LOGIN AFTER REGISTRATION                          ║');
+    print('╚════════════════════════════════════════════════════════════╝');
+
+    try {
+      // Use phone number for login if available, otherwise email
+      String loginId = phone.isNotEmpty ? phone : email;
+      return await login(loginId, password);
+    } catch (e) {
+      print('❌ Auto-login error: $e');
+      return false;
+    }
   }
 
   // ==================== FETCH LOCATION DIRECTLY ====================
@@ -630,80 +666,114 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  // ==================== DEVICE TOKEN REGISTRATION ====================
+  // ============================================================
+  // ✅ DEVICE TOKEN REGISTRATION - IMMEDIATE
   // ✅ Uses persistent device ID (survives reinstalls)
+  // ============================================================
 
-  Future<void> _registerDeviceToken(String jwtToken) async {
+  Future<bool> _registerDeviceToken(String jwtToken) async {
     if (_deviceRegistrationStarted) {
       print('⏭️ Device registration already started, skipping duplicate...');
-      return;
+      return false;
     }
 
+    // Check if already registered recently
     final isValid = await SharedPrefsHelper.isTokenRegistrationValid();
     if (isValid) {
-      print('✅ Device already registered recently, skipping...');
-      return;
+      // Still update token to be safe
+      print('✅ Device already registered recently, updating token...');
     }
 
     if (Get.isRegistered<DeviceManager>()) {
       final deviceManager = Get.find<DeviceManager>();
       if (deviceManager.isRegistered.value) {
-        print('✅ Device already registered in this session, skipping...');
-        return;
+        print('✅ Device already registered in this session, updating token...');
       }
     }
 
     _deviceRegistrationStarted = true;
 
-    // ✅ Get persistent device ID
-    final persistentDeviceId = await SharedPrefsHelper.getDeviceId();
-    print('📱 Persistent Device ID for registration: $persistentDeviceId');
-    print('   ✅ This ID is the SAME across reinstalls');
+    try {
+      // ✅ Get persistent device ID
+      final persistentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+      print('📱 Persistent Device ID for registration: $persistentDeviceId');
+      print('   ✅ This ID is the SAME across reinstalls');
 
-    String? currentLocation;
-    if (Get.isRegistered<HomeViewModel>()) {
-      final homeVm = Get.find<HomeViewModel>();
-      int attempts = 0;
-      while (homeVm.currentLocationName.value.isEmpty && attempts < 20) {
-        await Future.delayed(const Duration(milliseconds: 100));
-        attempts++;
+      // Get location
+      String? currentLocation;
+      if (Get.isRegistered<HomeViewModel>()) {
+        final homeVm = Get.find<HomeViewModel>();
+        int attempts = 0;
+        while (homeVm.currentLocationName.value.isEmpty && attempts < 20) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          attempts++;
+        }
+        currentLocation = homeVm.currentLocationName.value;
+        if (currentLocation!.isNotEmpty) {
+          print('📍 Got location from HomeViewModel: "$currentLocation"');
+        }
       }
-      currentLocation = homeVm.currentLocationName.value;
-      if (currentLocation!.isNotEmpty) {
-        print('📍 Got location from HomeViewModel: "$currentLocation"');
+
+      if (currentLocation == null || currentLocation.isEmpty) {
+        print('⚠️ No location from HomeViewModel, fetching directly...');
+        currentLocation = await _fetchCurrentLocationDirectly();
       }
-    }
 
-    if (currentLocation == null || currentLocation.isEmpty) {
-      print('⚠️ No location from HomeViewModel, fetching directly...');
-      currentLocation = await _fetchCurrentLocationDirectly();
-    }
+      // Ensure DeviceManager is registered
+      if (!Get.isRegistered<DeviceManager>()) {
+        Get.put(DeviceManager(), permanent: true);
+      }
 
-    if (!Get.isRegistered<DeviceManager>()) {
-      Get.put(DeviceManager(), permanent: true);
-    }
+      final deviceManager = Get.find<DeviceManager>();
 
-    final deviceManager = Get.find<DeviceManager>();
+      print('\n📱 Registering device with PERSISTENT ID...');
+      print('   🆔 Device ID: $persistentDeviceId (✅ SAME across reinstalls)');
+      print('   👤 User: ${SharedPrefsHelper.getUserEmail() ?? 'Unknown'}');
+      print('   📍 Location: "${currentLocation ?? "none"}"');
 
-    print('\n📱 Registering device with PERSISTENT ID...');
-    print('   🆔 Device ID: $persistentDeviceId (✅ SAME across reinstalls)');
-    print('📍 Location: "${currentLocation ?? "none"}"');
+      // ✅ Register device - this will handle UPDATE vs CREATE NEW logic
+      final result = await deviceManager.registerDevice(
+        jwtToken: jwtToken,
+        location: currentLocation,
+      );
 
-    final result = await deviceManager.registerDevice(
-      jwtToken: jwtToken,
-      location: currentLocation,
-    );
-
-    if (result.success) {
-      print('✅ Device registered successfully with PERSISTENT ID: $persistentDeviceId');
-      print('   ✅ ONE ID PER DEVICE');
-      await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
-    } else {
-      print('❌ Device registration failed: ${result.error}');
+      if (result.success) {
+        print('✅ Device registered successfully with PERSISTENT ID: $persistentDeviceId');
+        print('   ✅ ONE ID PER DEVICE');
+        await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
+        _deviceRegistrationStarted = false;
+        return true;
+      } else {
+        print('❌ Device registration failed: ${result.error}');
+        _deviceRegistrationStarted = false;
+        return false;
+      }
+    } catch (e) {
+      print('❌ Device registration error: $e');
+      _deviceRegistrationStarted = false;
+      return false;
     }
   }
 
-  // ==================== LOGOUT ====================
+  // ============================================================
+  // ✅ FORCE REGISTER DEVICE - Can be called manually
+  // ============================================================
+
+  Future<bool> forceRegisterDevice() async {
+    final token = SharedPrefsHelper.getToken();
+    if (token == null || token.isEmpty) {
+      print('❌ No token available for device registration');
+      return false;
+    }
+
+    print('🔄 Force registering device...');
+    _deviceRegistrationStarted = false;
+    return await _registerDeviceToken(token);
+  }
+
+  // ============================================================
+  // ✅ LOGOUT
+  // ============================================================
 
   Future<void> logout() async {
     if (Get.isRegistered<AutoRefreshService>()) {
@@ -716,7 +786,7 @@ class AuthViewModel extends GetxController {
 
     AppInitializer.reset();
 
-    // ✅ clearAll() preserves device_id in secure storage
+    // clearAll() preserves device_id in secure storage
     await SharedPrefsHelper.clearAll();
 
     if (Get.isRegistered<HomeViewModel>()) {

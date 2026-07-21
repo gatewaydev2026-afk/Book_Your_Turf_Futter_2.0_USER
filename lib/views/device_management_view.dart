@@ -252,42 +252,12 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
               if (success) {
                 print('✅ Logout successful');
 
+                // ✅ If current device was logged out, the _handleForcedLogout
+                // in DeviceManager will handle it
                 if (isCurrentDevice) {
-                  showDialog(
-                    context: context,
-                    barrierDismissible: false,
-                    builder: (context) => AlertDialog(
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(20),
-                      ),
-                      title: const Row(
-                        children: [
-                          Icon(Icons.check_circle, color: Colors.green),
-                          SizedBox(width: 8),
-                          Text('Logged Out'),
-                        ],
-                      ),
-                      content: const Text(
-                        'This device has been logged out successfully. You will be redirected to the login screen.',
-                      ),
-                      actions: [
-                        TextButton(
-                          onPressed: () async {
-                            try {
-                              Navigator.pop(context);
-                              await SharedPrefsHelper.clearAll();
-                              if (mounted) {
-                                Get.offAllNamed(AppRoutes.login);
-                              }
-                            } catch (e) {
-                              print('❌ Error during logout: $e');
-                            }
-                          },
-                          child: const Text('OK'),
-                        ),
-                      ],
-                    ),
-                  );
+                  // The DeviceManager will show the dialog
+                  // Just refresh the view
+                  await _loadDevices();
                 } else {
                   try {
                     ScaffoldMessenger.of(context).showSnackBar(
@@ -718,7 +688,6 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                 Icon(Icons.schedule, size: 12, color: Colors.grey.shade500),
                                 const SizedBox(width: 4),
                                 Text(
-                                  // ✅ Uses formattedDate getter
                                   'Added ${device.formattedDate}',
                                   style: TextStyle(
                                     fontSize: 11,
@@ -730,18 +699,15 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                   width: 6,
                                   height: 6,
                                   decoration: BoxDecoration(
-                                    // ✅ Uses activeStatusColor getter
                                     color: device.activeStatusColor,
                                     shape: BoxShape.circle,
                                   ),
                                 ),
                                 const SizedBox(width: 4),
                                 Text(
-                                  // ✅ Uses activeStatusText getter
                                   device.activeStatusText,
                                   style: TextStyle(
                                     fontSize: 11,
-                                    // ✅ Uses activeStatusColor getter
                                     color: device.activeStatusColor,
                                     fontWeight: FontWeight.w500,
                                   ),
@@ -790,10 +756,8 @@ class _DeviceManagementViewState extends State<DeviceManagementView> {
                                       Text('Location: ${device.location}'),
                                     ],
                                     const SizedBox(height: 8),
-                                    // ✅ Uses activeStatusText getter
                                     Text('Status: ${device.activeStatusText}'),
                                     const SizedBox(height: 8),
-                                    // ✅ Uses formattedDate getter
                                     Text('Added: ${device.formattedDate}'),
                                     const SizedBox(height: 8),
                                     Divider(),
