@@ -1,11 +1,10 @@
-// widgets/turf_card.dart - With Responsive Lemon Yellow Blinking Discount Badge
-// ✅ Added Discount Badge from API (best_discount_label)
-// ✅ ONLY LEMON YELLOW color for discount badge
-// ✅ Yellow blinking animation with clean label design
-// ✅ NO extra symbols (arrow, offer icon removed)
-// ✅ FULLY RESPONSIVE - shows complete text in one line
-// ✅ Auto-adjusts font size based on text length
-// ✅ RenderFlex Overflow Fixed
+// widgets/turf_card.dart - Ribbon-Banner Style Discount Badge + Separate "+X" Badge
+// ✅ Real ribbon-banner shape (chevron notch ends + folded tail) like reference image
+// ✅ Splits best_discount_label on "+" -> main text on ribbon, "+X more" on its own badge below
+// ✅ GOLD gradient ribbon with green border, dark-gold folded tail peeking underneath
+// ✅ BOTTOM-CENTER POSITION, WITHIN CARD BOUNDARIES
+// ✅ Blinking animation kept
+// ✅ FULLY RESPONSIVE
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -79,9 +78,26 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
 
     String discountLabel = latestTurf.bestDiscountLabel ?? '';
 
+    // ✅ Split label at "+" -> main ribbon text + separate extra-offer badge text
+    String mainLabel = discountLabel;
+    String extraLabel = '';
+    if (discountLabel.contains('+')) {
+      final idx = discountLabel.indexOf('+');
+      mainLabel = discountLabel.substring(0, idx).trim();
+      extraLabel = discountLabel.substring(idx + 1).trim(); // "+" character dropped
+      if (mainLabel.isEmpty) {
+        // label started with "+" (no leading text) -> nothing to split really
+        mainLabel = extraLabel;
+        extraLabel = '';
+      }
+    }
+
     // Get screen width for responsive sizing
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
+
+    final ribbonWidth = (screenWidth / 2.6).clamp(110.0, 175.0);
+    final ribbonHeight = isSmallScreen ? 20.0 : 22.0;
 
     return GestureDetector(
       onTap: _handleTap,
@@ -187,77 +203,46 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                         ),
                       ),
 
-                    // ✅ RESPONSIVE LEMON YELLOW BLINKING DISCOUNT BADGE
-                    if (discountLabel.isNotEmpty)
+                    // ✅ RIBBON-BANNER DISCOUNT BADGE + SEPARATE "+X" BADGE (bottom-center)
+                    if (mainLabel.isNotEmpty)
                       Positioned(
                         bottom: 6,
                         left: 0,
-                        right: 0, // Allow full width
-                        child: AnimatedBuilder(
-                          animation: _blinkAnimation,
-                          builder: (context, child) {
-                            return Transform.scale(
-                              scale: _scaleAnimation.value,
-                              child: Opacity(
-                                opacity: _blinkAnimation.value,
-                                child: Container(
-                                  padding: EdgeInsets.symmetric(
-                                    horizontal: isSmallScreen ? 6 : 10,
-                                    vertical: isSmallScreen ? 3 : 4,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: const Color(0xFFFFEB3B), // ✅ Pure Lemon Yellow
-                                    borderRadius: const BorderRadius.only(
-                                      topRight: Radius.circular(8),
-                                      bottomRight: Radius.circular(8),
-                                    ),
-                                    boxShadow: [
-                                      BoxShadow(
-                                        color: const Color(0xFFFFEB3B).withOpacity(0.5),
-                                        blurRadius: 8,
-                                        offset: const Offset(0, 2),
+                        right: 0,
+                        child: Center(
+                          child: AnimatedBuilder(
+                            animation: _blinkAnimation,
+                            builder: (context, child) {
+                              return Transform.scale(
+                                scale: _scaleAnimation.value,
+                                child: Opacity(
+                                  opacity: _blinkAnimation.value,
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _RibbonBanner(
+                                        text: mainLabel,
+                                        width: ribbonWidth,
+                                        height: ribbonHeight,
+                                        fontSize: isSmallScreen ? 8 : 9.5,
                                       ),
-                                      BoxShadow(
-                                        color: Colors.black.withOpacity(0.15),
-                                        blurRadius: 3,
-                                        offset: const Offset(0, 1),
-                                      ),
-                                    ],
-                                    border: Border.all(
-                                      color: const Color(0xFFFFD600),
-                                      width: 1.2,
-                                    ),
-                                  ),
-                                  // Use ConstrainedBox to limit width and allow text to fit
-                                  constraints: BoxConstraints(
-                                    maxWidth: screenWidth * 0.6, // Max 60% of screen
-                                  ),
-                                  child: FittedBox(
-                                    fit: BoxFit.scaleDown, // Shrink text if needed
-                                    child: Text(
-                                      discountLabel,
-                                      style: TextStyle(
-                                        color: Colors.black87,
-                                        fontSize: isSmallScreen ? 8 : 10,
-                                        fontWeight: FontWeight.bold,
-                                        letterSpacing: 0.5,
-                                        shadows: const [
-                                          Shadow(
-                                            color: Colors.white70,
-                                            blurRadius: 3,
-                                            offset: Offset(0, 1),
+                                      if (extraLabel.isNotEmpty)
+                                        Transform.translate(
+                                          // slight overlap so it reads as "attached" to the first ribbon
+                                          offset: const Offset(0, -4),
+                                          child: _RibbonBanner(
+                                            text: extraLabel,
+                                            width: ribbonWidth * 0.82,
+                                            height: ribbonHeight * 0.82,
+                                            fontSize: isSmallScreen ? 7 : 8,
                                           ),
-                                        ],
-                                      ),
-                                      maxLines: 1,
-                                      overflow: TextOverflow.visible,
-                                      softWrap: false,
-                                    ),
+                                        ),
+                                    ],
                                   ),
                                 ),
-                              ),
-                            );
-                          },
+                              );
+                            },
+                          ),
                         ),
                       ),
 
@@ -455,4 +440,148 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
       ),
     );
   }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// ✅ Ribbon-banner widget: gold gradient band with chevron-cut ends and a
+// darker folded tail peeking below each side (matches classic ribbon badge look)
+// ─────────────────────────────────────────────────────────────────────────
+class _RibbonBanner extends StatelessWidget {
+  final String text;
+  final double width;
+  final double height;
+  final double fontSize;
+
+  const _RibbonBanner({
+    required this.text,
+    required this.width,
+    required this.height,
+    required this.fontSize,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final notch = height * 0.5;
+    return SizedBox(
+      width: width,
+      height: height + 7, // extra room for the folded tail peeking below
+      child: CustomPaint(
+        painter: _RibbonBannerPainter(bandHeight: height, notch: notch),
+        child: Padding(
+          padding: EdgeInsets.only(
+            left: notch + 6,
+            right: notch + 6,
+            bottom: 7,
+          ),
+          child: SizedBox(
+            height: height,
+            child: Center(
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  softWrap: false,
+                  style: TextStyle(
+                    color: Colors.black87,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 0.3,
+                    shadows: const [
+                      Shadow(
+                        color: Colors.white70,
+                        blurRadius: 2,
+                        offset: Offset(0, 1),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _RibbonBannerPainter extends CustomPainter {
+  final double bandHeight;
+  final double notch;
+
+  _RibbonBannerPainter({required this.bandHeight, required this.notch});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final w = size.width;
+    final h = bandHeight;
+
+    final goldGradient = const LinearGradient(
+      colors: [
+        Color(0xFFFFF3B0), // light gold highlight
+        Color(0xFFFFD700), // gold
+        Color(0xFFFFB300), // deep amber gold
+      ],
+      begin: Alignment.topLeft,
+      end: Alignment.bottomRight,
+    );
+
+    final bandRect = Rect.fromLTWH(0, 0, w, h);
+    final bandPaint = Paint()..shader = goldGradient.createShader(bandRect);
+
+    final borderPaint = Paint()
+      ..color = Colors.green.shade700
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1.2;
+
+    final foldPaint = Paint()..color = const Color(0xFFB8860B); // dark goldenrod
+    final foldBorderPaint = Paint()
+      ..color = Colors.green.shade800
+      ..style = PaintingStyle.stroke
+      ..strokeWidth = 1;
+
+    // Folded tail peeking BELOW the band at both ends (drawn first, sits behind band)
+    final leftFold = Path()
+      ..moveTo(0, h - 2)
+      ..lineTo(notch * 0.85, h - 2)
+      ..lineTo(0, h + 6)
+      ..close();
+    final rightFold = Path()
+      ..moveTo(w, h - 2)
+      ..lineTo(w - notch * 0.85, h - 2)
+      ..lineTo(w, h + 6)
+      ..close();
+
+    canvas.drawPath(leftFold, foldPaint);
+    canvas.drawPath(leftFold, foldBorderPaint);
+    canvas.drawPath(rightFold, foldPaint);
+    canvas.drawPath(rightFold, foldBorderPaint);
+
+    // Main ribbon band with chevron (arrow) notch cut into both edges
+    final bandPath = Path()
+      ..moveTo(0, 0)
+      ..lineTo(w, 0)
+      ..lineTo(w - notch, h / 2)
+      ..lineTo(w, h)
+      ..lineTo(0, h)
+      ..lineTo(notch, h / 2)
+      ..close();
+
+    canvas.drawPath(bandPath, bandPaint);
+    canvas.drawPath(bandPath, borderPaint);
+
+    // subtle top highlight line for a glossy ribbon feel
+    final highlightPaint = Paint()
+      ..color = Colors.white.withOpacity(0.35)
+      ..strokeWidth = 1;
+    canvas.drawLine(
+      Offset(notch + 2, h * 0.28),
+      Offset(w - notch - 2, h * 0.28),
+      highlightPaint,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant _RibbonBannerPainter oldDelegate) =>
+      oldDelegate.bandHeight != bandHeight || oldDelegate.notch != notch;
 }

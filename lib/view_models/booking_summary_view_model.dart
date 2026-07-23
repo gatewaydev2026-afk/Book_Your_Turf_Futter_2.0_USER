@@ -1,6 +1,7 @@
 // lib/view_models/booking_summary_view_model.dart
 // ✅ Complete as per API documentation
 // ✅ Full Payment Discount Support
+// ✅ Added hasShownMinSlotsDialog flag for 1-slot dialog control
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -42,6 +43,9 @@ class BookingSummaryViewModel extends GetxController {
   final isUILocked = false.obs;
   final paymentSuccessConfirmed = false.obs;
   final hasShownSuccessPopup = false.obs;
+
+  // ✅ Public flag to track if 1-slot dialog has been shown
+  final hasShownMinSlotsDialog = false.obs;  // <-- Removed underscore, made public
 
   final DiscountViewModel discountVm = Get.find<DiscountViewModel>();
   final isLoadingDiscounts = false.obs;

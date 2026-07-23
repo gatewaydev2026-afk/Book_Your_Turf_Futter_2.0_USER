@@ -1,9 +1,11 @@
 // lib/views/booking_summary_view.dart
-// ✅ Fixed: Payment summary with correct balance to pay calculation
-// ✅ Rupee symbol with different style and color
-// ✅ Advance shows only percentage
-// ✅ Fixed type casting error in _buildStyledRupeeText
-// ✅ Fixed: Full payment now shows correctly (no advance/balance sections)
+// ✅ Ticket Style Discount Cards - Like the reference image
+// ✅ Dashed middle line with punch-hole notches
+// ✅ Left color box (discount value) + Right cream box (details)
+// ✅ Professional coupon/ticket look
+// ✅ Shows "Select minimum X slots" when discounts exist but slots < minSlots
+// ✅ Shows "No discounts available" when no discounts exist at all
+// ✅ NO requirements text in coupon card
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -14,6 +16,31 @@ import '../view_models/profile_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../routes/app_routes.dart';
 import '../views/wallet_recharge_dialog.dart';
+
+// ============================================================
+// ✅ Dashed vertical line painter - used for the ticket perforation
+// ============================================================
+class _DashedLinePainter extends CustomPainter {
+  final Color color;
+  _DashedLinePainter({this.color = const Color(0xFFBBBBBB)});
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()
+      ..color = color
+      ..strokeWidth = 1.5;
+    const dashHeight = 5.0;
+    const dashSpace = 4.0;
+    double startY = 0;
+    while (startY < size.height) {
+      canvas.drawLine(Offset(0, startY), Offset(0, startY + dashHeight), paint);
+      startY += dashHeight + dashSpace;
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
 
 class BookingSummaryView extends StatelessWidget {
   BookingSummaryView({super.key});
@@ -332,13 +359,39 @@ class BookingSummaryView extends StatelessWidget {
   }
 
   // ============================================================
-  // ✅ DISCOUNT SECTION - FULL PAYMENT SUPPORT
+  // ✅ Helper method to format requirements from discount model
+  // ============================================================
+  String _formatRequirements(Map<String, dynamic>? requirements) {
+    if (requirements == null || requirements.isEmpty) return '';
+
+    final parts = <String>[];
+    if (requirements['min_slots'] != null) {
+      parts.add('Min ${requirements['min_slots']} slots');
+    }
+    if (requirements['min_amount'] != null) {
+      parts.add('Min ₹${requirements['min_amount']}');
+    }
+    if (requirements['time_range'] != null) {
+      parts.add('${requirements['time_range']}');
+    }
+    if (requirements['days'] != null) {
+      parts.add('${requirements['days']}');
+    }
+    return parts.join(' • ');
+  }
+
+  // ============================================================
+  // ✅ DISCOUNT SECTION
   // ============================================================
   Widget _buildDiscountSection(BookingSummaryViewModel vm) {
     return Obx(() {
       if (vm.isLoadingDiscounts.value) {
         return _buildDiscountShimmer();
       }
+
+      // ✅ Get number of selected slots
+      final int selectedSlots = vm.selectedSlots.length;
+      final int minSlots = vm.turf.minSlots;
 
       // ✅ Filter by payment type
       final validAdminDiscounts = vm.discountVm.adminDiscounts
@@ -357,35 +410,19 @@ class BookingSummaryView extends StatelessWidget {
 
       final hasValidAdmin = validAdminDiscounts.isNotEmpty;
       final hasValidPartner = validPartnerDiscounts.isNotEmpty;
+      final bool hasDiscounts = hasValidAdmin || hasValidPartner;
 
-      if (!hasValidAdmin && !hasValidPartner) {
-        final paymentTypeDisplay = vm.selectedPaymentType == 'advance' ? 'Advance' : 'Full';
-        return Container(
-          margin: const EdgeInsets.only(top: 8),
-          padding: const EdgeInsets.all(16),
-          decoration: BoxDecoration(
-            color: Colors.grey.shade50,
-            borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Colors.grey.shade200),
-          ),
-          child: Row(
-            children: [
-              Icon(Icons.info_outline, color: Colors.grey.shade600, size: 20),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text(
-                  'No discounts available for $paymentTypeDisplay Payment.',
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: Colors.grey.shade600,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        );
+      // ✅ CASE 1: Discounts exist but NOT enough slots - Show "Select minimum X slots"
+      if (hasDiscounts && selectedSlots < minSlots) {
+        return _buildMinimumSlotsMessage(vm);
       }
 
+      // ✅ CASE 2: NO discounts available at all - Show "No discounts available"
+      if (!hasDiscounts) {
+        return _buildNoDiscountsMessage(vm);
+      }
+
+      // ✅ CASE 3: Discounts exist AND enough slots - Show coupon cards
       final hasSelected = vm.discountVm.hasSelectedDiscount;
 
       return Container(
@@ -494,16 +531,16 @@ class BookingSummaryView extends StatelessWidget {
 
             Divider(height: 1, color: Colors.grey.shade100),
 
-            // Admin Discounts
+            // Admin Discounts - Coupon Style
             if (hasValidAdmin) ...[
-              _buildDiscountSectionHeader('Platform Offers', Icons.verified, Colors.blue),
+              _buildDiscountSectionHeader('App Offers', Icons.verified, Colors.blue),
               ...validAdminDiscounts.map((discount) {
                 final isSelected = vm.isAdminDiscountSelected(discount.id);
                 final validationMsg = _getDiscountValidationMessage(discount);
-                final isFull = discount.applicablePaymentType == 'full';
-                return _buildDiscountCard(
+                return _buildCouponDiscountCard(
                   discount: discount,
                   isSelected: isSelected,
+                  sourceLabel: 'App Discount',
                   onTap: () {
                     if (validationMsg != null) {
                       _showInvalidDiscountDialog(validationMsg);
@@ -513,22 +550,21 @@ class BookingSummaryView extends StatelessWidget {
                   },
                   isLast: discount == validAdminDiscounts.last && !hasValidPartner,
                   validationMessage: validationMsg,
-                  isFull: isFull,
                 );
               }).toList(),
             ],
 
-            // Partner Discounts
+            // Partner Discounts - Coupon Style
             if (hasValidPartner) ...[
               if (hasValidAdmin) const Divider(height: 1, color: Colors.grey),
               _buildDiscountSectionHeader('Venue Offers', Icons.storefront, Colors.purple),
               ...validPartnerDiscounts.map((discount) {
                 final isSelected = vm.isPartnerDiscountSelected(discount.id);
                 final validationMsg = _getDiscountValidationMessage(discount);
-                final isFull = discount.applicablePaymentType == 'full';
-                return _buildDiscountCard(
+                return _buildCouponDiscountCard(
                   discount: discount,
                   isSelected: isSelected,
+                  sourceLabel: 'Venue Discount',
                   onTap: () {
                     if (validationMsg != null) {
                       _showInvalidDiscountDialog(validationMsg);
@@ -538,7 +574,6 @@ class BookingSummaryView extends StatelessWidget {
                   },
                   isLast: discount == validPartnerDiscounts.last,
                   validationMessage: validationMsg,
-                  isFull: isFull,
                 );
               }).toList(),
             ],
@@ -557,7 +592,7 @@ class BookingSummaryView extends StatelessWidget {
                     ),
                     const SizedBox(width: 6),
                     Text(
-                      'Tap any valid offer to apply',
+                      'Tap any coupon to apply',
                       style: TextStyle(
                         fontSize: 11,
                         color: Colors.grey.shade500,
@@ -572,6 +607,138 @@ class BookingSummaryView extends StatelessWidget {
         ),
       );
     });
+  }
+
+  // ✅ Minimum Slots Required Message (when discounts exist but slots < minSlots)
+  Widget _buildMinimumSlotsMessage(BookingSummaryViewModel vm) {
+    final int minSlots = vm.turf.minSlots;
+    final int selectedSlots = vm.selectedSlots.length;
+    final String paymentType = vm.selectedPaymentType == 'advance' ? 'Advance' : 'Full';
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.blue.shade200, width: 1.5),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(8),
+            decoration: BoxDecoration(
+              color: Colors.blue.shade100,
+              borderRadius: BorderRadius.circular(10),
+            ),
+            child: Icon(
+              Icons.info_outline,
+              color: Colors.blue.shade700,
+              size: 22,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '💰 Minimum Slots Required',
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.blue.shade700,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Select minimum $minSlots slot${minSlots > 1 ? 's' : ''} to unlock discounts for $paymentType Payment (Currently selected: $selectedSlots slot${selectedSlots > 1 ? 's' : ''})',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.blue.shade600,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ No Discounts Message (when no discounts exist at all)
+  Widget _buildNoDiscountsMessage(BookingSummaryViewModel vm) {
+    final String paymentType = vm.selectedPaymentType == 'advance' ? 'Advance' : 'Full';
+
+    // ✅ Get requirements from any discount (even if not valid for this payment type)
+    String requirementsText = '';
+    if (vm.discountVm.adminDiscounts.isNotEmpty) {
+      requirementsText = _formatRequirements(vm.discountVm.adminDiscounts.first.requirements);
+    } else if (vm.discountVm.partnerDiscounts.isNotEmpty) {
+      requirementsText = _formatRequirements(vm.discountVm.partnerDiscounts.first.requirements);
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(top: 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.grey.shade50,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200),
+      ),
+      child: Column(
+        children: [
+          Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.grey.shade600, size: 20),
+              const SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'No discounts available',
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.grey.shade600,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          // ✅ Show requirements if exists
+          if (requirementsText.isNotEmpty)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      Icons.info_outline,
+                      size: 16,
+                      color: Colors.amber.shade700,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '📋 $requirementsText',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.amber.shade800,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+        ],
+      ),
+    );
   }
 
   Widget _buildDiscountShimmer() {
@@ -610,7 +777,7 @@ class BookingSummaryView extends StatelessWidget {
           ...List.generate(2, (index) => Padding(
             padding: const EdgeInsets.only(bottom: 8),
             child: Container(
-              height: 60,
+              height: 80,
               decoration: BoxDecoration(
                 color: Colors.grey.shade100,
                 borderRadius: BorderRadius.circular(12),
@@ -723,470 +890,274 @@ class BookingSummaryView extends StatelessWidget {
   }
 
   // ============================================================
-  // ✅ DISCOUNT CARD - FULL PAYMENT SUPPORT (isFull: true)
+  // ✅ TICKET STYLE DISCOUNT CARD - NO REQUIREMENTS TEXT
   // ============================================================
-  Widget _buildDiscountCard({
+  Widget _buildCouponDiscountCard({
     required DiscountModel discount,
     required bool isSelected,
     required VoidCallback onTap,
     required bool isLast,
+    required String sourceLabel,
     String? validationMessage,
-    bool isFull = false,
   }) {
     final isInvalid = validationMessage != null;
 
+    final Color leftBoxColor = isInvalid
+        ? Colors.grey.shade400
+        : isSelected
+        ? Colors.green.shade600
+        : const Color(0xFFE8385A);
+
+    final Color rightBgColor = isInvalid
+        ? Colors.grey.shade100
+        : isSelected
+        ? Colors.green.shade50
+        : const Color(0xFFF3EADD);
+
+    final Color outerBg = isInvalid
+        ? Colors.grey.shade200
+        : isSelected
+        ? Colors.green.shade100
+        : const Color(0xFFEFE6D8);
+
     return Semantics(
-      label: 'Discount: ${discount.name}, ${discount.getDisplayText()}, ${isSelected ? 'Selected' : 'Tap to select'}',
+      label:
+      'Discount: ${discount.name}, ${discount.getDisplayText()}, ${isSelected ? 'Selected' : 'Tap to select'}',
       child: GestureDetector(
-        onTap: isInvalid ? onTap : onTap,
+        onTap: onTap,
         child: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          height: 100,
           decoration: BoxDecoration(
-            color: isInvalid
-                ? Colors.grey.shade50
-                : isSelected
-                ? Colors.green.shade50
-                : isFull
-                ? Colors.blue.shade50
-                : Colors.white,
-            border: isLast
-                ? null
-                : Border(
-              bottom: BorderSide(
-                color: isSelected ? Colors.green.shade100 : Colors.grey.shade100,
-                width: 1,
+            color: outerBg,
+            borderRadius: BorderRadius.circular(14),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.12),
+                blurRadius: 6,
+                offset: const Offset(0, 3),
               ),
-            ),
+            ],
           ),
           child: Row(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              // ✅ Discount Badge - Different color for Full Payment
-              Container(
-                width: 48,
-                height: 48,
-                decoration: BoxDecoration(
-                  gradient: isInvalid
-                      ? LinearGradient(
-                    colors: [Colors.grey.shade400, Colors.grey.shade600],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                      : isSelected
-                      ? LinearGradient(
-                    colors: [Colors.green.shade400, Colors.green.shade700],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                      : isFull
-                      ? LinearGradient(
-                    colors: [Colors.blue.shade400, Colors.blue.shade700],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
-                  )
-                      : LinearGradient(
-                    colors: [Colors.orange.shade400, Colors.orange.shade700],
-                    begin: Alignment.topLeft,
-                    end: Alignment.bottomRight,
+              // ================= 1. LEFT: Percentage / value badge =================
+              Expanded(
+                flex: 4,
+                child: Container(
+                  decoration: BoxDecoration(
+                    color: leftBoxColor,
+                    borderRadius: const BorderRadius.only(
+                      topLeft: Radius.circular(14),
+                      bottomLeft: Radius.circular(14),
+                    ),
                   ),
-                  borderRadius: BorderRadius.circular(14),
-                  boxShadow: [
-                    BoxShadow(
-                      color: (isSelected && !isInvalid ? Colors.green : isFull ? Colors.blue : Colors.orange)
-                          .withOpacity(isInvalid ? 0.1 : 0.3),
-                      blurRadius: 6,
-                      offset: const Offset(0, 2),
+                  alignment: Alignment.center,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6),
+                    child: Text(
+                      discount.getDisplayText(),
+                      textAlign: TextAlign.center,
+                      maxLines: 2,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 22,
+                        fontWeight: FontWeight.w900,
+                        letterSpacing: 0.5,
+                        height: 1.0,
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+
+              // ================= MIDDLE: Perforated divider with notches =================
+              SizedBox(
+                width: 18,
+                height: 100,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  alignment: Alignment.center,
+                  children: [
+                    SizedBox(
+                      width: 1.5,
+                      height: 100,
+                      child: CustomPaint(
+                        painter: _DashedLinePainter(
+                          color: isInvalid
+                              ? Colors.grey.shade400
+                              : isSelected
+                              ? Colors.green.shade300
+                              : Colors.grey.shade400,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      top: -10,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ),
+                    Positioned(
+                      bottom: -10,
+                      child: Container(
+                        width: 20,
+                        height: 20,
+                        decoration: const BoxDecoration(
+                          color: Colors.white,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
                     ),
                   ],
                 ),
-                child: Center(
+              ),
+
+              // ================= RIGHT: Details (source label + name + save amount) =================
+              Expanded(
+                flex: 6,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: rightBgColor,
+                  ),
                   child: Column(
-                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisAlignment: MainAxisAlignment.center,
                     children: [
                       Text(
-                        discount.getDisplayText().split(' ')[0],
+                        sourceLabel,
                         style: TextStyle(
-                          color: isInvalid ? Colors.grey.shade300 : Colors.white,
-                          fontSize: 11,
-                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          fontWeight: FontWeight.w900,
+                          letterSpacing: 0.5,
+                          color: isInvalid
+                              ? Colors.grey.shade600
+                              : isSelected
+                              ? Colors.green.shade800
+                              : Colors.black87,
                         ),
                       ),
-                      if (discount.getDisplayText().split(' ').length > 1)
+                      const SizedBox(height: 4),
+                      Text(
+                        discount.name,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w700,
+                          color: isInvalid
+                              ? Colors.grey.shade500
+                              : isSelected
+                              ? Colors.green.shade600
+                              : Colors.orange.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      if (!isInvalid &&
+                          discount.calculatedDiscount != null &&
+                          discount.calculatedDiscount! > 0)
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.local_offer,
+                              size: 14,
+                              color: isSelected
+                                  ? Colors.green.shade700
+                                  : Colors.grey.shade700,
+                            ),
+                            const SizedBox(width: 4),
+                            RichText(
+                              text: TextSpan(
+                                children: [
+                                  TextSpan(
+                                    text: 'Save ',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: isSelected
+                                          ? Colors.green.shade700
+                                          : Colors.grey.shade700,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: '₹',
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.bold,
+                                      fontFamily: 'Georgia',
+                                      color: isSelected
+                                          ? Colors.green.shade800
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                  TextSpan(
+                                    text: PriceFormatter.format(
+                                        discount.calculatedDiscount!),
+                                    style: TextStyle(
+                                      fontSize: 13,
+                                      fontWeight: FontWeight.w700,
+                                      color: isSelected
+                                          ? Colors.green.shade800
+                                          : Colors.black87,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (isInvalid)
                         Text(
-                          discount.getDisplayText().split(' ')[1],
+                          '⚠️ $validationMessage',
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                           style: TextStyle(
-                            color: isInvalid ? Colors.grey.shade300 : Colors.white70,
-                            fontSize: 8,
-                            fontWeight: FontWeight.w500,
+                            fontSize: 10.5,
+                            fontWeight: FontWeight.w600,
+                            color: Colors.red.shade700,
                           ),
                         ),
                     ],
                   ),
                 ),
               ),
-              const SizedBox(width: 12),
 
-              // ✅ Details - Expanded
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // ✅ Name and badges
-                    Wrap(
-                      spacing: 4,
-                      runSpacing: 2,
-                      alignment: WrapAlignment.start,
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      children: [
-                        Text(
-                          discount.name,
-                          style: TextStyle(
-                            fontWeight: isSelected ? FontWeight.w700 : FontWeight.w600,
-                            fontSize: 13,
-                            color: isInvalid
-                                ? Colors.grey.shade500
-                                : isSelected
-                                ? Colors.green.shade700
-                                : isFull
-                                ? Colors.blue.shade700
-                                : Colors.grey.shade900,
-                          ),
-                        ),
-                        if (!isInvalid)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: discount.getSourceColor().withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              discount.getSourceBadge(),
-                              style: TextStyle(
-                                fontSize: 8,
-                                fontWeight: FontWeight.w500,
-                                color: discount.getSourceColor(),
-                              ),
-                            ),
-                          ),
-                        // ✅ Payment Type Badge
-                        if (!isInvalid && discount.applicablePaymentType != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: discount.getPaymentTypeColor().withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              discount.getPaymentTypeBadge(),
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w500,
-                                color: discount.getPaymentTypeColor(),
-                              ),
-                            ),
-                          ),
-                        // ✅ Application Type Badge (overall/payable)
-                        if (!isInvalid && discount.discountApplicationType != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: discount.getApplicationTypeColor().withOpacity(0.12),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              discount.getApplicationTypeBadge(),
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w500,
-                                color: discount.getApplicationTypeColor(),
-                              ),
-                            ),
-                          ),
-                        // ✅ Requirements Badge
-                        if (!isInvalid && discount.requirements != null && discount.requirements!.isNotEmpty)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.amber.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              'Conditions Apply',
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.amber.shade700,
-                              ),
-                            ),
-                          ),
-                        // ✅ Usage Limit
-                        if (!isInvalid && discount.usageLimit != null)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade50,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              '${discount.getRemainingUses() ?? 0} uses left',
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ),
-                        // ✅ Selected Badge
-                        if (isSelected && !isInvalid)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.green,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: const Text(
-                              'SELECTED',
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.white,
-                              ),
-                            ),
-                          ),
-                        // ✅ FULL PAYMENT BADGE (shown when isFull is true)
-                        if (isFull && !isInvalid && !isSelected)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                            decoration: BoxDecoration(
-                              gradient: const LinearGradient(
-                                colors: [Colors.blue, Colors.blueAccent],
-                                begin: Alignment.topLeft,
-                                end: Alignment.bottomRight,
-                              ),
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                const Icon(
-                                  Icons.payment,
-                                  size: 10,
-                                  color: Colors.white,
-                                ),
-                                const SizedBox(width: 3),
-                                Text(
-                                  'FULL PAYMENT',
-                                  style: TextStyle(
-                                    fontSize: 7,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.white,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                        // ✅ "Full Only" badge (when payment type is full)
-                        if (isFull && !isInvalid && !isSelected)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.blue.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Text(
-                              'Full Only',
-                              style: TextStyle(
-                                fontSize: 7,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.blue.shade700,
-                              ),
-                            ),
-                          ),
-                        if (isInvalid)
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1),
-                            decoration: BoxDecoration(
-                              color: Colors.red.shade100,
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                            child: Row(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                Icon(
-                                  Icons.block,
-                                  size: 10,
-                                  color: Colors.red.shade700,
-                                ),
-                                const SizedBox(width: 2),
-                                Text(
-                                  'BLOCKED',
-                                  style: TextStyle(
-                                    fontSize: 7,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.red.shade700,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          ),
-                      ],
-                    ),
-                    const SizedBox(height: 3),
-                    // Description
-                    Text(
-                      discount.description,
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: isInvalid ? Colors.grey.shade500 : Colors.grey.shade600,
-                      ),
-                      maxLines: 2,
-                      overflow: TextOverflow.visible,
-                    ),
-                    // ✅ Requirements Display
-                    if (!isInvalid && discount.requirements != null && discount.requirements!.isNotEmpty)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Text(
-                          _formatRequirements(discount.requirements!),
-                          style: TextStyle(
-                            fontSize: 9,
-                            color: Colors.amber.shade700,
-                          ),
-                        ),
-                      ),
-                    // Validation message
-                    if (validationMessage != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Row(
-                          children: [
-                            Icon(
-                              Icons.warning_amber_rounded,
-                              size: 14,
-                              color: Colors.red.shade700,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                '⚠️ $validationMessage',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.w600,
-                                  color: Colors.red.shade700,
-                                ),
-                                softWrap: true,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    // Conditions
-                    if (discount.getFullDescription().isNotEmpty && !isInvalid)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 3),
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Icon(
-                              Icons.info_outline,
-                              size: 11,
-                              color: Colors.grey.shade400,
-                            ),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                discount.getFullDescription(),
-                                style: TextStyle(
-                                  fontSize: 10,
-                                  color: Colors.grey.shade500,
-                                  height: 1.3,
-                                ),
-                                softWrap: true,
-                                overflow: TextOverflow.visible,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                  ],
-                ),
-              ),
-
-              // ✅ Save amount with styled rupee symbol
-              if (discount.calculatedDiscount != null &&
-                  discount.calculatedDiscount! > 0 &&
-                  !isInvalid)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                  decoration: BoxDecoration(
-                    color: isSelected ? Colors.green.shade100 : isFull ? Colors.blue.shade100 : Colors.orange.shade50,
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(
-                      color: isSelected ? Colors.green.shade300 : isFull ? Colors.blue.shade300 : Colors.orange.shade300,
-                      width: 0.5,
-                    ),
-                  ),
-                  child: RichText(
-                    text: TextSpan(
-                      children: [
-                        TextSpan(
-                          text: 'Save ',
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w500,
-                            color: isSelected ? Colors.green.shade700 : isFull ? Colors.blue.shade700 : Colors.orange.shade700,
-                          ),
-                        ),
-                        TextSpan(
-                          text: '₹',
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: isSelected ? Colors.green.shade800 : isFull ? Colors.blue.shade800 : Colors.orange.shade800,
-                            fontFamily: 'Georgia',
-                          ),
-                        ),
-                        TextSpan(
-                          text: PriceFormatter.format(discount.calculatedDiscount!),
-                          style: TextStyle(
-                            fontSize: 9,
-                            fontWeight: FontWeight.w600,
-                            color: isSelected ? Colors.green.shade700 : isFull ? Colors.blue.shade700 : Colors.orange.shade700,
-                          ),
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-
-              // ✅ Selection indicator
-              const SizedBox(width: 8),
+              // ================= 4. Selection indicator =================
               Container(
-                width: 20,
-                height: 20,
+                width: 44,
+                height: 100,
+                alignment: Alignment.center,
                 decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  border: Border.all(
-                    color: isInvalid
-                        ? Colors.grey.shade300
-                        : isSelected
-                        ? Colors.green
-                        : isFull
-                        ? Colors.blue
-                        : Colors.grey.shade300,
-                    width: 2,
+                  color: rightBgColor,
+                  borderRadius: const BorderRadius.only(
+                    topRight: Radius.circular(14),
+                    bottomRight: Radius.circular(14),
                   ),
-                  color: isSelected && !isInvalid ? Colors.green : Colors.transparent,
                 ),
-                child: isSelected && !isInvalid
-                    ? const Icon(
-                  Icons.check,
-                  size: 12,
-                  color: Colors.white,
-                )
-                    : null,
+                child: Container(
+                  width: 26,
+                  height: 26,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: isInvalid
+                          ? Colors.grey.shade300
+                          : isSelected
+                          ? Colors.green
+                          : Colors.grey.shade400,
+                      width: 2,
+                    ),
+                    color: isSelected && !isInvalid ? Colors.green : Colors.transparent,
+                  ),
+                  child: isSelected && !isInvalid
+                      ? const Icon(Icons.check, size: 15, color: Colors.white)
+                      : null,
+                ),
               ),
             ],
           ),
@@ -1195,27 +1166,13 @@ class BookingSummaryView extends StatelessWidget {
     );
   }
 
-  String _formatRequirements(Map<String, dynamic> requirements) {
-    final parts = <String>[];
-    if (requirements['min_slots'] != null) {
-      parts.add('Min ${requirements['min_slots']} slots');
-    }
-    if (requirements['min_amount'] != null) {
-      parts.add('Min ₹${requirements['min_amount']}');
-    }
-    if (requirements['time_range'] != null) {
-      parts.add('${requirements['time_range']}');
-    }
-    if (requirements['days'] != null) {
-      parts.add('${requirements['days']}');
-    }
-    return parts.join(' • ');
-  }
-
   // ============================================================
-  // ✅ PAYMENT SUMMARY - FIXED: Full payment shows correctly
-  // ✅ Advance shows only percentage, not amount
+  // ✅ PAYMENT SUMMARY
   // ============================================================
+// ============================================================
+// ✅ PAYMENT SUMMARY - With Advance percentage next to label
+// ✅ Shows App Discount & Venue Discount separately
+// ============================================================
   Widget _buildPaymentSummaryCard(BookingSummaryViewModel vm) {
     // Calculate advance WITHOUT discount
     final double advanceWithoutDiscount = vm.totalAmount * (_calculateAdvancePercentageValue(vm) / 100);
@@ -1223,12 +1180,34 @@ class BookingSummaryView extends StatelessWidget {
     // Calculate discount amount
     final double totalDiscount = vm.isDiscountApplied ? vm.discountVm.totalDiscountAmount : 0.0;
 
+    // ✅ Advance Remaining Balance = Advance Amount - Total Discount (only if discount is applied)
+    final double advanceRemainingBalance = vm.isDiscountApplied
+        ? advanceWithoutDiscount - totalDiscount
+        : advanceWithoutDiscount;
+
     // Payable Now depends on payment type
     // For Advance: Advance Amount - Discount
     // For Full: Total Amount - Discount
     final double payableNow = vm.selectedPaymentType == 'advance'
         ? advanceWithoutDiscount - totalDiscount
         : vm.totalAmount - totalDiscount;
+
+    // Balance to pay after advance (Total - Advance)
+    final double balanceAfterAdvance = vm.totalAmount - advanceWithoutDiscount;
+
+    // ✅ Get advance percentage
+    final double advancePercentage = _calculateAdvancePercentageValue(vm);
+
+    // ✅ Get individual discount amounts
+    double appDiscountAmount = 0.0;
+    double venueDiscountAmount = 0.0;
+
+    if (vm.discountVm.selectedAdminDiscount != null) {
+      appDiscountAmount = vm.discountVm.selectedAdminDiscount!.calculatedDiscount ?? 0.0;
+    }
+    if (vm.discountVm.selectedPartnerDiscount != null) {
+      venueDiscountAmount = vm.discountVm.selectedPartnerDiscount!.calculatedDiscount ?? 0.0;
+    }
 
     return Card(
       elevation: 2,
@@ -1251,19 +1230,10 @@ class BookingSummaryView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            // ✅ 2. Minimum Slots Required
-            _infoRow(
-              Icons.numbers,
-              'Min Slots',
-              '${vm.turf.minSlots} slot${vm.turf.minSlots > 1 ? 's' : ''}',
-              iconColor: Colors.orange,
-            ),
-            const SizedBox(height: 8),
-
             const Divider(),
             const SizedBox(height: 8),
 
-            // ✅ 3. Total Amount (With styled rupee symbol)
+            // ✅ 2. Total Amount
             _buildStyledInfoRow(
               Icons.currency_rupee,
               'Total Amount',
@@ -1275,58 +1245,80 @@ class BookingSummaryView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            // ✅ 4. Discounts Applied (With styled rupee symbol)
-            if (vm.isDiscountApplied) ...[
-              if (vm.discountVm.selectedAdminDiscount != null)
+            // ✅ 3. Advance Amount - For ADVANCE PAYMENT (with percentage next to label)
+
+
+              // ✅ 4. App Discount (if applied)
+              if (appDiscountAmount > 0) ...[
                 _buildStyledInfoRow(
                   Icons.verified,
-                  'Platform Discount',
-                  -vm.discountVm.selectedAdminDiscount!.calculatedDiscount! ?? 0,
+                  'App Discount',
+                  -appDiscountAmount,
                   iconColor: Colors.blue,
                   rupeeColor: Colors.blue.shade800,
+                  bold: false,
                   isNegative: true,
                 ),
-              if (vm.discountVm.selectedPartnerDiscount != null)
+                const SizedBox(height: 4),
+              ],
+
+              // ✅ 5. Venue Discount (if applied)
+              if (venueDiscountAmount > 0) ...[
                 _buildStyledInfoRow(
                   Icons.storefront,
                   'Venue Discount',
-                  -vm.discountVm.selectedPartnerDiscount!.calculatedDiscount! ?? 0,
+                  -venueDiscountAmount,
                   iconColor: Colors.purple,
                   rupeeColor: Colors.purple.shade800,
+                  bold: false,
                   isNegative: true,
                 ),
-              const SizedBox(height: 4),
-              _buildStyledInfoRow(
-                Icons.local_offer,
-                'Total Discount',
-                -totalDiscount,
-                iconColor: Colors.green,
-                rupeeColor: Colors.green.shade800,
-                bold: true,
-                isNegative: true,
-              ),
-              const SizedBox(height: 8),
-              const Divider(),
-              const SizedBox(height: 8),
-            ],
+                const SizedBox(height: 4),
+              ],
+            const Divider(),
 
-            // ✅ 5. Advance Amount - ONLY SHOW FOR ADVANCE PAYMENT
-            // ✅ Shows only percentage (No amount shown)
+              // ✅ 6. Total Discount (if any discount applied)
+
             if (vm.selectedPaymentType == 'advance') ...[
-              _buildAdvancePercentageRow(
+              _buildAdvanceRowWithPercentage(
                 Icons.forward,
-                'Advance',
-                _calculateAdvancePercentageValue(vm),
+                'Advance (${advancePercentage.toStringAsFixed(0)}%)',
+                advanceWithoutDiscount,
                 iconColor: Colors.orange,
                 bold: true,
               ),
               const SizedBox(height: 8),
+              if (vm.isDiscountApplied) ...[
+                _buildStyledInfoRow(
+                  Icons.local_offer,
+                  'Total Discount',
+                  -totalDiscount,
+                  iconColor: Colors.green,
+                  rupeeColor: Colors.green.shade800,
+                  bold: true,
+                  isNegative: true,
+                ),
+                const SizedBox(height: 8),
+              ],
+              // ✅ 7. Advance to Pay (Advance - Discount)
+              _buildStyledInfoRow(
+                Icons.account_balance,
+                'Advance to Pay',
+                advanceRemainingBalance,
+                iconColor: Colors.purple,
+                rupeeColor: Colors.purple.shade800,
+                bold: true,
+                fontSize: 14,
+                rupeeSize: 15,
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
 
-              // ✅ 6. Balance to Pay = Total - Advance (ONLY FOR ADVANCE)
+              // ✅ 8. Balance to Pay (Total - Advance)
               _buildStyledInfoRow(
                 Icons.balance,
                 'Balance to Pay',
-                vm.totalAmount - advanceWithoutDiscount,
+                balanceAfterAdvance,
                 iconColor: Colors.red,
                 rupeeColor: Colors.red.shade800,
                 bold: true,
@@ -1334,7 +1326,7 @@ class BookingSummaryView extends StatelessWidget {
               const SizedBox(height: 8),
             ],
 
-            // ✅ 7. Payable Now = Advance - Discount (for advance) OR Total - Discount (for full)
+            // ✅ 9. Payable Now (Final amount)
             const Divider(),
             _buildStyledInfoRow(
               Icons.account_balance_wallet,
@@ -1352,11 +1344,11 @@ class BookingSummaryView extends StatelessWidget {
     );
   }
 
-  // ✅ New row for Advance - Shows only percentage
-  Widget _buildAdvancePercentageRow(
+// ✅ Advance Row - Shows AMOUNT only (percentage in label)
+  Widget _buildAdvanceRowWithPercentage(
       IconData icon,
-      String label,
-      double percentage, {
+      String label,  // Now includes percentage like "Advance (50%)"
+      double amount, {
         Color? iconColor,
         bool bold = false,
         double fontSize = 14,
@@ -1367,21 +1359,104 @@ class BookingSummaryView extends StatelessWidget {
         const SizedBox(width: 8),
         SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
         Expanded(
-          child: Text(
-            '${percentage.toStringAsFixed(0)}%',
-            style: TextStyle(
-              fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-              fontSize: fontSize,
-              color: bold ? Colors.black87 : Colors.black54,
-            ),
+          child: RichText(
             textAlign: TextAlign.end,
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '₹',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Georgia',
+                  ),
+                ),
+                TextSpan(
+                  text: PriceFormatter.format(amount),
+                  style: TextStyle(
+                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                    fontSize: fontSize,
+                    color: bold ? Colors.black87 : Colors.black54,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+  // ✅ Advance Row - Shows PERCENTAGE + AMOUNT
+  Widget _buildAdvanceRowWithAmount(
+      IconData icon,
+      String label,
+      double percentage,
+      double amount, {
+        Color? iconColor,
+        bool bold = false,
+        double fontSize = 14,
+      }) {
+    return Row(
+      children: [
+        Icon(icon, size: 18, color: iconColor ?? Colors.green),
+        const SizedBox(width: 8),
+        SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
+        Expanded(
+          child: RichText(
+            textAlign: TextAlign.end,
+            text: TextSpan(
+              children: [
+                TextSpan(
+                  text: '${percentage.toStringAsFixed(0)}%',
+                  style: TextStyle(
+                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                    fontSize: fontSize,
+                    color: bold ? Colors.black87 : Colors.black54,
+                  ),
+                ),
+                TextSpan(
+                  text: ' (',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: fontSize - 2,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+                TextSpan(
+                  text: '₹',
+                  style: TextStyle(
+                    color: Colors.orange.shade700,
+                    fontSize: fontSize,
+                    fontWeight: FontWeight.bold,
+                    fontFamily: 'Georgia',
+                  ),
+                ),
+                TextSpan(
+                  text: PriceFormatter.format(amount),
+                  style: TextStyle(
+                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
+                    fontSize: fontSize,
+                    color: bold ? Colors.black87 : Colors.black54,
+                  ),
+                ),
+                TextSpan(
+                  text: ')',
+                  style: TextStyle(
+                    fontWeight: FontWeight.w400,
+                    fontSize: fontSize - 2,
+                    color: Colors.grey.shade500,
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       ],
     );
   }
 
-  // ✅ New styled info row with different rupee symbol style
+  // ✅ Styled Info Row
   Widget _buildStyledInfoRow(
       IconData icon,
       String label,
@@ -1480,11 +1555,6 @@ class BookingSummaryView extends StatelessWidget {
       return (vm.walletAmountToPay / vm.totalAmount) * 100;
     }
     return 0.0;
-  }
-
-  // ✅ Helper method to calculate advance percentage as string
-  String _calculateAdvancePercentage(BookingSummaryViewModel vm) {
-    return _calculateAdvancePercentageValue(vm).toStringAsFixed(0);
   }
 
   // ============================================================
