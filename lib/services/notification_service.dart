@@ -342,7 +342,7 @@ class NotificationService extends GetxService {
 
     try {
       final url = Uri.parse(
-          'https://test.backend.arcmedialabs.in/api/user/notifications/history/?offset=$offset&limit=$limit'
+          'https://backend.arcmedialabs.in/api/user/notifications/history/?offset=$offset&limit=$limit'
       );
 
       final response = await http.get(
@@ -448,7 +448,7 @@ class NotificationService extends GetxService {
 
     try {
       final response = await http.post(
-        Uri.parse('https://test.backend.arcmedialabs.in/api/user/notifications/mark-read/$notificationId/'),
+        Uri.parse('https://backend.arcmedialabs.in/api/user/notifications/mark-read/$notificationId/'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -469,7 +469,7 @@ class NotificationService extends GetxService {
 
     try {
       final response = await http.post(
-        Uri.parse('https://test.backend.arcmedialabs.in/api/user/notifications/mark-all-read/'),
+        Uri.parse('https://backend.arcmedialabs.in/api/user/notifications/mark-all-read/'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -510,7 +510,7 @@ class NotificationService extends GetxService {
       print('📱 Registering token: $token');
 
       final response = await http.post(
-        Uri.parse('https://test.backend.arcmedialabs.in/api/user/device-token/'),
+        Uri.parse('https://backend.arcmedialabs.in/api/user/device-token/'),
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',

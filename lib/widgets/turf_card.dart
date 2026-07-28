@@ -1,10 +1,4 @@
-// widgets/turf_card.dart - Ribbon-Banner Style Discount Badge + Separate "+X" Badge
-// ✅ Real ribbon-banner shape (chevron notch ends + folded tail) like reference image
-// ✅ Splits best_discount_label on "+" -> main text on ribbon, "+X more" on its own badge below
-// ✅ GOLD gradient ribbon with green border, dark-gold folded tail peeking underneath
-// ✅ BOTTOM-CENTER POSITION, WITHIN CARD BOUNDARIES
-// ✅ Blinking animation kept
-// ✅ FULLY RESPONSIVE
+// widgets/turf_card.dart - Fixed to show correct location for search results
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -78,26 +72,64 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
 
     String discountLabel = latestTurf.bestDiscountLabel ?? '';
 
-    // ✅ Split label at "+" -> main ribbon text + separate extra-offer badge text
+    // ✅ Split label at "+"
     String mainLabel = discountLabel;
     String extraLabel = '';
     if (discountLabel.contains('+')) {
       final idx = discountLabel.indexOf('+');
       mainLabel = discountLabel.substring(0, idx).trim();
-      extraLabel = discountLabel.substring(idx + 1).trim(); // "+" character dropped
+      extraLabel = discountLabel.substring(idx + 1).trim();
       if (mainLabel.isEmpty) {
-        // label started with "+" (no leading text) -> nothing to split really
         mainLabel = extraLabel;
         extraLabel = '';
       }
     }
 
-    // Get screen width for responsive sizing
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
 
     final ribbonWidth = (screenWidth / 2.6).clamp(110.0, 175.0);
     final ribbonHeight = isSmallScreen ? 20.0 : 22.0;
+
+    // ✅ Check if this is a search result
+    final isSearchResult = homeVm.searchQuery.value.isNotEmpty;
+    final distance = latestTurf.distanceKm ?? 0;
+    final isFarAway = distance > 25.0;
+
+    // ✅ Get the CORRECT location to display
+    // For search results, use the DISTRICT from API (which is accurate)
+    // For nearby turfs, use the address
+    String locationDisplay = '';
+
+    if (isSearchResult && isFarAway) {
+      // ✅ For far-away search results: Use district from API
+      if (latestTurf.district.isNotEmpty && latestTurf.district != 'null') {
+        locationDisplay = latestTurf.district;
+      } else if (latestTurf.state.isNotEmpty && latestTurf.state != 'null') {
+        locationDisplay = latestTurf.state;
+      } else {
+        // Fallback: try to extract city from address
+        final addressParts = latestTurf.address.split(',');
+        if (addressParts.length >= 3) {
+          // Get the city part (usually 3rd from last)
+          final cityPart = addressParts[addressParts.length - 3]?.trim() ?? '';
+          if (cityPart.isNotEmpty && cityPart != 'India') {
+            locationDisplay = cityPart;
+          }
+        }
+      }
+    } else {
+      // ✅ For nearby turfs: Show shortened address
+      final addressParts = latestTurf.address.split(',');
+      if (addressParts.length > 1) {
+        // Show area + city
+        final area = addressParts[0].trim();
+        final city = addressParts.length > 1 ? addressParts[1].trim() : '';
+        locationDisplay = "$area, $city";
+      } else {
+        locationDisplay = latestTurf.address;
+      }
+    }
 
     return GestureDetector(
       onTap: _handleTap,
@@ -203,7 +235,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                         ),
                       ),
 
-                    // ✅ RIBBON-BANNER DISCOUNT BADGE + SEPARATE "+X" BADGE (bottom-center)
+                    // Discount badge
                     if (mainLabel.isNotEmpty)
                       Positioned(
                         bottom: 6,
@@ -228,7 +260,6 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                                       ),
                                       if (extraLabel.isNotEmpty)
                                         Transform.translate(
-                                          // slight overlap so it reads as "attached" to the first ribbon
                                           offset: const Offset(0, -4),
                                           child: _RibbonBanner(
                                             text: extraLabel,
@@ -300,7 +331,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                     ),
                     const SizedBox(height: 2),
 
-                    // Address
+                    // ✅ Location - Show correct location
                     Row(
                       children: [
                         const Icon(
@@ -311,8 +342,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                         const SizedBox(width: 3),
                         Expanded(
                           child: Text(
-                            "${latestTurf.address.split(',').length > 1 ? latestTurf.address.split(',')[1].trim() : latestTurf.address}, "
-                                "${latestTurf.district}",
+                            locationDisplay.isNotEmpty ? locationDisplay : latestTurf.district,
                             style: const TextStyle(
                               fontSize: 10,
                               color: Colors.grey,
@@ -325,9 +355,8 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                       ],
                     ),
 
-                    // Distance
-                    if (latestTurf.showVerifiedBadge &&
-                        homeVm.currentLocation.value != null &&
+                    // ✅ Distance - Always show
+                    if (homeVm.currentLocation.value != null &&
                         latestTurf.latitude != null &&
                         latestTurf.longitude != null)
                       Padding(
@@ -335,9 +364,9 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                         child: Row(
                           children: [
                             Icon(
-                              Icons.directions_walk,
+                              isFarAway ? Icons.flight_takeoff : Icons.directions_walk,
                               size: 10,
-                              color: Colors.green.shade600,
+                              color: isFarAway ? Colors.orange.shade600 : Colors.green.shade600,
                             ),
                             const SizedBox(width: 3),
                             Expanded(
@@ -345,7 +374,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                                 homeVm.getDistanceString(latestTurf),
                                 style: TextStyle(
                                   fontSize: 9,
-                                  color: Colors.green.shade600,
+                                  color: isFarAway ? Colors.orange.shade600 : Colors.green.shade600,
                                   fontWeight: FontWeight.w500,
                                 ),
                                 maxLines: 1,
@@ -442,10 +471,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// ✅ Ribbon-banner widget: gold gradient band with chevron-cut ends and a
-// darker folded tail peeking below each side (matches classic ribbon badge look)
-// ─────────────────────────────────────────────────────────────────────────
+// ── Ribbon Banner Widget ───────────────────────────────────────────────
 class _RibbonBanner extends StatelessWidget {
   final String text;
   final double width;
@@ -464,7 +490,7 @@ class _RibbonBanner extends StatelessWidget {
     final notch = height * 0.5;
     return SizedBox(
       width: width,
-      height: height + 7, // extra room for the folded tail peeking below
+      height: height + 7,
       child: CustomPaint(
         painter: _RibbonBannerPainter(bandHeight: height, notch: notch),
         child: Padding(
@@ -518,9 +544,9 @@ class _RibbonBannerPainter extends CustomPainter {
 
     final goldGradient = const LinearGradient(
       colors: [
-        Color(0xFFFFF3B0), // light gold highlight
-        Color(0xFFFFD700), // gold
-        Color(0xFFFFB300), // deep amber gold
+        Color(0xFFFFF3B0),
+        Color(0xFFFFD700),
+        Color(0xFFFFB300),
       ],
       begin: Alignment.topLeft,
       end: Alignment.bottomRight,
@@ -534,13 +560,12 @@ class _RibbonBannerPainter extends CustomPainter {
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1.2;
 
-    final foldPaint = Paint()..color = const Color(0xFFB8860B); // dark goldenrod
+    final foldPaint = Paint()..color = const Color(0xFFB8860B);
     final foldBorderPaint = Paint()
       ..color = Colors.green.shade800
       ..style = PaintingStyle.stroke
       ..strokeWidth = 1;
 
-    // Folded tail peeking BELOW the band at both ends (drawn first, sits behind band)
     final leftFold = Path()
       ..moveTo(0, h - 2)
       ..lineTo(notch * 0.85, h - 2)
@@ -557,7 +582,6 @@ class _RibbonBannerPainter extends CustomPainter {
     canvas.drawPath(rightFold, foldPaint);
     canvas.drawPath(rightFold, foldBorderPaint);
 
-    // Main ribbon band with chevron (arrow) notch cut into both edges
     final bandPath = Path()
       ..moveTo(0, 0)
       ..lineTo(w, 0)
@@ -570,7 +594,6 @@ class _RibbonBannerPainter extends CustomPainter {
     canvas.drawPath(bandPath, bandPaint);
     canvas.drawPath(bandPath, borderPaint);
 
-    // subtle top highlight line for a glossy ribbon feel
     final highlightPaint = Paint()
       ..color = Colors.white.withOpacity(0.35)
       ..strokeWidth = 1;

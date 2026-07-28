@@ -3,7 +3,7 @@
 // ✅ Supports lat, lng, radius, search, pagination
 // ✅ Fixed pagination using next URL from API
 // ✅ Shows nearby turfs by default
-// ✅ SEARCH: Shows ALL turfs matching search query (any distance)
+// ✅ SEARCH: Shows ALL turfs matching search query (any distance) - FIXED
 // ✅ Public getters for _hasMoreData and _currentPage
 // ✅ Sync with FavoritesViewModel
 
@@ -398,6 +398,7 @@ class HomeViewModel extends GetxController {
         queryParams['lat'] = currentLocation.value!.latitude.toString();
         queryParams['lng'] = currentLocation.value!.longitude.toString();
         if (searchQuery.value.isNotEmpty) {
+          // ✅ SEARCH: Use large radius to get ALL turfs matching the query
           queryParams['radius'] = '1000';
           print('🔍 SEARCH MODE: Using radius 1000km to find all matching turfs');
         } else {
@@ -451,9 +452,12 @@ class HomeViewModel extends GetxController {
 
         _initialFetchDone = true;
 
+        // ✅ FIX: Apply different logic based on search mode
         if (searchQuery.value.isNotEmpty) {
+          // 🔍 SEARCH MODE: Show ALL turfs matching search (any location)
           _applySearchResults(turfsWithFavorites);
         } else {
+          // 🏠 NORMAL MODE: Show nearby turfs only
           _applyLocationFilter();
         }
 
@@ -512,6 +516,7 @@ class HomeViewModel extends GetxController {
     await fetchTurfs(loadMore: true);
   }
 
+  // ✅ FIXED: Show ALL search results WITHOUT location filtering
   void _applySearchResults(List<TurfModel> fetchedTurfs) {
     print('🔍 Applying search results for: "${searchQuery.value}"');
     print('🔍 Total matching turfs: ${fetchedTurfs.length}');
@@ -520,26 +525,32 @@ class HomeViewModel extends GetxController {
 
     var sorted = List<TurfModel>.from(fetchedTurfs);
     sorted.sort((a, b) {
+      // 1. Favorites first
       final aIsFav = _favoriteIds.contains(a.id);
       final bIsFav = _favoriteIds.contains(b.id);
       if (aIsFav && !bIsFav) return -1;
       if (!aIsFav && bIsFav) return 1;
 
+      // 2. Sort by distance (but show ALL, even far away)
       final aDist = a.distanceKm ?? double.infinity;
       final bDist = b.distanceKm ?? double.infinity;
       if (aDist != bDist) return aDist.compareTo(bDist);
 
+      // 3. Alphabetical by name
       return a.name.compareTo(b.name);
     });
 
+    // ✅ Assign ALL search results to turfs (no location filtering)
     turfs.assignAll(sorted);
-    print('✅ Showing ${turfs.length} search results for "${searchQuery.value}"');
+
+    print('✅ Showing ${turfs.length} search results for "${searchQuery.value}" (ALL LOCATIONS)');
 
     if (turfs.isEmpty) {
       print('⚠️ No turfs found matching "${searchQuery.value}"');
     }
   }
 
+  // ✅ Apply location filter for normal browsing (within 25km)
   void _applyLocationFilter() {
     if (currentLocation.value == null) {
       locationError.value = 'Location unavailable - showing all turfs';
@@ -768,6 +779,7 @@ class HomeViewModel extends GetxController {
     if (query.trim().isEmpty) {
       isSearching.value = false;
       searchResults.clear();
+      // ✅ When search is cleared, go back to nearby turfs
       turfs.assignAll(nearbyTurfs);
       return;
     }
@@ -780,7 +792,7 @@ class HomeViewModel extends GetxController {
   }
 
   Future<void> _performSearch(String query) async {
-    print('🔍 Performing search for: "$query" (ANY DISTANCE)');
+    print('🔍 Performing search for: "$query" (ANY DISTANCE - ALL LOCATIONS)');
 
     _currentPage = 1;
     _hasMoreData = true;
@@ -795,11 +807,13 @@ class HomeViewModel extends GetxController {
     selectedCategory.value = category;
 
     if (searchQuery.value.isNotEmpty) {
+      // ✅ When searching, filter from ALL search results
       final filtered = searchResults.where((t) =>
           t.gameType.toLowerCase().contains(category.toLowerCase())
       ).toList();
       turfs.assignAll(filtered);
     } else {
+      // ✅ When not searching, filter from nearby turfs
       final filtered = nearbyTurfs.where((t) =>
           t.gameType.toLowerCase().contains(category.toLowerCase())
       ).toList();
@@ -813,6 +827,7 @@ class HomeViewModel extends GetxController {
     isSearching.value = false;
     searchResults.clear();
     _searchController?.clear();
+    // ✅ Go back to nearby turfs
     turfs.assignAll(nearbyTurfs);
     selectedCategory.value = '';
   }

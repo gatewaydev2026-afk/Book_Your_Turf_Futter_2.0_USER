@@ -195,7 +195,7 @@ Future<void> initDependencies() async {
   print('╚════════════════════════════════════════════════════════════╝');
 
   final dio = Dio(BaseOptions(
-    baseUrl: 'https://test.backend.arcmedialabs.in/api',
+    baseUrl: 'https://backend.arcmedialabs.in/api',
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(seconds: 30),
     sendTimeout: const Duration(seconds: 30),
