@@ -1,6 +1,7 @@
 // services/shared_prefs_helper.dart
-// ✅ COMPLETE - Device ID stored in SecureStorage (survives reinstalls) + Backend Sync
+// ✅ COMPLETE - With Session Management and Full Reset
 
+import 'package:book_your_turf/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:dio/dio.dart';
 import 'secure_device_id_service.dart';
@@ -29,12 +30,37 @@ class SharedPrefsHelper {
   static const String _keyDeviceLocation = 'device_location';
   static const String _keyLocationUpdatedAt = 'location_updated_at';
   static const String _keyDeviceRegistered = 'device_registered';
-
-  // ✅ PERMANENT DEVICE ID - Stored in SharedPreferences
   static const String _keyPermanentDeviceId = 'permanent_device_id';
   static const String _keyDeviceIdBackup = 'device_id_backup';
+  static const String _keySessionId = 'session_id';
+  static const String _keyLastLogoutTime = 'last_logout_time';
+  static const String _keyAppInitialized = 'app_initialized';
 
   static Future<void> init() async => _prefs = await SharedPreferences.getInstance();
+
+  // ========== SESSION MANAGEMENT ==========
+
+  static Future<void> setSessionId(String sessionId) async {
+    await _prefs.setString(_keySessionId, sessionId);
+  }
+
+  static String? getSessionId() => _prefs.getString(_keySessionId);
+
+  static Future<void> setLastLogoutTime(DateTime time) async {
+    await _prefs.setString(_keyLastLogoutTime, time.toIso8601String());
+  }
+
+  static DateTime? getLastLogoutTime() {
+    final timeStr = _prefs.getString(_keyLastLogoutTime);
+    if (timeStr == null) return null;
+    return DateTime.tryParse(timeStr);
+  }
+
+  static Future<void> setAppInitialized(bool initialized) async {
+    await _prefs.setBool(_keyAppInitialized, initialized);
+  }
+
+  static bool isAppInitialized() => _prefs.getBool(_keyAppInitialized) ?? false;
 
   // ========== FIRST LAUNCH ==========
   static Future<void> setFirstLaunch(bool isFirst) async => await _prefs.setBool(_keyFirstLaunch, isFirst);
@@ -43,7 +69,7 @@ class SharedPrefsHelper {
   // ========== AUTH WITH TOKEN EXPIRY ==========
   static Future<void> setToken(String token) async {
     await _prefs.setString(_keyAuthToken, token);
-    final expiry = DateTime.now().add(const Duration(days: 7));
+    final expiry = DateTime.now().add(AppConfig.tokenCacheDuration);
     await _prefs.setString(_keyTokenExpiry, expiry.toIso8601String());
     print('🔑 Token saved (expires: ${expiry.toLocal().toString().substring(0, 16)})');
   }
@@ -156,69 +182,45 @@ class SharedPrefsHelper {
   static bool shouldCheckForUpdate() {
     final lastCheck = getLastUpdateCheck();
     if (lastCheck == null) return true;
-    return DateTime.now().difference(lastCheck).inHours >= 24;
+    return DateTime.now().difference(lastCheck).inHours >= AppConfig.updateCheckInterval;
   }
 
-  // ✅ ============================================================
+  // ============================================================
   // ✅ PERMANENT DEVICE ID
-  //    Primary source → SecureDeviceIdService
-  //      Android : ANDROID_ID (hardware-bound, survives reinstall)
-  //                Fallback: EncryptedSharedPreferences + Auto Backup
-  //      iOS     : identifierForVendor (hardware-bound, survives reinstall)
-  //                Fallback: Keychain via flutter_secure_storage
-  //    SharedPreferences = session-level cache only (fast reads).
-  //    Result: ONE stable device_id per physical device, forever.
-  // ✅ ============================================================
-
-  /// Returns the permanent device ID.
-  /// Reads from secure storage on first call; uses SharedPrefs as cache
-  /// for all subsequent calls within the same app session.
+  // ============================================================
   static Future<String> getPermanentDeviceId() async {
-    // 1️⃣ Fast path – session cache (cleared on reinstall, that's fine)
     final cached = _prefs.getString(_keyPermanentDeviceId);
     if (cached != null && cached.isNotEmpty) {
       print('📱 🔒 Device ID (session cache): $cached');
       return cached;
     }
 
-    // 2️⃣ Authoritative source – secure storage (survives reinstall)
     final secureId = await SecureDeviceIdService.getDeviceId();
     print('📱 🔒 Device ID (secure storage): $secureId');
-    print('   ✅ Same ID returned after reinstall');
 
-    // Populate session cache for fast access during this session
     await _prefs.setString(_keyPermanentDeviceId, secureId);
     await _prefs.setString(_keyDeviceIdBackup, secureId);
     return secureId;
   }
 
-  /// Convenience alias used throughout the codebase.
   static Future<String> getDeviceId() async => getPermanentDeviceId();
 
-  /// Called after the backend returns a canonical device_id.
-  /// Updates BOTH the secure storage (via cache invalidation + next read)
-  /// and the session cache so everything stays consistent.
   static Future<void> setPermanentDeviceId(String deviceId) async {
     if (deviceId.isNotEmpty) {
-      // Update session cache immediately
       await _prefs.setString(_keyPermanentDeviceId, deviceId);
       await _prefs.setString(_keyDeviceIdBackup, deviceId);
-      // Invalidate secure storage cache so next cold-start re-reads correctly.
-      // SecureDeviceIdService will write this value on the next getDeviceId()
-      // call if the secure store is empty; to keep them in sync, write now:
       await SecureDeviceIdService.writeDeviceId(deviceId);
       print('📱 🔄 Permanent device ID set: $deviceId');
     }
   }
 
-  /// Sync with backend: if backend returns a device_id, adopt it.
   static Future<void> syncDeviceIdWithBackend(String jwtToken) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
-      final response = await dio.get('/user/device-id/');
+      final response = await dio.get(AppConfig.deviceId);
       if (response.statusCode == 200 && response.data['result'] == 'success') {
         final deviceId = response.data['data']['device_id'] as String?;
         if (deviceId != null && deviceId.isNotEmpty) {
@@ -231,9 +233,6 @@ class SharedPrefsHelper {
     }
   }
 
-  /// Clears only the session cache.
-  /// The secure-storage copy is intentionally preserved so the ID
-  /// survives this call and any future reinstall.
   static Future<void> clearDeviceId() async {
     await _prefs.remove(_keyPermanentDeviceId);
     await _prefs.remove(_keyDeviceIdBackup);
@@ -313,18 +312,28 @@ class SharedPrefsHelper {
     return token != null && token.isNotEmpty && isTokenValid();
   }
 
-  // ✅ ============================================================
-  // ✅ CLEAR ALL - BUT PRESERVE DEVICE ID
-  // ✅ ============================================================
-
+  // ============================================================
+  // ✅ CLEAR ALL - COMPLETE SESSION RESET
+  // ✅ Preserves ONLY Device ID (survives reinstall)
+  // ============================================================
   static Future<void> clearAll() async {
+    print('\n╔════════════════════════════════════════════════════════════╗');
+    print('║  🗑️ CLEARING ALL USER DATA - COMPLETE RESET              ║');
+    print('╚════════════════════════════════════════════════════════════╝');
+
+    // ✅ PRESERVE DEVICE ID (survives reinstall)
     final deviceId = _prefs.getString(_keyPermanentDeviceId);
     final backupId = _prefs.getString(_keyDeviceIdBackup);
     final deviceLocation = _prefs.getString(_keyDeviceLocation);
     final locationTime = _prefs.getString(_keyLocationUpdatedAt);
 
+    // ✅ PRESERVE FIRST LAUNCH STATUS
+    final isFirst = _prefs.getBool(_keyFirstLaunch) ?? true;
+
+    // ✅ CLEAR EVERYTHING ELSE
     await _prefs.clear();
 
+    // ✅ RESTORE PRESERVED VALUES
     if (deviceId != null && deviceId.isNotEmpty) {
       await _prefs.setString(_keyPermanentDeviceId, deviceId);
     }
@@ -338,6 +347,22 @@ class SharedPrefsHelper {
       await _prefs.setString(_keyLocationUpdatedAt, locationTime);
     }
 
-    print('🗑️ All cleared (Device ID preserved)');
+    // ✅ SET FIRST LAUNCH TO FALSE (app already installed)
+    await _prefs.setBool(_keyFirstLaunch, isFirst);
+
+    // ✅ CLEAR APP INITIALIZED FLAG - Forces fresh start on next login
+    await _prefs.remove(_keyAppInitialized);
+
+    // ✅ SET LAST LOGOUT TIME
+    await setLastLogoutTime(DateTime.now());
+
+    // ✅ CLEAR SESSION ID
+    await _prefs.remove(_keySessionId);
+
+    print('✅ All user data cleared');
+    print('   🔒 Device ID preserved: $deviceId');
+    print('   📍 Location preserved: $deviceLocation');
+    print('   ⏰ Logout time: ${DateTime.now()}');
+    print('═══════════════════════════════════════════════════════════════\n');
   }
 }

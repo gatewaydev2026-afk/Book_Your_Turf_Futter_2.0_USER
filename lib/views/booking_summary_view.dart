@@ -6,6 +6,7 @@
 // ✅ Shows "Select minimum X slots" when discounts exist but slots < minSlots
 // ✅ Shows "No discounts available" when no discounts exist at all
 // ✅ NO requirements text in coupon card
+// ✅ FIXED: UI locked during payment processing - No back button until navigation completes
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -120,32 +121,20 @@ class BookingSummaryView extends StatelessWidget {
     final vm = Get.put(BookingSummaryViewModel(), permanent: false);
     final profileVm = Get.find<ProfileViewModel>();
 
-    ever(vm.paymentSuccessConfirmed, (success) {
-      if (success && !vm.hasShownSuccessPopup.value) {
-        vm.hasShownSuccessPopup.value = true;
-        Future.delayed(const Duration(milliseconds: 500), () {
-          if (Get.context != null) {
-            _showPaymentSuccessPopup(vm);
-          }
-        });
-      }
-    });
-
     return PopScope(
-      canPop: !vm.isUILocked.value,
+      canPop: !vm.isUILocked.value && !vm.paymentSuccessConfirmed.value,
       onPopInvoked: (didPop) async {
-        if (vm.isUILocked.value) {
-          if (vm.paymentSuccessConfirmed.value && !vm.hasShownSuccessPopup.value) {
-            vm.hasShownSuccessPopup.value = true;
-            _showPaymentSuccessPopup(vm);
-          } else if (!vm.paymentSuccessConfirmed.value) {
-            Get.snackbar(
-              'Payment in Progress',
-              'Please wait, your payment is being processed.',
-              backgroundColor: Colors.orange,
-              colorText: Colors.white,
-            );
-          }
+        if (vm.isUILocked.value || vm.paymentSuccessConfirmed.value) {
+          // ✅ Show a message to user when they try to go back during payment
+          Get.snackbar(
+            'Please Wait',
+            vm.paymentSuccessConfirmed.value
+                ? 'Your payment is successful. Please complete the process.'
+                : 'Your payment is being processed...',
+            backgroundColor: Colors.orange,
+            colorText: Colors.white,
+            duration: const Duration(seconds: 2),
+          );
         }
       },
       child: Scaffold(
@@ -157,15 +146,17 @@ class BookingSummaryView extends StatelessWidget {
           centerTitle: true,
           leading: Obx(() => IconButton(
             icon: const Icon(Icons.arrow_back_ios_new),
-            onPressed: vm.isUILocked.value ? null : () => Get.back(),
+            onPressed: (vm.isUILocked.value || vm.paymentSuccessConfirmed.value)
+                ? null
+                : () => Get.back(),
           )),
         ),
         body: Obx(() => Stack(
           children: [
             IgnorePointer(
-              ignoring: vm.isUILocked.value,
+              ignoring: vm.isUILocked.value || vm.paymentSuccessConfirmed.value,
               child: Opacity(
-                opacity: vm.isUILocked.value ? 0.2 : 1.0,
+                opacity: (vm.isUILocked.value || vm.paymentSuccessConfirmed.value) ? 0.2 : 1.0,
                 child: Container(
                   decoration: const BoxDecoration(
                     image: DecorationImage(
@@ -176,7 +167,7 @@ class BookingSummaryView extends StatelessWidget {
                   ),
                   child: SafeArea(
                     child: SingleChildScrollView(
-                      physics: vm.isUILocked.value
+                      physics: (vm.isUILocked.value || vm.paymentSuccessConfirmed.value)
                           ? const NeverScrollableScrollPhysics()
                           : const AlwaysScrollableScrollPhysics(),
                       padding: const EdgeInsets.all(16),
@@ -200,6 +191,7 @@ class BookingSummaryView extends StatelessWidget {
                 ),
               ),
             ),
+            // ✅ Show loading overlay during payment processing
             if (vm.isUILocked.value && !vm.paymentSuccessConfirmed.value)
               Container(
                 color: Colors.black.withOpacity(0.85),
@@ -222,7 +214,7 @@ class BookingSummaryView extends StatelessWidget {
                       ),
                       SizedBox(height: 8),
                       Text(
-                        'Please wait',
+                        'Please wait, do not press back',
                         style: TextStyle(color: Colors.white70, fontSize: 12),
                       ),
                     ],
@@ -232,129 +224,6 @@ class BookingSummaryView extends StatelessWidget {
           ],
         )),
       ),
-    );
-  }
-
-  void _showPaymentSuccessPopup(BookingSummaryViewModel vm) {
-    if (Get.isDialogOpen ?? false) return;
-
-    Get.dialog(
-      PopScope(
-        canPop: false,
-        child: AlertDialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-          backgroundColor: Colors.white,
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(16),
-                decoration: BoxDecoration(
-                  color: Colors.green.shade50,
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(
-                  Icons.check_circle,
-                  color: Colors.green,
-                  size: 60,
-                ),
-              ),
-              const SizedBox(height: 16),
-              const Text(
-                'PAYMENT SUCCESSFUL! 🎉',
-                style: TextStyle(
-                  fontSize: 20,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.green,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  _buildStyledRupeeAmount(
-                    vm.walletAmountToPay,
-                    color: Colors.green.shade800,
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ],
-              ),
-              if (vm.isDiscountApplied)
-                Padding(
-                  padding: const EdgeInsets.only(top: 4),
-                  child: Text(
-                    'Total Discount: ${vm.discountAmountText}',
-                    style: TextStyle(fontSize: 13, color: Colors.green.shade700),
-                  ),
-                ),
-              const SizedBox(height: 16),
-              Text(
-                vm.selectedPaymentType == 'advance'
-                    ? 'Advance payment confirmed!\nBalance to be paid at venue.'
-                    : 'Your booking has been fully confirmed!',
-                textAlign: TextAlign.center,
-                style: const TextStyle(fontSize: 14),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () {
-                        Get.back();
-                        Get.offAllNamed(AppRoutes.mainPage);
-                        Future.delayed(const Duration(milliseconds: 100), () {
-                          if (Get.isRegistered<MainPageViewModel>()) {
-                            Get.find<MainPageViewModel>().changeTab(0);
-                          }
-                        });
-                      },
-                      style: OutlinedButton.styleFrom(
-                        side: const BorderSide(color: Colors.green),
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text(
-                        'GO HOME',
-                        style: TextStyle(color: Colors.green),
-                      ),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: ElevatedButton(
-                      onPressed: () {
-                        Get.back();
-                        Get.offAllNamed(AppRoutes.mainPage);
-                        Future.delayed(const Duration(milliseconds: 100), () {
-                          if (Get.isRegistered<MainPageViewModel>()) {
-                            Get.find<MainPageViewModel>().changeTab(1);
-                          }
-                        });
-                      },
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        shape: RoundedRectangleBorder(
-                          borderRadius: BorderRadius.circular(30),
-                        ),
-                        padding: const EdgeInsets.symmetric(vertical: 12),
-                      ),
-                      child: const Text(
-                        'VIEW BOOKINGS',
-                        style: TextStyle(color: Colors.white),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-      ),
-      barrierDismissible: false,
     );
   }
 
@@ -1245,39 +1114,36 @@ class BookingSummaryView extends StatelessWidget {
             ),
             const SizedBox(height: 8),
 
-            // ✅ 3. Advance Amount - For ADVANCE PAYMENT (with percentage next to label)
+            // ✅ 3. App Discount (if applied)
+            if (appDiscountAmount > 0) ...[
+              _buildStyledInfoRow(
+                Icons.verified,
+                'App Discount',
+                -appDiscountAmount,
+                iconColor: Colors.blue,
+                rupeeColor: Colors.blue.shade800,
+                bold: false,
+                isNegative: true,
+              ),
+              const SizedBox(height: 4),
+            ],
 
-
-              // ✅ 4. App Discount (if applied)
-              if (appDiscountAmount > 0) ...[
-                _buildStyledInfoRow(
-                  Icons.verified,
-                  'App Discount',
-                  -appDiscountAmount,
-                  iconColor: Colors.blue,
-                  rupeeColor: Colors.blue.shade800,
-                  bold: false,
-                  isNegative: true,
-                ),
-                const SizedBox(height: 4),
-              ],
-
-              // ✅ 5. Venue Discount (if applied)
-              if (venueDiscountAmount > 0) ...[
-                _buildStyledInfoRow(
-                  Icons.storefront,
-                  'Venue Discount',
-                  -venueDiscountAmount,
-                  iconColor: Colors.purple,
-                  rupeeColor: Colors.purple.shade800,
-                  bold: false,
-                  isNegative: true,
-                ),
-                const SizedBox(height: 4),
-              ],
+            // ✅ 4. Venue Discount (if applied)
+            if (venueDiscountAmount > 0) ...[
+              _buildStyledInfoRow(
+                Icons.storefront,
+                'Venue Discount',
+                -venueDiscountAmount,
+                iconColor: Colors.purple,
+                rupeeColor: Colors.purple.shade800,
+                bold: false,
+                isNegative: true,
+              ),
+              const SizedBox(height: 4),
+            ],
             const Divider(),
 
-              // ✅ 6. Total Discount (if any discount applied)
+            // ✅ 5. Total Discount (if any discount applied)
 
             if (vm.selectedPaymentType == 'advance') ...[
               _buildAdvanceRowWithPercentage(
@@ -1300,7 +1166,7 @@ class BookingSummaryView extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
               ],
-              // ✅ 7. Advance to Pay (Advance - Discount)
+              // ✅ 6. Advance to Pay (Advance - Discount)
               _buildStyledInfoRow(
                 Icons.account_balance,
                 'Advance to Pay',
@@ -1314,7 +1180,7 @@ class BookingSummaryView extends StatelessWidget {
               const SizedBox(height: 8),
               const Divider(),
 
-              // ✅ 8. Balance to Pay (Total - Advance)
+              // ✅ 7. Balance to Pay (Total - Advance)
               _buildStyledInfoRow(
                 Icons.balance,
                 'Balance to Pay',
@@ -1326,7 +1192,7 @@ class BookingSummaryView extends StatelessWidget {
               const SizedBox(height: 8),
             ],
 
-            // ✅ 9. Payable Now (Final amount)
+            // ✅ 8. Payable Now (Final amount)
             const Divider(),
             _buildStyledInfoRow(
               Icons.account_balance_wallet,
@@ -1378,74 +1244,6 @@ class BookingSummaryView extends StatelessWidget {
                     fontWeight: bold ? FontWeight.bold : FontWeight.w500,
                     fontSize: fontSize,
                     color: bold ? Colors.black87 : Colors.black54,
-                  ),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-  // ✅ Advance Row - Shows PERCENTAGE + AMOUNT
-  Widget _buildAdvanceRowWithAmount(
-      IconData icon,
-      String label,
-      double percentage,
-      double amount, {
-        Color? iconColor,
-        bool bold = false,
-        double fontSize = 14,
-      }) {
-    return Row(
-      children: [
-        Icon(icon, size: 18, color: iconColor ?? Colors.green),
-        const SizedBox(width: 8),
-        SizedBox(width: 120, child: Text(label, style: TextStyle(color: Colors.grey, fontSize: 14))),
-        Expanded(
-          child: RichText(
-            textAlign: TextAlign.end,
-            text: TextSpan(
-              children: [
-                TextSpan(
-                  text: '${percentage.toStringAsFixed(0)}%',
-                  style: TextStyle(
-                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-                    fontSize: fontSize,
-                    color: bold ? Colors.black87 : Colors.black54,
-                  ),
-                ),
-                TextSpan(
-                  text: ' (',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w400,
-                    fontSize: fontSize - 2,
-                    color: Colors.grey.shade500,
-                  ),
-                ),
-                TextSpan(
-                  text: '₹',
-                  style: TextStyle(
-                    color: Colors.orange.shade700,
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.bold,
-                    fontFamily: 'Georgia',
-                  ),
-                ),
-                TextSpan(
-                  text: PriceFormatter.format(amount),
-                  style: TextStyle(
-                    fontWeight: bold ? FontWeight.bold : FontWeight.w500,
-                    fontSize: fontSize,
-                    color: bold ? Colors.black87 : Colors.black54,
-                  ),
-                ),
-                TextSpan(
-                  text: ')',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w400,
-                    fontSize: fontSize - 2,
-                    color: Colors.grey.shade500,
                   ),
                 ),
               ],
@@ -1697,7 +1495,7 @@ class BookingSummaryView extends StatelessWidget {
           width: double.infinity,
           height: 55,
           child: ElevatedButton(
-            onPressed: (vm.isLoading.value || vm.isUILocked.value || !isValidAmount)
+            onPressed: (vm.isLoading.value || vm.isUILocked.value || vm.paymentSuccessConfirmed.value || !isValidAmount)
                 ? null
                 : () {
               if (profileVm.walletBalance.value < amountToPay) {
@@ -1788,7 +1586,7 @@ class BookingSummaryView extends StatelessWidget {
           width: double.infinity,
           height: 55,
           child: ElevatedButton(
-            onPressed: (vm.isLoading.value || vm.isUILocked.value || !isValidAmount)
+            onPressed: (vm.isLoading.value || vm.isUILocked.value || vm.paymentSuccessConfirmed.value || !isValidAmount)
                 ? null
                 : () => _showOnlinePaymentConfirmation(context, vm),
             style: ElevatedButton.styleFrom(

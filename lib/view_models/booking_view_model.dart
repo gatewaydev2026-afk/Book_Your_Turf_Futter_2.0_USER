@@ -1,15 +1,17 @@
 // view_models/booking_view_model.dart - With Lazy Loading + Caching
+// ✅ Duplicate API call prevention
+// ✅ Fixed: Removed unused _currentBalanceAmount
 
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../config/app_config.dart';
 import '../models/booking_model.dart';
 import '../services/shared_prefs_helper.dart';
 
 class BookingViewModel extends GetxController {
-  // Observable state
   final bookings = <BookingModel>[].obs;
   final filteredBookings = <BookingModel>[].obs;
   final selectedTab = "upcoming".obs;
@@ -17,7 +19,6 @@ class BookingViewModel extends GetxController {
   final isPayingBalance = false.obs;
   final isCancelling = false.obs;
 
-  // Filter state
   final selectedDate = Rx<DateTime?>(null);
   final startDate = Rx<DateTime?>(null);
   final endDate = Rx<DateTime?>(null);
@@ -25,15 +26,20 @@ class BookingViewModel extends GetxController {
   final hasActiveFilters = false.obs;
   final paymentStatusOptions = ["All", "Pending", "Advance Paid", "Fully Paid"];
 
-  // Razorpay
   late Razorpay _razorpay;
   int? _currentBookingId;
-  double? _currentBalanceAmount;
+  // ✅ REMOVED: double? _currentBalanceAmount; - Not used anywhere
 
-  // Cache control
   static bool _dataLoaded = false;
   static DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(minutes: 1);
+  static const _cacheDuration = AppConfig.bookingCacheDuration;
+
+  // ✅ DUPLICATE API CALL PREVENTION
+  static bool _isFetchingBookings = false;
+  static DateTime? _lastFetchCallTime;  // ✅ Made static
+  static const _minFetchInterval = Duration(seconds: 3);
+  Timer? _refreshDebounceTimer;
+  static const _refreshDebounceDuration = Duration(milliseconds: 500);
 
   @override
   void onInit() {
@@ -51,7 +57,6 @@ class BookingViewModel extends GetxController {
 
   // ==================== LAZY LOADING ====================
 
-  /// Call this ONLY when user opens the Booking screen
   Future<void> loadBookings({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -65,7 +70,29 @@ class BookingViewModel extends GetxController {
       return;
     }
 
-    // Check cache - only if not force refresh
+    // ✅ FIX: Prevent duplicate calls within 3 seconds
+    if (!forceRefresh && _lastFetchCallTime != null) {
+      final elapsed = DateTime.now().difference(_lastFetchCallTime!);
+      if (elapsed < _minFetchInterval) {
+        print('⏭️ Bookings fetch skipped (${elapsed.inMilliseconds}ms since last fetch)');
+        return;
+      }
+    }
+
+    // ✅ FIX: Prevent concurrent fetches. This lock now applies EVEN when
+    // forceRefresh=true. Previously `_isFetchingBookings && !forceRefresh`
+    // let forceRefresh bypass this lock entirely, so if two callers both
+    // triggered a forceRefresh at nearly the same time (e.g. cancelBooking()
+    // and a UI-level refresh call), BOTH fired the API back-to-back - visible
+    // in logs as "Fetching bookings from API..." printed twice in a row.
+    // forceRefresh should only skip the cache-freshness checks further below,
+    // not allow two overlapping in-flight requests.
+    if (_isFetchingBookings) {
+      print('⏭️ Bookings fetch already in progress - skipping duplicate (forceRefresh: $forceRefresh)');
+      return;
+    }
+
+    // Check cache
     if (!forceRefresh && _dataLoaded && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration) {
@@ -79,12 +106,13 @@ class BookingViewModel extends GetxController {
       return;
     }
 
+    _isFetchingBookings = true;
     print('📡 Fetching bookings from API...');
     isLoading.value = true;
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.get('/user/bookings/');
+      final response = await dio.get(AppConfig.bookings);
 
       if (response.data['result'] == 'success') {
         final List<dynamic> data = response.data['data']['results'] ?? [];
@@ -95,6 +123,7 @@ class BookingViewModel extends GetxController {
         _applyAllFilters();
         _dataLoaded = true;
         _lastFetchTime = DateTime.now();
+        _lastFetchCallTime = DateTime.now();
 
         print('✅ Bookings fetched: ${bookings.length} bookings');
       }
@@ -102,6 +131,7 @@ class BookingViewModel extends GetxController {
       print('❌ Error fetching bookings: $e');
     } finally {
       isLoading.value = false;
+      _isFetchingBookings = false;
     }
   }
 
@@ -110,7 +140,6 @@ class BookingViewModel extends GetxController {
   void _applyAllFilters() {
     var filtered = List<BookingModel>.from(bookings);
 
-    // Date range filter
     if (startDate.value != null && endDate.value != null) {
       filtered = filtered.where((b) {
         final bookingDate = _parseDate(b.formattedDate);
@@ -120,7 +149,6 @@ class BookingViewModel extends GetxController {
         return isAfterStart && isBeforeEnd;
       }).toList();
     }
-    // Single date filter
     else if (selectedDate.value != null) {
       filtered = filtered.where((b) {
         final bookingDate = _parseDate(b.formattedDate);
@@ -129,12 +157,10 @@ class BookingViewModel extends GetxController {
       }).toList();
     }
 
-    // Payment status filter
     if (selectedPaymentStatus.value != "All") {
       filtered = filtered.where((b) => b.paymentStatus == selectedPaymentStatus.value).toList();
     }
 
-    // Tab filter
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final yesterday = DateTime(now.year, now.month, now.day - 1);
@@ -273,7 +299,7 @@ class BookingViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
-        '/user/bookings/cancel/',
+        AppConfig.cancelBooking,
         data: {'booking_id': bookingId},
       );
 
@@ -317,14 +343,13 @@ class BookingViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
-        '/user/bookings/pay-balance/',
+        AppConfig.payBalance,
         data: {'booking_id': bookingId, 'amount': amount.toString()},
       );
 
       if (response.data['result'] == 'success') {
         final orderData = response.data['data'];
         _currentBookingId = bookingId;
-        _currentBalanceAmount = amount;
         _openRazorpayForBalance(orderData);
       } else {
         Get.snackbar('Error', response.data['message'] ?? 'Failed to initiate payment',
@@ -339,11 +364,10 @@ class BookingViewModel extends GetxController {
   }
 
   void _openRazorpayForBalance(Map<String, dynamic> orderData) {
-    const String razorpayKey = 'rzp_live_Rn1hHzY0kkjXFj';
     int amountInPaise = (double.parse(orderData['amount'].toString()) * 100).toInt();
 
     final options = {
-      'key': razorpayKey,
+      'key': AppConfig.razorpayKey,
       'amount': amountInPaise,
       'name': 'Book Your Turf',
       'description': 'Balance Payment for Booking',
@@ -371,7 +395,7 @@ class BookingViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final confirmResponse = await dio.post(
-        '/user/bookings/confirm-balance/',
+        AppConfig.confirmBalance,
         data: {
           'razorpay_payment_id': response.paymentId,
           'razorpay_order_id': response.orderId,
@@ -394,7 +418,6 @@ class BookingViewModel extends GetxController {
     } finally {
       isPayingBalance.value = false;
       _currentBookingId = null;
-      _currentBalanceAmount = null;
     }
   }
 
@@ -418,7 +441,7 @@ class BookingViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
-        '/user/bookings/pay-balance-wallet/',
+        AppConfig.payBalanceWallet,
         data: {
           'booking_id': bookingId,
           'amount': amount.toString(),
@@ -459,13 +482,26 @@ class BookingViewModel extends GetxController {
   // ==================== REFRESH ====================
 
   Future<void> refreshBookings() async {
-    _dataLoaded = false;
-    await loadBookings(forceRefresh: true);
+    _refreshDebounceTimer?.cancel();
+
+    // ✅ FIX: previously this method returned immediately without waiting for the
+    // debounced Timer to actually fire, so any `await refreshBookings()` caller
+    // thought the refresh was done before the real API call even started - the UI
+    // (dialogs / lists) then looked "stuck" on old/cached data right after payment.
+    final completer = Completer<void>();
+    _refreshDebounceTimer = Timer(_refreshDebounceDuration, () async {
+      _dataLoaded = false;
+      await loadBookings(forceRefresh: true);
+      if (!completer.isCompleted) completer.complete();
+    });
+    return completer.future;
   }
 
   static void resetCache() {
     _dataLoaded = false;
     _lastFetchTime = null;
+    _isFetchingBookings = false;
+    _lastFetchCallTime = null;
   }
 
   // ==================== DATE HELPERS ====================
@@ -504,6 +540,7 @@ class BookingViewModel extends GetxController {
   @override
   void onClose() {
     _razorpay.clear();
+    _refreshDebounceTimer?.cancel();
     super.onClose();
   }
 }

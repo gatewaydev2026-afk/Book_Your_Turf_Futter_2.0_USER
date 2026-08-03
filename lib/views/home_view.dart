@@ -316,7 +316,7 @@ class _HomeViewState extends State<HomeView>
   }
 
   void _openNotificationScreen() {
-    Get.to(() => const NotificationScreen());
+    Get.to(() =>  NotificationScreen());
   }
 
   @override
@@ -910,7 +910,7 @@ class _HomeViewState extends State<HomeView>
                     padding: EdgeInsets.zero,
                     icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
                     onPressed: () async {
-                      await Get.to(() => const NotificationScreen());
+                      await Get.to(() =>  NotificationScreen());
                       _notificationService.updateUnreadCount();
                     },
                   ),
@@ -962,7 +962,14 @@ class _HomeViewState extends State<HomeView>
         children: [
           GestureDetector(
             onTap: () {
-              FocusScope.of(context).requestFocus(_searchFocusNode);
+              final query = _searchController.text;
+              if (query.trim().isNotEmpty) {
+                // ✅ Explicit trigger — this is what fires the API call
+                homeVm.performSearch(query);
+                _searchFocusNode.unfocus();
+              } else {
+                FocusScope.of(context).requestFocus(_searchFocusNode);
+              }
             },
             child: SvgPicture.asset(
               'assets/icons/search.svg',
@@ -979,6 +986,12 @@ class _HomeViewState extends State<HomeView>
               onChanged: _onSearchChanged,
               controller: _searchController,
               textAlignVertical: TextAlignVertical.center,
+              textInputAction: TextInputAction.search,
+              onSubmitted: (query) {
+                // ✅ Explicit trigger — this is what fires the API call
+                homeVm.performSearch(query);
+                _searchFocusNode.unfocus();
+              },
               decoration: InputDecoration(
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,

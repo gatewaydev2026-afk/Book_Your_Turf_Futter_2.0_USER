@@ -2,11 +2,15 @@
 // FIXED: Uses loadBookings() instead of fetch() for lazy loading
 // ADDED: Discount display with strikethrough pricing
 // ADDED: Discount breakdown in booking details
+// FIXED: CircularProgressIndicator division by zero error
+// FIXED: Extra closing bracket removed
+// FIXED: Duplicate API call prevention with flags
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:lottie/lottie.dart';
+import '../config/app_config.dart';
 import '../view_models/booking_view_model.dart';
 import '../view_models/profile_view_model.dart';
 import '../view_models/main_page_view_model.dart';
@@ -21,6 +25,13 @@ class BookingHistoryView extends StatelessWidget {
   BookingHistoryView({super.key});
   final vm = Get.find<BookingViewModel>();
   final profileVm = Get.find<ProfileViewModel>();
+
+  // ✅ DUPLICATE API CALL PREVENTION FLAGS
+  static bool _isPayingBalance = false;
+  static bool _isRefreshing = false;
+  static bool _isShowingDetails = false;
+  static bool _isShowingCancelDialog = false;
+  static bool _isShowingPaymentMethod = false;
 
   // Helper: Format price with decimals only when needed
   String _formatPrice(double price) {
@@ -540,7 +551,19 @@ class BookingHistoryView extends StatelessWidget {
       }
 
       return RefreshIndicator(
-        onRefresh: () => vm.refreshBookings(),
+        onRefresh: () async {
+          // ✅ Prevent duplicate refreshes
+          if (_isRefreshing) {
+            print('⏭️ Booking refresh already in progress - skipping duplicate');
+            return;
+          }
+          _isRefreshing = true;
+          try {
+            await vm.refreshBookings();
+          } finally {
+            _isRefreshing = false;
+          }
+        },
         child: ListView.builder(
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           itemCount: vm.filteredBookings.length,
@@ -867,7 +890,22 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
+  // ✅ FIXED: Safe CircularProgressIndicator with division by zero protection
   Widget _indicatior(BookingModel b, bool isSmallScreen) {
+    // ✅ SAFE CALCULATION - Prevent division by zero
+    double progressValue = 0.0;
+    if (b.discountedTotalAmount > 0) {
+      progressValue = b.paidAmount / b.discountedTotalAmount;
+      // Clamp between 0 and 1
+      if (progressValue > 1.0) progressValue = 1.0;
+      if (progressValue < 0) progressValue = 0.0;
+    } else if (b.paidAmount > 0 && b.totalAmount > 0) {
+      // Fallback to original total amount
+      progressValue = b.paidAmount / b.totalAmount;
+      if (progressValue > 1.0) progressValue = 1.0;
+      if (progressValue < 0) progressValue = 0.0;
+    }
+
     return SizedBox(
       width: isSmallScreen ? 55 : 65,
       child: Column(
@@ -880,20 +918,22 @@ class BookingHistoryView extends StatelessWidget {
               alignment: Alignment.center,
               children: [
                 CircularProgressIndicator(
-                  // Use discounted total amount for percentage
-                  value: b.paidAmount / b.discountedTotalAmount,
+                  value: progressValue,  // ✅ SAFE VALUE (0.0 to 1.0)
                   strokeWidth: isSmallScreen ? 4 : 5,
                   backgroundColor: Colors.grey.shade200,
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
                 ),
-              
-        ],
+              ],
             ),
           ),
           const SizedBox(height: 4),
           Text(
             b.paymentStatus == "Fully Paid" ? "Fully Paid" : "Partial",
-            style: TextStyle(fontSize: isSmallScreen ? 9 : 11, fontWeight: FontWeight.bold, color: b.paymentStatus == "Fully Paid" ? Colors.green : Colors.orange),
+            style: TextStyle(
+              fontSize: isSmallScreen ? 9 : 11,
+              fontWeight: FontWeight.bold,
+              color: b.paymentStatus == "Fully Paid" ? Colors.green : Colors.orange,
+            ),
             textAlign: TextAlign.center,
           ),
         ],
@@ -990,7 +1030,15 @@ class BookingHistoryView extends StatelessWidget {
 
   // ==================== BALANCE PAYMENT METHODS ====================
 
+  // ✅ FIXED: Balance payment method selection with duplicate prevention
   void _showBalancePaymentMethodSelection(BookingModel booking) {
+    if (_isShowingPaymentMethod || (Get.isBottomSheetOpen ?? false)) {
+      print('⏭️ Payment method already showing - skipping duplicate');
+      return;
+    }
+
+    _isShowingPaymentMethod = true;
+
     showModalBottomSheet(
       context: Get.context!,
       shape: const RoundedRectangleBorder(
@@ -1015,7 +1063,6 @@ class BookingHistoryView extends StatelessWidget {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 8),
-            // Show discount info if applicable
             if (booking.hasDiscount) ...[
               Container(
                 padding: const EdgeInsets.all(8),
@@ -1118,10 +1165,15 @@ class BookingHistoryView extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      _isShowingPaymentMethod = false;
+    });
   }
 
+  // ✅ FIXED: Proceed with wallet balance payment with duplicate prevention
   void _proceedWithWalletBalancePayment(BookingModel booking) async {
+    if (Get.isDialogOpen ?? false) return;
+
     if (profileVm.walletBalance.value < booking.remainingAmount) {
       Get.dialog(
         AlertDialog(
@@ -1225,16 +1277,22 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // ✅ Wallet payment with lazy loading - NO navigation to splash screen
+  // ✅ FIXED: Wallet payment with duplicate prevention
   Future<void> _payBalanceWithWallet(BookingModel booking) async {
+    if (_isPayingBalance) {
+      print('⏭️ Balance payment already in progress - skipping duplicate');
+      return;
+    }
+
     if (vm.isPayingBalance.value) return;
 
+    _isPayingBalance = true;
     vm.isPayingBalance.value = true;
 
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
-        '/user/bookings/pay-balance-wallet/',
+        AppConfig.payBalanceWallet,
         data: {
           'booking_id': booking.id,
           'amount': booking.remainingAmount.toString(),
@@ -1242,6 +1300,7 @@ class BookingHistoryView extends StatelessWidget {
       );
 
       vm.isPayingBalance.value = false;
+      _isPayingBalance = false;
 
       if (response.data['result'] == 'success') {
         if (Get.context != null) {
@@ -1255,11 +1314,7 @@ class BookingHistoryView extends StatelessWidget {
           );
         }
 
-        await profileVm.fetchUser();
-        await vm.refreshBookings();
-
-        vm.filteredBookings.refresh();
-        vm.bookings.refresh();
+        await _refreshAfterPayment();
 
       } else {
         if (Get.context != null) {
@@ -1274,6 +1329,7 @@ class BookingHistoryView extends StatelessWidget {
     } catch (e) {
       print('Wallet balance payment error: $e');
       vm.isPayingBalance.value = false;
+      _isPayingBalance = false;
 
       if (Get.context != null) {
         Get.snackbar(
@@ -1286,9 +1342,38 @@ class BookingHistoryView extends StatelessWidget {
     }
   }
 
+  // ✅ NEW: Refresh after payment with duplicate prevention
+  Future<void> _refreshAfterPayment() async {
+    if (_isRefreshing) {
+      print('⏭️ Refresh already in progress - skipping duplicate');
+      return;
+    }
+
+    _isRefreshing = true;
+
+    try {
+      await profileVm.fetchUser(forceRefresh: true);
+      await vm.refreshBookings();
+      vm.filteredBookings.refresh();
+      vm.bookings.refresh();
+    } catch (e) {
+      print('❌ Refresh error: $e');
+    } finally {
+      _isRefreshing = false;
+    }
+  }
+
   // ==================== CANCEL CONFIRMATION ====================
 
+  // ✅ FIXED: Cancel dialog with duplicate prevention
   void _showCancelConfirmDialog(BookingModel booking) {
+    if (_isShowingCancelDialog || (Get.isDialogOpen ?? false)) {
+      print('⏭️ Cancel dialog already showing - skipping duplicate');
+      return;
+    }
+
+    _isShowingCancelDialog = true;
+
     final bookingId = booking.id;
     final bookingCode = booking.bookingId;
     final isFullyPaid = booking.paymentStatus == "Fully Paid";
@@ -1461,7 +1546,9 @@ class BookingHistoryView extends StatelessWidget {
         ],
       ),
       barrierDismissible: false,
-    );
+    ).whenComplete(() {
+      _isShowingCancelDialog = false;
+    });
   }
 
   Widget _statusChip(BookingModel b, bool isSmallScreen) {
@@ -1684,7 +1771,15 @@ class BookingHistoryView extends StatelessWidget {
 
   // ==================== UPDATED: Booking Details with Discount Breakdown ====================
 
+  // ✅ FIXED: Show booking details with duplicate prevention
   void _showBookingDetails(BookingModel b, bool isSmallScreen) {
+    if (_isShowingDetails || (Get.isBottomSheetOpen ?? false)) {
+      print('⏭️ Booking details already showing - skipping duplicate');
+      return;
+    }
+
+    _isShowingDetails = true;
+
     final sortedSlots = _getSortedSlots(b.slots);
     final isCricketOrFootball = _isCricketOrFootball(b.gameType);
     final courtTurfLabel = isCricketOrFootball ? "Turf" : "Court";
@@ -1875,7 +1970,9 @@ class BookingHistoryView extends StatelessWidget {
           ),
         ),
       ),
-    );
+    ).whenComplete(() {
+      _isShowingDetails = false;
+    });
   }
 
   Widget _detailRow(String label, String value, bool isSmallScreen) {

@@ -1,4 +1,5 @@
-// lib/views/wallet_recharge_dialog.dart
+// lib/views/wallet_recharge_dialog.dart - FIXED duplicate payment
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../view_models/wallet_view_model.dart';
@@ -15,8 +16,10 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
   final TextEditingController _amountController = TextEditingController();
   final WalletViewModel _walletVm = Get.find<WalletViewModel>();
 
-  // Quick amounts including ₹1 and ₹5
   final List<double> _quickAmounts = [500, 1000, 2000, 5000, 10000];
+
+  // ✅ DUPLICATE PAYMENT PREVENTION
+  bool _isProcessing = false;
 
   @override
   void dispose() {
@@ -90,18 +93,18 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
                 Expanded(
                   child: Obx(
                         () => ElevatedButton(
-                      onPressed: _walletVm.isRecharging.value
+                      onPressed: _walletVm.isRecharging.value || _isProcessing
                           ? null
                           : () async {
+                        // ✅ Prevent duplicate clicks
+                        if (_isProcessing) return;
+
                         final amount = double.tryParse(_amountController.text);
                         if (amount != null && amount >= 500) {
+                          _isProcessing = true;
                           Get.back();
                           await _walletVm.initiateRecharge(amount);
-
-                          // ✅ ADD NOTIFICATION AFTER SUCCESSFUL RECHARGE
-                          // Note: This will be called after payment success
-                          // The actual notification is already in wallet_view_model.dart
-                          // This is just for reference
+                          _isProcessing = false;
                         } else {
                           Get.snackbar(
                             'Invalid Amount',
@@ -118,7 +121,7 @@ class _WalletRechargeDialogState extends State<WalletRechargeDialog> {
                           borderRadius: BorderRadius.circular(12),
                         ),
                       ),
-                      child: _walletVm.isRecharging.value
+                      child: _walletVm.isRecharging.value || _isProcessing
                           ? const SizedBox(
                         width: 20,
                         height: 20,

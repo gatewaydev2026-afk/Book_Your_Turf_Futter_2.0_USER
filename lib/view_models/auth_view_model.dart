@@ -1,7 +1,11 @@
 // auth_view_model.dart - Complete with device registration after login
+// ✅ SINGLE DOMAIN CONFIGURATION
+// ✅ Duplicate login prevention
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:book_your_turf/view_models/profile_view_model.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -19,6 +23,10 @@ import 'package:book_your_turf/main.dart' show facebookAppEvents;
 
 import 'booking_view_model.dart';
 import 'home_view_model.dart';
+import 'wallet_view_model.dart';
+import 'coin_view_model.dart';
+import 'discount_view_model.dart';
+import 'favorites_view_model.dart';
 
 class AuthViewModel extends GetxController {
   final isLoading = false.obs;
@@ -34,11 +42,12 @@ class AuthViewModel extends GetxController {
   Timer? _expiryTimer;
 
   DateTime? _otpSentTime;
-  static const int otpValidDuration = 60;
+  static const int otpValidDuration = AppConfig.otpValidDuration;
 
   bool _deviceRegistrationStarted = false;
 
-  static const String googleMapsApiKey = 'AIzaSyBQ6kiaROyTfm7TLKG2c_FA1XER8IVaMlY';
+  // ✅ DUPLICATE API CALL PREVENTION
+  bool _isLoggingIn = false;
 
   @override
   void onClose() {
@@ -53,7 +62,7 @@ class AuthViewModel extends GetxController {
   }
 
   void _startTimer() {
-    otpResendCooldown.value = 60;
+    otpResendCooldown.value = AppConfig.otpResendCooldown;
     _timer?.cancel();
     _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
       if (otpResendCooldown.value <= 0) {
@@ -81,7 +90,7 @@ class AuthViewModel extends GetxController {
     _otpSentTime = null;
     _timer?.cancel();
     _expiryTimer?.cancel();
-    otpResendCooldown.value = 60;
+    otpResendCooldown.value = AppConfig.otpResendCooldown;
   }
 
   // ==================== REGISTRATION - SEND OTP ====================
@@ -130,7 +139,7 @@ class AuthViewModel extends GetxController {
 
       print('📤 SEND OTP Request: $requestData');
 
-      final response = await dio.post('/user/send-otp/', data: requestData);
+      final response = await dio.post(AppConfig.authSendOtp, data: requestData);
 
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
@@ -168,7 +177,7 @@ class AuthViewModel extends GetxController {
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post('/user/resend-otp/', data: {'identifier': identifier});
+      final response = await dio.post(AppConfig.authResendOtp, data: {'identifier': identifier});
 
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
@@ -204,7 +213,7 @@ class AuthViewModel extends GetxController {
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post('/user/verify-register/', data: {'identifier': identifier, 'otp': otp});
+      final response = await dio.post(AppConfig.authVerifyOtp, data: {'identifier': identifier, 'otp': otp});
 
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
@@ -227,7 +236,6 @@ class AuthViewModel extends GetxController {
 
         _showSuccess('Account created successfully! Please login');
 
-        // Store registration details for auto-login
         _tempIdentifier = null;
         clearOtpTime();
         return true;
@@ -264,7 +272,7 @@ class AuthViewModel extends GetxController {
         requestData['number'] = phone;
       }
 
-      final response = await dio.post('/user/forgot-password-otp/', data: requestData);
+      final response = await dio.post(AppConfig.authForgotPasswordOtp, data: requestData);
 
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
@@ -300,7 +308,7 @@ class AuthViewModel extends GetxController {
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post('/user/reset-password/', data: {
+      final response = await dio.post(AppConfig.authResetPassword, data: {
         'identifier': identifier,
         'otp': otp,
         'new_password': newPassword
@@ -328,14 +336,22 @@ class AuthViewModel extends GetxController {
 
   // ============================================================
   // ✅ LOGIN - With immediate device registration
+  // ✅ Duplicate prevention
   // ============================================================
 
   Future<bool> login(String loginId, String password) async {
+    // ✅ FIX: Prevent concurrent login attempts
+    if (_isLoggingIn) {
+      print('⏭️ Login already in progress - skipping duplicate');
+      return false;
+    }
+
     if (loginId.isEmpty || password.isEmpty) {
       _showError('Please enter both email/phone and password');
       return false;
     }
 
+    _isLoggingIn = true;
     isLoading.value = true;
     Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
 
@@ -371,10 +387,11 @@ class AuthViewModel extends GetxController {
       print('📡 API POST /user/login/');
       print('📤 Request Fields: ${requestData.keys.join(", ")}');
 
-      final response = await dio.post('/user/login/', data: requestData);
+      final response = await dio.post(AppConfig.authLogin, data: requestData);
 
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
+      _isLoggingIn = false;
 
       print('📥 Login Response Status: ${response.statusCode}');
       print('📥 Login Response Result: ${response.data['result']}');
@@ -393,7 +410,6 @@ class AuthViewModel extends GetxController {
           userId = idValue.toInt();
         }
 
-        // Save user data
         await SharedPrefsHelper.setToken(token);
         await SharedPrefsHelper.setUserId(userId);
         await SharedPrefsHelper.setUserName(user['name'] ?? '');
@@ -405,13 +421,14 @@ class AuthViewModel extends GetxController {
         await SharedPrefsHelper.setGameCoins(user['game_coins'] ?? 0);
         await SharedPrefsHelper.setReferralCode(user['referral_code'] ?? '');
 
+        await SharedPrefsHelper.setAppInitialized(true);
+
         print('✅ User data saved:');
         print('   ID: $userId');
         print('   Name: ${user['name']}');
         print('   Email: ${user['email']}');
         print('   Phone: ${user['number']}');
 
-        // Facebook Login Event
         try {
           await facebookAppEvents.logEvent(
             name: 'fb_mobile_login',
@@ -427,7 +444,6 @@ class AuthViewModel extends GetxController {
           print('❌ Facebook login event error: $e');
         }
 
-        // ✅ IMMEDIATELY REGISTER DEVICE AFTER LOGIN
         print('\n╔════════════════════════════════════════════════════════════╗');
         print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
         print('╚════════════════════════════════════════════════════════════╝');
@@ -444,14 +460,18 @@ class AuthViewModel extends GetxController {
 
         _showSuccess('Welcome ${user['name']}!');
         Get.offAllNamed(AppRoutes.mainPage);
+        _isLoggingIn = false;
         return true;
       } else {
         print('⚠️ Login failed with all fields, trying individual fields...');
-        return await _tryLoginWithIndividualFields(loginId, password, dio);
+        final result = await _tryLoginWithIndividualFields(loginId, password, dio);
+        _isLoggingIn = false;
+        return result;
       }
     } on DioException catch (e) {
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
+      _isLoggingIn = false;
 
       print('⚠️ DioException, trying individual fields...');
       try {
@@ -470,13 +490,14 @@ class AuthViewModel extends GetxController {
     } catch (e) {
       if (Get.isDialogOpen ?? false) Get.back();
       isLoading.value = false;
+      _isLoggingIn = false;
       print('❌ Login error: $e');
       _showError('Something went wrong. Please try again.');
       return false;
     }
   }
 
-  // Helper method to try individual field names
+  // ✅ FIXED: Try individual fields with a limit, not infinite loop
   Future<bool> _tryLoginWithIndividualFields(String loginId, String password, Dio dio) async {
     List<String> fieldNames = [];
     String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
@@ -487,6 +508,7 @@ class AuthViewModel extends GetxController {
       fieldNames = ['number', 'phone', 'mobile', 'phone_number', 'username', 'login_id'];
     }
 
+    // ✅ Try each field once, stop on success
     for (String field in fieldNames) {
       try {
         Map<String, dynamic> requestData = {
@@ -501,7 +523,7 @@ class AuthViewModel extends GetxController {
 
         print('📤 Trying login with field: $field = ${requestData[field]}');
 
-        final response = await dio.post('/user/login/', data: requestData);
+        final response = await dio.post(AppConfig.authLogin, data: requestData);
 
         if (response.data['result'] == 'success') {
           final token = response.data['data']['access'];
@@ -526,10 +548,11 @@ class AuthViewModel extends GetxController {
           await SharedPrefsHelper.setGameCoins(user['game_coins'] ?? 0);
           await SharedPrefsHelper.setReferralCode(user['referral_code'] ?? '');
 
+          await SharedPrefsHelper.setAppInitialized(true);
+
           print('✅ Login successful with field: $field');
           print('   Name: ${user['name']}');
 
-          // ✅ IMMEDIATELY REGISTER DEVICE AFTER LOGIN
           print('\n╔════════════════════════════════════════════════════════════╗');
           print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
           print('╚════════════════════════════════════════════════════════════╝');
@@ -567,7 +590,6 @@ class AuthViewModel extends GetxController {
     print('╚════════════════════════════════════════════════════════════╝');
 
     try {
-      // Use phone number for login if available, otherwise email
       String loginId = phone.isNotEmpty ? phone : email;
       return await login(loginId, password);
     } catch (e) {
@@ -603,9 +625,7 @@ class AuthViewModel extends GetxController {
 
       print('📍 Got coordinates: ${position.latitude}, ${position.longitude}');
 
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=$googleMapsApiKey',
-      );
+      final url = Uri.parse(AppConfig.geocodeUrl(position.latitude, position.longitude));
 
       final response = await http.get(url);
 
@@ -668,7 +688,6 @@ class AuthViewModel extends GetxController {
 
   // ============================================================
   // ✅ DEVICE TOKEN REGISTRATION - IMMEDIATE
-  // ✅ Uses persistent device ID (survives reinstalls)
   // ============================================================
 
   Future<bool> _registerDeviceToken(String jwtToken) async {
@@ -677,10 +696,8 @@ class AuthViewModel extends GetxController {
       return false;
     }
 
-    // Check if already registered recently
     final isValid = await SharedPrefsHelper.isTokenRegistrationValid();
     if (isValid) {
-      // Still update token to be safe
       print('✅ Device already registered recently, updating token...');
     }
 
@@ -694,12 +711,9 @@ class AuthViewModel extends GetxController {
     _deviceRegistrationStarted = true;
 
     try {
-      // ✅ Get persistent device ID
       final persistentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
       print('📱 Persistent Device ID for registration: $persistentDeviceId');
-      print('   ✅ This ID is the SAME across reinstalls');
 
-      // Get location
       String? currentLocation;
       if (Get.isRegistered<HomeViewModel>()) {
         final homeVm = Get.find<HomeViewModel>();
@@ -719,7 +733,6 @@ class AuthViewModel extends GetxController {
         currentLocation = await _fetchCurrentLocationDirectly();
       }
 
-      // Ensure DeviceManager is registered
       if (!Get.isRegistered<DeviceManager>()) {
         Get.put(DeviceManager(), permanent: true);
       }
@@ -727,19 +740,17 @@ class AuthViewModel extends GetxController {
       final deviceManager = Get.find<DeviceManager>();
 
       print('\n📱 Registering device with PERSISTENT ID...');
-      print('   🆔 Device ID: $persistentDeviceId (✅ SAME across reinstalls)');
+      print('   🆔 Device ID: $persistentDeviceId');
       print('   👤 User: ${SharedPrefsHelper.getUserEmail() ?? 'Unknown'}');
       print('   📍 Location: "${currentLocation ?? "none"}"');
 
-      // ✅ Register device - this will handle UPDATE vs CREATE NEW logic
       final result = await deviceManager.registerDevice(
         jwtToken: jwtToken,
         location: currentLocation,
       );
 
       if (result.success) {
-        print('✅ Device registered successfully with PERSISTENT ID: $persistentDeviceId');
-        print('   ✅ ONE ID PER DEVICE');
+        print('✅ Device registered successfully');
         await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
         _deviceRegistrationStarted = false;
         return true;
@@ -755,10 +766,6 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  // ============================================================
-  // ✅ FORCE REGISTER DEVICE - Can be called manually
-  // ============================================================
-
   Future<bool> forceRegisterDevice() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -772,33 +779,113 @@ class AuthViewModel extends GetxController {
   }
 
   // ============================================================
-  // ✅ LOGOUT
+  // ✅ LOGOUT - COMPLETE CLEANUP
   // ============================================================
 
   Future<void> logout() async {
+    print('\n╔════════════════════════════════════════════════════════════╗');
+    print('║  🚪 LOGGING OUT - COMPLETE CLEANUP                        ║');
+    print('╚════════════════════════════════════════════════════════════╝');
+
     if (Get.isRegistered<AutoRefreshService>()) {
       Get.find<AutoRefreshService>().stop();
+      print('✅ AutoRefreshService stopped');
     }
 
     if (Get.isRegistered<DeviceManager>()) {
-      await Get.find<DeviceManager>().clearRegistration();
+      final deviceManager = Get.find<DeviceManager>();
+      await deviceManager.clearRegistration();
+      print('✅ Device registration cleared');
     }
 
     AppInitializer.reset();
+    print('✅ AppInitializer reset');
 
-    // clearAll() preserves device_id in secure storage
+    if (Get.isRegistered<CacheManager>()) {
+      Get.find<CacheManager>().clearAllCaches();
+      print('✅ CacheManager cleared');
+    } else {
+      final cacheManager = CacheManager();
+      cacheManager.clearAllCaches();
+      print('✅ CacheManager cleared (standalone)');
+    }
+
     await SharedPrefsHelper.clearAll();
+    print('✅ SharedPreferences cleared (Device ID preserved)');
 
     if (Get.isRegistered<HomeViewModel>()) {
-      Get.find<HomeViewModel>().turfs.clear();
+      final homeVm = Get.find<HomeViewModel>();
+      homeVm.turfs.clear();
+      homeVm.allTurfs.clear();
+      homeVm.nearbyTurfs.clear();
+      homeVm.searchResults.clear();
+      homeVm.searchQuery.value = '';
+      homeVm.selectedCategory.value = '';
+      homeVm.homeError.value = '';
+      print('✅ HomeViewModel cleared');
     }
+
     if (Get.isRegistered<BookingViewModel>()) {
-      Get.find<BookingViewModel>().bookings.clear();
+      final bookingVm = Get.find<BookingViewModel>();
+      bookingVm.bookings.clear();
+      bookingVm.filteredBookings.clear();
+      BookingViewModel.resetCache();
+      print('✅ BookingViewModel cleared');
     }
+
     if (Get.isRegistered<ProfileViewModel>()) {
-      Get.find<ProfileViewModel>().name.value = '';
-      Get.find<ProfileViewModel>().walletBalance.value = 0.0;
+      final profileVm = Get.find<ProfileViewModel>();
+      profileVm.name.value = '';
+      profileVm.email.value = '';
+      profileVm.phone.value = '';
+      profileVm.walletBalance.value = 0.0;
+      profileVm.gameCoins.value = 0;
+      profileVm.referralCode.value = '';
+      profileVm.profileImageUrl.value = '';
+      ProfileViewModel.resetCache();
+      print('✅ ProfileViewModel cleared');
     }
+
+    if (Get.isRegistered<WalletViewModel>()) {
+      WalletViewModel.resetCache();
+      print('✅ WalletViewModel cache reset');
+    }
+
+    if (Get.isRegistered<CoinViewModel>()) {
+      CoinViewModel.resetCache();
+      print('✅ CoinViewModel cache reset');
+    }
+
+    if (Get.isRegistered<DiscountViewModel>()) {
+      DiscountViewModel.resetCache();
+      print('✅ DiscountViewModel cache reset');
+    }
+
+    if (Get.isRegistered<FavoritesViewModel>()) {
+      FavoritesViewModel.resetCache();
+      print('✅ FavoritesViewModel cache reset');
+    }
+
+    try {
+      await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
+      await FirebaseMessaging.instance.unsubscribeFromTopic('offers');
+      print('✅ Unsubscribed from FCM topics');
+    } catch (e) {
+      print('⚠️ Could not unsubscribe from topics: $e');
+    }
+
+    try {
+      await FirebaseMessaging.instance.deleteToken();
+      print('✅ FCM token deleted');
+    } catch (e) {
+      print('⚠️ Could not delete FCM token: $e');
+    }
+
+    print('\n✅ LOGOUT COMPLETE - All data cleared');
+    print('   🔒 Device ID preserved');
+    print('   🔄 App will start fresh on next login');
+    print('═══════════════════════════════════════════════════════════════\n');
+
     Get.offAllNamed(AppRoutes.login);
     _showSuccess('Successfully logged out');
   }

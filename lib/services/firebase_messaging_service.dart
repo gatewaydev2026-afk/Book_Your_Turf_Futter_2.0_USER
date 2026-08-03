@@ -3,13 +3,8 @@
 // ✅ Fixed: Background handler is now a TOP-LEVEL function with @pragma
 
 import 'package:firebase_messaging/firebase_messaging.dart';
-import 'package:flutter/material.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:async';
-
-import 'package:get/get_core/src/get_main.dart';
-import 'package:get/get_navigation/src/extension_navigation.dart';
-import 'package:get/get_navigation/src/snackbar/snackbar.dart';
 
 // ✅ 1. TOP-LEVEL BACKGROUND HANDLER (MUST be outside class)
 // ✅ 2. Must be annotated with @pragma('vm:entry-point')
@@ -68,8 +63,13 @@ class FirebaseMessagingService {
       // ✅ Register the TOP-LEVEL background handler
       FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-      // Setup message handlers
-      _setupMessageHandlers();
+      // ✅ NOTE: Foreground/opened-app message handling intentionally NOT
+      // registered here anymore. NotificationService already listens to
+      // FirebaseMessaging.onMessage / getInitialMessage / onMessageOpenedApp
+      // and shows the system tray notification. Having BOTH services listen
+      // was causing: 2 tray notifications for one push + an extra Get.snackbar
+      // popup from this service. This service now only handles background
+      // registration + FCM token retrieval.
 
       // Get FCM token
       await _getAndStoreToken();
@@ -117,62 +117,6 @@ class FirebaseMessagingService {
     }
   }
 
-  static void _setupMessageHandlers() {
-    // Foreground messages
-    FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-      print('📱 Foreground message received: ${message.messageId}');
-      _handleMessage(message, isForeground: true);
-    });
-
-    // App opened from terminated state
-    FirebaseMessaging.instance.getInitialMessage().then((message) {
-      if (message != null) {
-        print('📱 App opened from terminated state: ${message.messageId}');
-        _handleMessage(message, isForeground: false);
-      }
-    });
-
-    // App opened from background
-    FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-      print('📱 App opened from background: ${message.messageId}');
-      _handleMessage(message, isForeground: false);
-    });
-  }
-
-  // ✅ Main message handler with duplicate prevention
-  static void _handleMessage(RemoteMessage message, {required bool isForeground}) {
-    try {
-      final msgId = message.messageId ?? '';
-
-      // Check for duplicate
-      if (msgId.isNotEmpty && _processedMessageIds.contains(msgId)) {
-        print('⏭️ Duplicate message ignored: $msgId');
-        return;
-      }
-
-      // Add to processed set
-      if (msgId.isNotEmpty) {
-        _processedMessageIds.add(msgId);
-      }
-
-      print('📨 Processing message: $msgId');
-      print('   Title: ${message.notification?.title}');
-      print('   Body: ${message.notification?.body}');
-      print('   Data: ${message.data}');
-
-      // Show notification
-      _showLocalNotification(message);
-
-      // Show in-app notification only for foreground
-      if (isForeground) {
-        _showInAppNotification(message);
-      }
-
-    } catch (e) {
-      print('⚠️ Message handling error: $e');
-    }
-  }
-
   // ✅ Called from background handler (static)
   static Future<void> _showBackgroundNotification(RemoteMessage message) async {
     await _showLocalNotification(message);
@@ -212,40 +156,6 @@ class FirebaseMessagingService {
       print('✅ Local notification shown (ID: $id)');
     } catch (e) {
       print('⚠️ Error showing local notification: $e');
-    }
-  }
-
-  static void _showInAppNotification(RemoteMessage message) {
-    try {
-      if (Get.context != null) {
-        Get.snackbar(
-          message.notification?.title ?? 'New Notification',
-          message.notification?.body ?? '',
-          snackPosition: SnackPosition.TOP,
-          duration: const Duration(seconds: 4),
-          backgroundColor: Colors.black87,
-          colorText: Colors.white,
-          margin: const EdgeInsets.all(10),
-          borderRadius: 10,
-          icon: const Icon(Icons.notifications_active, color: Colors.orange),
-          mainButton: TextButton(
-            onPressed: () {
-              Get.back();
-              final type = message.data['type'] ?? message.data['notification_type'];
-              if (type == 'booking' || type == 'booking_confirmed') {
-                Get.toNamed('/my-bookings');
-              } else if (type == 'wallet' || type == 'wallet_topup') {
-                Get.toNamed('/wallet');
-              } else {
-                Get.toNamed('/notifications');
-              }
-            },
-            child: const Text('VIEW', style: TextStyle(color: Colors.orange)),
-          ),
-        );
-      }
-    } catch (e) {
-      print('⚠️ Could not show in-app notification: $e');
     }
   }
 

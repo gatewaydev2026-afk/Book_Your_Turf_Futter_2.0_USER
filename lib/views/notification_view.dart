@@ -1,4 +1,4 @@
-// views/notification_view.dart - Simple version
+// views/notification_view.dart - FIXED duplicate refresh
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -7,7 +7,10 @@ import '../services/notification_service.dart';
 import '../models/notification_model.dart';
 
 class NotificationScreen extends StatelessWidget {
-  const NotificationScreen({Key? key}) : super(key: key);
+   NotificationScreen({Key? key}) : super(key: key);
+
+  // ✅ DUPLICATE REFRESH PREVENTION
+  bool _isRefreshing = false;
 
   @override
   Widget build(BuildContext context) {
@@ -50,7 +53,19 @@ class NotificationScreen extends StatelessWidget {
         }
 
         return RefreshIndicator(
-          onRefresh: () => notificationService.refreshFromBackend(),
+          onRefresh: () async {
+            // ✅ Prevent duplicate refreshes
+            if (_isRefreshing) {
+              print('⏭️ Notification refresh already in progress');
+              return;
+            }
+            _isRefreshing = true;
+            try {
+              await notificationService.refreshFromBackend();
+            } finally {
+              _isRefreshing = false;
+            }
+          },
           child: ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: notificationService.notifications.length,

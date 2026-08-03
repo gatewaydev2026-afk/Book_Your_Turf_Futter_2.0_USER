@@ -1,6 +1,7 @@
-// update_service.dart - COMPLETE WITH WORKING ENDPOINT
+// update_service.dart - COMPLETE WITH SINGLE DOMAIN CONFIGURATION
 
 import 'dart:io' show Platform;
+import 'package:book_your_turf/config/app_config.dart';
 import 'package:book_your_turf/services/shared_prefs_helper.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
@@ -10,11 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 
 class UpdateService {
-  // ✅ CORRECT ENDPOINT - Use the one that exists
-  static const String _baseUrl = 'https://backend.arcmedialabs.in';
-  static const String _updateEndpoint = '/api/user/app-version/';  // ✅ CORRECTED
-
-  // Set to 'user' for User App
+  // ✅ Set to 'user' for User App
   static String appType = 'user';
 
   /// Call this method when app starts to check for updates
@@ -81,7 +78,7 @@ class UpdateService {
   static Future<Map<String, dynamic>?> _fetchRemoteVersion() async {
     final platform = Platform.isAndroid ? 'android' : 'ios';
     final url = Uri.parse(
-      '$_baseUrl$_updateEndpoint?platform=$platform&app_type=$appType',
+      '${AppConfig.apiBaseUrl}/user/app-version/?platform=$platform&app_type=$appType',
     );
     print('📡 Checking update from: $url');
 
@@ -120,7 +117,7 @@ class UpdateService {
   static Future<Map<String, dynamic>?> _fetchAlternativeVersion() async {
     final platform = Platform.isAndroid ? 'android' : 'ios';
     final url = Uri.parse(
-      '$_baseUrl/api/version/?platform=$platform&app_type=$appType',
+      '${AppConfig.baseUrl}/api/version/?platform=$platform&app_type=$appType',
     );
     print('📡 Trying alternative update URL: $url');
 
@@ -280,8 +277,8 @@ class UpdateService {
         await launchUrl(Uri.parse(url), mode: LaunchMode.externalApplication);
       } else {
         final fallbackUrl = Platform.isAndroid
-            ? 'https://play.google.com/store/apps/details?id=com.book_your_turf.app'
-            : 'https://apps.apple.com/in/app/book_your_turf/id6756934347';
+            ? AppConfig.playStoreLink
+            : AppConfig.appStoreLink;
 
         if (await canLaunchUrl(Uri.parse(fallbackUrl))) {
           await launchUrl(Uri.parse(fallbackUrl), mode: LaunchMode.externalApplication);

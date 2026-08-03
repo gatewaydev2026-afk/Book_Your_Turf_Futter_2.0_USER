@@ -1,5 +1,7 @@
-// view_models/wallet_view_model.dart - FIXED DUPLICATE API CALLS
+// view_models/wallet_view_model.dart - With Cache Management
 
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
@@ -20,17 +22,11 @@ class WalletViewModel extends GetxController {
   String? _currentOrderId;
   String? _currentReferenceId;
 
-  // ✅ Cache and loading flags
-  static bool _transactionsLoaded = false;
-  static DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(minutes: 1);
-  static bool _isFetching = false; // ✅ NEW: Prevent duplicate calls
-
   @override
   void onInit() {
     super.onInit();
     _initRazorpay();
-    print('📋 WalletViewModel initialized (lazy loading - will fetch when needed)');
+    print('📋 WalletViewModel initialized (lazy loading)');
 
     if (Get.isRegistered<ProfileViewModel>()) {
       walletBalance.value = Get.find<ProfileViewModel>().walletBalance.value;
@@ -44,7 +40,10 @@ class WalletViewModel extends GetxController {
     _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
   }
 
-  // ✅ Call this method ONLY when user opens Wallet screen
+  // ============================================================
+  // ✅ LOAD WALLET DATA - SINGLE API CALL GUARANTEE
+  // ============================================================
+
   Future<void> loadWalletData({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -58,69 +57,74 @@ class WalletViewModel extends GetxController {
       return;
     }
 
-    // ✅ Prevent duplicate calls while fetching
-    if (_isFetching) {
-      print('⏭️ Wallet data already being fetched, skipping duplicate...');
-      return;
-    }
+    // ✅ Get CacheManager
+    final cacheManager = Get.isRegistered<CacheManager>()
+        ? Get.find<CacheManager>()
+        : CacheManager();
 
-    // Load balance from profile if available
+    // Load balance from profile
     if (Get.isRegistered<ProfileViewModel>()) {
       final profileVm = Get.find<ProfileViewModel>();
       walletBalance.value = profileVm.walletBalance.value;
       print('✅ Wallet balance from profile: ₹${walletBalance.value}');
     }
 
-    // Check cache before fetching transactions
-    if (!forceRefresh && _transactionsLoaded && _lastFetchTime != null) {
-      final age = DateTime.now().difference(_lastFetchTime!);
-      if (age < _cacheDuration) {
-        print('⏭️ Wallet transactions cached (${age.inSeconds}s old) - using cache');
+    // ✅ Check if cache is fresh
+    if (!forceRefresh && cacheManager.hasCachedWallet && cacheManager.isWalletFresh()) {
+      print('⏭️ Wallet transactions cached and fresh - using cache');
+      final cachedData = cacheManager.getCachedWalletTransactions();
+      if (cachedData != null) {
+        transactions.value = cachedData.map((json) => WalletTransactionModel.fromJson(json)).toList();
+        _applyFilter();
         return;
       }
     }
 
-    if (!forceRefresh && _transactionsLoaded && transactions.isNotEmpty) {
-      print('⏭️ Wallet transactions already loaded (${transactions.length} transactions)');
+    // ✅ Try to start fetch - prevents duplicate calls
+    if (!cacheManager.startWalletFetch()) {
+      print('⏭️ Wallet fetch already in progress - skipping duplicate');
       return;
     }
 
-    await _fetchTransactions(forceRefresh: forceRefresh);
-  }
-
-  // ✅ Private method with loading flag
-  Future<void> _fetchTransactions({bool forceRefresh = false}) async {
-    // ✅ Prevent duplicate calls
-    if (_isFetching) {
-      print('⏭️ Wallet transactions fetch already in progress...');
-      return;
-    }
-
-    _isFetching = true;
     print('📡 Fetching wallet transactions from API...');
     isLoading.value = true;
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.get('/user/wallet/transactions/');
+      final response = await dio.get(AppConfig.walletTransactions);
 
       if (response.data['result'] == 'success') {
         final List<dynamic> data = response.data['data'];
+
+        // ✅ Save to cache
+        cacheManager.setCachedWalletTransactions(data);
+
         transactions.value = data
             .map((json) => WalletTransactionModel.fromJson(json))
             .toList();
 
         _applyFilter();
-        _transactionsLoaded = true;
-        _lastFetchTime = DateTime.now();
 
         print('✅ Wallet transactions fetched: ${transactions.length} transactions');
       }
     } catch (e) {
       print('❌ Error fetching wallet transactions: $e');
+      // ✅ Fallback to cache on error
+      if (cacheManager.hasCachedWallet) {
+        print('📦 Using cached wallet transactions as fallback');
+        final cachedData = cacheManager.getCachedWalletTransactions();
+        if (cachedData != null) {
+          transactions.value = cachedData.map((json) => WalletTransactionModel.fromJson(json)).toList();
+          _applyFilter();
+        }
+      }
     } finally {
       isLoading.value = false;
-      _isFetching = false;
+      // ✅ FIX: startWalletFetch() only ACQUIRES the fetch lock. Re-calling it
+      // here (as the old code did) never released it, so after the very first
+      // fetch (success or error) the lock stayed permanently held and every
+      // future loadWalletData() call silently skipped itself forever.
+      cacheManager.endWalletFetch();
     }
   }
 
@@ -138,6 +142,10 @@ class WalletViewModel extends GetxController {
     selectedFilter.value = filter;
     _applyFilter();
   }
+
+  // ============================================================
+  // ✅ RECHARGE WALLET
+  // ============================================================
 
   Future<void> initiateRecharge(double amount) async {
     final token = SharedPrefsHelper.getToken();
@@ -157,7 +165,7 @@ class WalletViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
-        '/user/wallet/recharge/initiate/',
+        AppConfig.walletRechargeInitiate,
         data: {'amount': amount},
       );
 
@@ -180,12 +188,9 @@ class WalletViewModel extends GetxController {
   }
 
   void _openRazorpayCheckout(Map<String, dynamic> orderData, double amount) {
-    const String razorpayKey = 'rzp_live_Rn1hHzY0kkjXFj';
-    int amountInPaise = (amount * 100).toInt();
-
     final options = {
-      'key': razorpayKey,
-      'amount': amountInPaise,
+      'key': AppConfig.razorpayKey,
+      'amount': (amount * 100).toInt(),
       'name': 'Book Your Turf',
       'description': 'Wallet Recharge - ₹${amount.toStringAsFixed(2)}',
       'order_id': orderData['razorpay_order_id'],
@@ -212,7 +217,7 @@ class WalletViewModel extends GetxController {
     try {
       final dio = Get.find<Dio>();
       final confirmResponse = await dio.post(
-        '/user/wallet/recharge/confirm/',
+        AppConfig.walletRechargeConfirm,
         data: {
           'razorpay_payment_id': response.paymentId,
           'razorpay_order_id': _currentOrderId,
@@ -220,7 +225,10 @@ class WalletViewModel extends GetxController {
       );
 
       if (confirmResponse.data['result'] == 'success') {
-        _transactionsLoaded = false;
+        // ✅ Force refresh - clear cache
+        if (Get.isRegistered<CacheManager>()) {
+          Get.find<CacheManager>().clearAllCaches();
+        }
         await loadWalletData(forceRefresh: true);
         if (Get.isRegistered<ProfileViewModel>()) {
           await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
@@ -263,15 +271,21 @@ class WalletViewModel extends GetxController {
     print('External Wallet: ${response.walletName}');
   }
 
+  // ============================================================
+  // ✅ REFRESH - FORCE REFRESH ON DEMAND
+  // ============================================================
+
   Future<void> refreshWallet() async {
-    _transactionsLoaded = false;
+    if (Get.isRegistered<CacheManager>()) {
+      Get.find<CacheManager>().clearAllCaches();
+    }
     await loadWalletData(forceRefresh: true);
   }
 
   static void resetCache() {
-    _transactionsLoaded = false;
-    _lastFetchTime = null;
-    _isFetching = false;
+    if (Get.isRegistered<CacheManager>()) {
+      Get.find<CacheManager>().clearAllCaches();
+    }
   }
 
   @override

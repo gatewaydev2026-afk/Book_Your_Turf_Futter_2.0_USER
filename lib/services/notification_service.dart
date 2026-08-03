@@ -1,7 +1,9 @@
-// services/notification_service.dart - FIX: Prevent duplicate notifications
+// services/notification_service.dart - FIXED duplicate API calls
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:get/get.dart';
 import 'package:http/http.dart' as http;
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -21,17 +23,21 @@ class NotificationService extends GetxService {
   final hasMore = true.obs;
   var currentOffset = 0;
   var totalCount = 0;
-  static const int pageSize = 20;
+  static const int pageSize = AppConfig.pageSize;
 
   // ✅ PREVENT DUPLICATE CALLS
   static bool _isFetching = false;
   static DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(seconds: 30);
+  static const _cacheDuration = AppConfig.notificationCacheDuration;
 
   // ✅ TRACK RECEIVED NOTIFICATIONS TO PREVENT DUPLICATES
   static final Set<String> _processedNotificationIds = {};
-  static const _cleanupInterval = Duration(minutes: 5);
+  static const _cleanupInterval = AppConfig.notificationCleanupInterval;
   static DateTime? _lastCleanupTime;
+
+  // ✅ DEBOUNCE FOR REFRESH
+  Timer? _refreshDebounceTimer;
+  static const _debounceDuration = AppConfig.notificationDebounceDuration;
 
   // ✅ STREAM FOR REAL-TIME NOTIFICATIONS
   final _notificationController = StreamController<NotificationItem>.broadcast();
@@ -46,8 +52,6 @@ class NotificationService extends GetxService {
     _initializeLocalNotifications();
     _setupForegroundHandler();
     _loadCachedNotifications();
-
-    // ✅ Start cleanup timer
     _startCleanupTimer();
   }
 
@@ -64,10 +68,9 @@ class NotificationService extends GetxService {
     }
     _lastCleanupTime = now;
 
-    // ✅ Clean old entries (keep only last 100)
-    if (_processedNotificationIds.length > 100) {
+    if (_processedNotificationIds.length > AppConfig.maxProcessedNotificationIds) {
       final ids = _processedNotificationIds.toList();
-      final toRemove = ids.sublist(0, ids.length - 100);
+      final toRemove = ids.sublist(0, ids.length - AppConfig.maxProcessedNotificationIds);
       for (var id in toRemove) {
         _processedNotificationIds.remove(id);
       }
@@ -77,6 +80,7 @@ class NotificationService extends GetxService {
 
   @override
   void onClose() {
+    _refreshDebounceTimer?.cancel();
     _notificationController.close();
     super.onClose();
   }
@@ -142,15 +146,12 @@ class NotificationService extends GetxService {
   }) async {
     if (!_isInitialized) await _initializeLocalNotifications();
 
-    // ✅ Generate unique ID based on notification content to prevent duplicates
     int id;
     if (notificationId != null) {
       id = notificationId.hashCode;
     } else {
       id = '$title-$body'.hashCode;
     }
-
-    // ✅ Ensure ID is positive
     id = id.abs();
 
     const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
@@ -203,22 +204,18 @@ class NotificationService extends GetxService {
     });
   }
 
-  // ✅ MAIN FIX: Check for duplicate notifications
   void _handleIncomingNotification(RemoteMessage message) {
     try {
       final data = message.data;
       final notification = message.notification;
 
-      // ✅ Generate unique ID for this notification
       final msgId = message.messageId ?? '${DateTime.now().millisecondsSinceEpoch}';
 
-      // ✅ Check if this notification was already processed
       if (_processedNotificationIds.contains(msgId)) {
         print('⏭️ Duplicate notification ignored: $msgId');
         return;
       }
 
-      // ✅ Mark as processed
       _processedNotificationIds.add(msgId);
       print('✅ Processing notification: $msgId');
 
@@ -231,7 +228,6 @@ class NotificationService extends GetxService {
         isRead: false,
       );
 
-      // ✅ Check for duplicate in local list (by title+body within last 5 seconds)
       final isDuplicate = notifications.any((n) =>
       n.title == notificationItem.title &&
           n.body == notificationItem.body &&
@@ -243,15 +239,12 @@ class NotificationService extends GetxService {
         return;
       }
 
-      // Add to local list
       notifications.insert(0, notificationItem);
       _updateUnreadCount();
       _saveNotificationsToCache();
 
-      // Broadcast to stream listeners
       _notificationController.add(notificationItem);
 
-      // Show system notification with unique ID
       _showSystemNotification(
         title: notificationItem.title,
         body: notificationItem.body,
@@ -259,14 +252,9 @@ class NotificationService extends GetxService {
         notificationId: msgId,
       );
 
-      // Show in-app snackbar for foreground
-      if (Get.context != null) {
-        _showInAppSnackbar(notificationItem);
-      }
 
       print('✅ Notification saved: ${notificationItem.title}');
 
-      // Refresh from backend (with debounce)
       _debouncedRefresh();
 
     } catch (e) {
@@ -274,44 +262,15 @@ class NotificationService extends GetxService {
     }
   }
 
-  // ✅ Debounced refresh to prevent multiple API calls
-  Timer? _refreshDebounceTimer;
-
   void _debouncedRefresh() {
     _refreshDebounceTimer?.cancel();
-    _refreshDebounceTimer = Timer(const Duration(seconds: 2), () {
+    _refreshDebounceTimer = Timer(_debounceDuration, () {
       refreshFromBackend();
     });
   }
 
-  void _showInAppSnackbar(NotificationItem notification) {
-    try {
-      Get.snackbar(
-        notification.title,
-        notification.body,
-        snackPosition: SnackPosition.TOP,
-        duration: const Duration(seconds: 4),
-        backgroundColor: Colors.black87,
-        colorText: Colors.white,
-        margin: const EdgeInsets.all(10),
-        borderRadius: 10,
-        icon: const Icon(Icons.notifications_active, color: Colors.orange),
-        mainButton: TextButton(
-          onPressed: () {
-            Get.back();
-            Get.toNamed('/notifications');
-          },
-          child: const Text('VIEW', style: TextStyle(color: Colors.orange)),
-        ),
-      );
-    } catch (e) {
-      print('⚠️ Could not show snackbar: $e');
-    }
-  }
 
-  // ==================== BACKEND API METHODS ====================
 
-  // ✅ FETCH WITH DUPLICATE PREVENTION
   Future<List<NotificationItem>> fetchFromBackend({
     int offset = 0,
     int limit = 20,
@@ -322,13 +281,11 @@ class NotificationService extends GetxService {
       return [];
     }
 
-    // ✅ Prevent duplicate calls
     if (_isFetching && !forceRefresh) {
       print('⏭️ Notifications already being fetched, skipping duplicate...');
       return [];
     }
 
-    // ✅ Check cache
     if (!forceRefresh && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration && notifications.isNotEmpty) {
@@ -342,7 +299,7 @@ class NotificationService extends GetxService {
 
     try {
       final url = Uri.parse(
-          'https://backend.arcmedialabs.in/api/user/notifications/history/?offset=$offset&limit=$limit'
+          '${AppConfig.apiBaseUrl}/user/notifications/history/?offset=$offset&limit=$limit'
       );
 
       final response = await http.get(
@@ -372,6 +329,11 @@ class NotificationService extends GetxService {
         }).toList();
 
         _lastFetchTime = DateTime.now();
+
+        if (Get.isRegistered<CacheManager>()) {
+          Get.find<CacheManager>().setCachedNotifications(fetchedNotifications);
+        }
+
         print('✅ Fetched ${fetchedNotifications.length} notifications from backend (total: $totalCount)');
         return fetchedNotifications;
       } else {
@@ -385,9 +347,7 @@ class NotificationService extends GetxService {
     }
   }
 
-  // ✅ REFRESH WITH DUPLICATE PREVENTION
   Future<void> refreshFromBackend() async {
-    // ✅ Prevent duplicate calls
     if (isLoading.value) {
       print('⏭️ Notifications refresh already in progress');
       return;
@@ -448,7 +408,7 @@ class NotificationService extends GetxService {
 
     try {
       final response = await http.post(
-        Uri.parse('https://backend.arcmedialabs.in/api/user/notifications/mark-read/$notificationId/'),
+        Uri.parse('${AppConfig.apiBaseUrl}/user/notifications/mark-read/$notificationId/'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -469,7 +429,7 @@ class NotificationService extends GetxService {
 
     try {
       final response = await http.post(
-        Uri.parse('https://backend.arcmedialabs.in/api/user/notifications/mark-all-read/'),
+        Uri.parse('${AppConfig.apiBaseUrl}/user/notifications/mark-all-read/'),
         headers: {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
@@ -491,8 +451,6 @@ class NotificationService extends GetxService {
     }
   }
 
-  // ==================== TOKEN REGISTRATION ====================
-
   Future<bool> registerDeviceToken() async {
     try {
       final token = await FirebaseMessaging.instance.getToken();
@@ -510,7 +468,7 @@ class NotificationService extends GetxService {
       print('📱 Registering token: $token');
 
       final response = await http.post(
-        Uri.parse('https://backend.arcmedialabs.in/api/user/device-token/'),
+        Uri.parse('${AppConfig.apiBaseUrl}/user/device-token/'),
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -532,7 +490,6 @@ class NotificationService extends GetxService {
     }
   }
 
-  // ✅ UPDATE UNREAD COUNT - Public method
   void updateUnreadCount() {
     _updateUnreadCount();
   }
@@ -599,11 +556,11 @@ class NotificationService extends GetxService {
     print('🗑️ Deleted: $notificationId');
   }
 
-  // ✅ Reset cache
   static void resetCache() {
     _isFetching = false;
     _lastFetchTime = null;
     _processedNotificationIds.clear();
     _lastCleanupTime = null;
+    print('🔄 Notification cache reset');
   }
 }

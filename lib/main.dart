@@ -3,7 +3,11 @@
 // ✅ ONE ID PER DEVICE - FOREVER
 // ✅ DiscountViewModel registered
 // ✅ FavoritesViewModel registered
+// ✅ CacheManager registered for single API call guarantee
+// ✅ Full logout cleanup
 
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:book_your_turf/services/chat_bot_service.dart';
 import 'package:book_your_turf/services/device_manager.dart';
 import 'package:firebase_core/firebase_core.dart';
@@ -38,19 +42,12 @@ import 'firebase_options.dart';
 bool _isAppInitialized = false;
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
-// ✅ Razorpay configuration using environment variables
-class RazorpayConfig {
-  static const String key = String.fromEnvironment(
-    'RAZORPAY_KEY',
-    defaultValue: 'rzp_test_xxxxxx', // Test key for development
-  );
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
   print('\n╔════════════════════════════════════════════════════════════╗');
   print('║              BOOK YOUR TURF APP STARTING                    ║');
+  print('║  🔥 BASE URL: ${AppConfig.baseUrl}                         ║');
   print('╚════════════════════════════════════════════════════════════╝');
 
   // 1️⃣ Initialize Firebase
@@ -192,10 +189,11 @@ Future<void> initDependencies() async {
 
   print('\n╔════════════════════════════════════════════════════════════╗');
   print('║              INITIALIZING DEPENDENCIES                      ║');
+  print('║  🔥 API BASE URL: ${AppConfig.apiBaseUrl}                  ║');
   print('╚════════════════════════════════════════════════════════════╝');
 
   final dio = Dio(BaseOptions(
-    baseUrl: 'https://backend.arcmedialabs.in/api',
+    baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE OF TRUTH
     connectTimeout: const Duration(seconds: 30),
     receiveTimeout: const Duration(seconds: 30),
     sendTimeout: const Duration(seconds: 30),
@@ -226,6 +224,10 @@ Future<void> initDependencies() async {
       print('❌ API ERROR: ${error.message}');
       if (error.response?.statusCode == 401) {
         await SharedPrefsHelper.clearAll();
+        // ✅ Clear all caches on 401
+        if (Get.isRegistered<CacheManager>()) {
+          Get.find<CacheManager>().clearAllCaches();
+        }
         Get.offAllNamed(AppRoutes.login);
         Get.snackbar(
           'Session Expired',
@@ -242,6 +244,12 @@ Future<void> initDependencies() async {
   if (!Get.isRegistered<Dio>()) {
     Get.put<Dio>(dio, permanent: true);
     print('✅ Dio registered');
+  }
+
+  // ✅ Register CacheManager FIRST - Centralized cache management
+  if (!Get.isRegistered<CacheManager>()) {
+    Get.put(CacheManager(), permanent: true);
+    print('✅ CacheManager registered');
   }
 
   if (!Get.isRegistered<DeviceManager>()) {
@@ -308,6 +316,7 @@ Future<void> initDependencies() async {
 
   _isAppInitialized = true;
   print('✅ All ViewModels and Services registered');
+  print('📊 CacheManager initialized for single API call guarantee');
   print('═══════════════════════════════════════════════════════════════\n');
 }
 

@@ -1,12 +1,12 @@
-// lib/view_models/booking_summary_view_model.dart
-// ✅ Complete as per API documentation
-// ✅ Full Payment Discount Support
-// ✅ Added hasShownMinSlotsDialog flag for 1-slot dialog control
+// booking_summary_view_model.dart - Complete with Duplicate Prevention
+// ✅ FIXED: UI remains locked until navigation completes
+// ✅ Success dialog cannot be dismissed by back button or tap outside
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
+import '../config/app_config.dart';
 import '../models/turf_model.dart';
 import '../models/slot_model.dart';
 import '../models/discount_model.dart';
@@ -43,9 +43,7 @@ class BookingSummaryViewModel extends GetxController {
   final isUILocked = false.obs;
   final paymentSuccessConfirmed = false.obs;
   final hasShownSuccessPopup = false.obs;
-
-  // ✅ Public flag to track if 1-slot dialog has been shown
-  final hasShownMinSlotsDialog = false.obs;  // <-- Removed underscore, made public
+  final hasShownMinSlotsDialog = false.obs;
 
   final DiscountViewModel discountVm = Get.find<DiscountViewModel>();
   final isLoadingDiscounts = false.obs;
@@ -66,6 +64,14 @@ class BookingSummaryViewModel extends GetxController {
   bool _paymentSuccessReceived = false;
   String? _successPaymentId;
   String? _successOrderId;
+
+  // ✅ DUPLICATE API CALL PREVENTION FLAGS
+  bool _isWalletPaymentInProgress = false;
+  bool _isProfileFetchInProgress = false;
+  bool _isBookingRefreshInProgress = false;
+  bool _isSuccessDialogShown = false;
+  bool _isPostPaymentProcessing = false;
+  bool _isNavigating = false;
 
   @override
   void onInit() {
@@ -276,7 +282,14 @@ class BookingSummaryViewModel extends GetxController {
     return sorted;
   }
 
+  // ✅ FIXED: Wallet Payment with duplicate prevention
   Future<void> initiateWalletPayment() async {
+    // ✅ Prevent duplicate wallet payment calls
+    if (_isWalletPaymentInProgress) {
+      print('⏭️ Wallet payment already in progress - skipping duplicate');
+      return;
+    }
+
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       Get.snackbar('Login Required', 'Please login to complete booking',
@@ -292,12 +305,15 @@ class BookingSummaryViewModel extends GetxController {
       return;
     }
 
+    _isWalletPaymentInProgress = true;
+
     final profileVm = Get.find<ProfileViewModel>();
-    await profileVm.fetchUser(forceRefresh: true);
+    await profileVm.fetchUser();
 
     final amountToPay = _getAmountToPay();
 
     if (amountToPay <= 0) {
+      _isWalletPaymentInProgress = false;
       Get.snackbar(
         'Invalid Amount',
         'Amount cannot be zero or negative. Please adjust.',
@@ -309,6 +325,7 @@ class BookingSummaryViewModel extends GetxController {
     }
 
     if (profileVm.walletBalance.value < amountToPay) {
+      _isWalletPaymentInProgress = false;
       Get.snackbar(
         'Insufficient Balance',
         'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(amountToPay)}',
@@ -357,7 +374,7 @@ class BookingSummaryViewModel extends GetxController {
       print('   Amount to Pay: $amountToPay');
 
       final response = await dio.post(
-        '/user/bookings/wallet-book/',
+        AppConfig.walletBook,
         data: requestBody,
       );
 
@@ -409,6 +426,8 @@ class BookingSummaryViewModel extends GetxController {
       } else {
         _showWalletError('Payment failed. Please try again.');
       }
+    } finally {
+      _isWalletPaymentInProgress = false;
     }
   }
 
@@ -426,26 +445,58 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
-  void _handleWalletSuccess() async {
+  // ✅ FIXED: Wallet success with UI locked until navigation completes
+  void _handleWalletSuccess() {
     paymentSuccessConfirmed.value = true;
 
+    // ✅ Show success dialog only if not shown yet
     if (!hasShownSuccessPopup.value) {
       hasShownSuccessPopup.value = true;
       _showWalletSuccessDialog();
     }
 
-    await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
-    if (Get.isRegistered<BookingViewModel>()) {
-      await Get.find<BookingViewModel>().refreshBookings();
+    // ✅ Use a single post-payment processing method
+    _processPostPayment();
+  }
+
+  // ✅ NEW: Single post-payment processing with duplicate prevention
+  Future<void> _processPostPayment() async {
+    if (_isPostPaymentProcessing) {
+      print('⏭️ Post-payment processing already in progress - skipping duplicate');
+      return;
     }
 
-    isUILocked.value = false;
-    isLoading.value = false;
+    _isPostPaymentProcessing = true;
+
+    try {
+      // ✅ Fetch profile only once
+      if (!_isProfileFetchInProgress) {
+        _isProfileFetchInProgress = true;
+        await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
+        _isProfileFetchInProgress = false;
+      }
+
+      // ✅ Refresh bookings only once
+      if (!_isBookingRefreshInProgress) {
+        _isBookingRefreshInProgress = true;
+        if (Get.isRegistered<BookingViewModel>()) {
+          await Get.find<BookingViewModel>().refreshBookings();
+        }
+        _isBookingRefreshInProgress = false;
+      }
+
+    } catch (e) {
+      print('❌ Post-payment processing error: $e');
+    } finally {
+      _isPostPaymentProcessing = false;
+    }
   }
 
   void _showWalletError(String message) {
     isUILocked.value = false;
     isLoading.value = false;
+    _isWalletPaymentInProgress = false;
+    _isPostPaymentProcessing = false;
     Get.snackbar(
       'Payment Failed',
       message,
@@ -455,17 +506,23 @@ class BookingSummaryViewModel extends GetxController {
     );
   }
 
+  // ✅ FIXED: Success dialog with duplicate prevention - FULLY LOCKED
   void _showWalletSuccessDialog() {
-    if (Get.isDialogOpen ?? false) return;
+    if (_isSuccessDialogShown || (Get.isDialogOpen ?? false)) {
+      print('⏭️ Success dialog already showing - skipping duplicate');
+      return;
+    }
 
+    _isSuccessDialogShown = true;
     final amountPaid = _getAmountToPay();
 
     Get.dialog(
       PopScope(
-        canPop: false,
+        canPop: false, // ✅ COMPLETELY BLOCKS BACK BUTTON
         child: AlertDialog(
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           backgroundColor: Colors.white,
+          insetPadding: const EdgeInsets.symmetric(horizontal: 20, vertical: 24),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
@@ -479,12 +536,33 @@ class BookingSummaryViewModel extends GetxController {
               ),
               const SizedBox(height: 16),
               const Text(
-                'PAYMENT SUCCESSFUL! 🎉',
+                '🎉 Payment Successful!',
                 style: TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.green),
               ),
               const SizedBox(height: 8),
-              Text('Amount: ₹${_formatPrice(amountPaid)}',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+              RichText(
+                text: TextSpan(
+                  children: [
+                    TextSpan(
+                      text: '₹',
+                      style: TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.green.shade700,
+                        fontFamily: 'Georgia',
+                      ),
+                    ),
+                    TextSpan(
+                      text: _formatPrice(amountPaid),
+                      style: const TextStyle(
+                        fontSize: 28,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               if (discountVm.hasSelectedDiscount)
                 Padding(
                   padding: const EdgeInsets.only(top: 4),
@@ -512,12 +590,20 @@ class BookingSummaryViewModel extends GetxController {
                   Expanded(
                     child: OutlinedButton(
                       onPressed: () {
+                        // ✅ Lock UI while navigating
+                        isUILocked.value = true;
                         Get.back();
                         Get.offAllNamed(AppRoutes.mainPage);
                         Future.delayed(const Duration(milliseconds: 100), () {
                           if (Get.isRegistered<MainPageViewModel>()) {
                             Get.find<MainPageViewModel>().changeTab(0);
                           }
+                          // ✅ Unlock after navigation is complete
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            isUILocked.value = false;
+                            isLoading.value = false;
+                            _isSuccessDialogShown = false;
+                          });
                         });
                       },
                       style: OutlinedButton.styleFrom(
@@ -532,12 +618,20 @@ class BookingSummaryViewModel extends GetxController {
                   Expanded(
                     child: ElevatedButton(
                       onPressed: () {
+                        // ✅ Lock UI while navigating
+                        isUILocked.value = true;
                         Get.back();
                         Get.offAllNamed(AppRoutes.mainPage);
                         Future.delayed(const Duration(milliseconds: 100), () {
                           if (Get.isRegistered<MainPageViewModel>()) {
                             Get.find<MainPageViewModel>().changeTab(1);
                           }
+                          // ✅ Unlock after navigation is complete
+                          WidgetsBinding.instance.addPostFrameCallback((_) {
+                            isUILocked.value = false;
+                            isLoading.value = false;
+                            _isSuccessDialogShown = false;
+                          });
                         });
                       },
                       style: ElevatedButton.styleFrom(
@@ -554,10 +648,16 @@ class BookingSummaryViewModel extends GetxController {
           ),
         ),
       ),
-      barrierDismissible: false,
-    );
+      barrierDismissible: false, // ✅ Prevents tap outside to dismiss
+    ).whenComplete(() {
+      // ✅ Only reset if not already handled by button press
+      if (!_isNavigating) {
+        _isSuccessDialogShown = false;
+      }
+    });
   }
 
+  // ✅ FIXED: Initiate Payment with duplicate prevention
   Future<void> initiatePayment() async {
     if (_isProcessing) return;
 
@@ -607,7 +707,7 @@ class BookingSummaryViewModel extends GetxController {
       print('📤 Initiate Booking Request: $requestBody');
 
       final response = await dio.post(
-        '/user/bookings/initiate/',
+        AppConfig.initiateBooking,
         data: requestBody,
       );
 
@@ -715,6 +815,7 @@ class BookingSummaryViewModel extends GetxController {
     }
   }
 
+  // ✅ FIXED: Payment success with UI locked until navigation completes
   void _handlePaymentSuccess(PaymentSuccessResponse response) async {
     print('=== ✅ PAYMENT SUCCESS ===');
     print('Payment ID: ${response.paymentId}');
@@ -731,11 +832,6 @@ class BookingSummaryViewModel extends GetxController {
     _successOrderId = response.orderId;
 
     final amountPaid = _currentPayableAmount ?? _getAmountToPay();
-
-    if (!hasShownSuccessPopup.value) {
-      hasShownSuccessPopup.value = true;
-      _showWalletSuccessDialog();
-    }
 
     try {
       final dio = Get.find<Dio>();
@@ -760,7 +856,7 @@ class BookingSummaryViewModel extends GetxController {
       }
 
       print('📤 Confirm Booking: $confirmData');
-      final confirmResponse = await dio.post('/user/bookings/confirm/', data: confirmData);
+      final confirmResponse = await dio.post(AppConfig.confirmBooking, data: confirmData);
 
       if (confirmResponse.statusCode == 200 && confirmResponse.data['result'] == 'success') {
         print('✅ Booking confirmed');
@@ -769,21 +865,20 @@ class BookingSummaryViewModel extends GetxController {
       print('⚠️ Confirmation error: $e');
     }
 
-    await Get.find<BookingViewModel>().refreshBookings();
-    await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
+    // ✅ Show success dialog - UI remains LOCKED
+    if (!hasShownSuccessPopup.value) {
+      hasShownSuccessPopup.value = true;
+      _showWalletSuccessDialog();
+    }
 
-    await Future.delayed(const Duration(seconds: 2));
-    if (Get.isDialogOpen ?? false) Get.back();
+    // ✅ Process post-payment in background while UI stays locked
+    await _processPostPayment();
 
-    isUILocked.value = false;
-    Get.offAllNamed(AppRoutes.mainPage);
-    Get.find<MainPageViewModel>().changeTab(1);
-
-    isLoading.value = false;
-    isPaymentInitiated.value = false;
-    _isProcessing = false;
+    // ✅ UI will be unlocked when user clicks a button in the dialog
+    // The dialog buttons handle the navigation and unlocking
   }
 
+  // ✅ FIXED: Payment error - unlock immediately
   void _handlePaymentError(PaymentFailureResponse response) async {
     print('=== ❌ PAYMENT ERROR ===');
     print('Code: ${response.code}');
@@ -794,18 +889,22 @@ class BookingSummaryViewModel extends GetxController {
       return;
     }
 
+    // ✅ Unlock UI immediately on error so user can retry
     isPaymentInitiated.value = false;
     isLoading.value = false;
     isUILocked.value = false;
     _isProcessing = false;
 
     if (response.code != 0) {
-      Get.snackbar(
-        'Payment Failed',
-        response.message ?? 'Payment failed. Please try again.',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-      );
+      // ✅ Show error after a small delay
+      Future.delayed(const Duration(milliseconds: 100), () {
+        Get.snackbar(
+          'Payment Failed',
+          response.message ?? 'Payment failed. Please try again.',
+          backgroundColor: Colors.red,
+          colorText: Colors.white,
+        );
+      });
     }
   }
 

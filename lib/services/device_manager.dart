@@ -5,8 +5,11 @@
 // ✅ Different user → ALWAYS CREATE NEW (even if same physical device)
 // ✅ Same user + different device_id → CREATE NEW
 // ✅ Same user + different device_name → CREATE NEW
+// ✅ SINGLE DOMAIN CONFIGURATION
 
 import 'dart:io';
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:device_info_plus/device_info_plus.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -83,6 +86,11 @@ class DeviceManager extends GetxService {
     try {
       await SharedPrefsHelper.clearAll();
       await clearRegistration();
+
+      // ✅ Clear caches on forced logout
+      if (Get.isRegistered<CacheManager>()) {
+        Get.find<CacheManager>().clearAllCaches();
+      }
 
       Get.dialog(
         AlertDialog(
@@ -363,7 +371,7 @@ class DeviceManager extends GetxService {
   }) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -376,7 +384,7 @@ class DeviceManager extends GetxService {
       print('   📱 device_name: $deviceName');
 
       final response = await dio.get(
-        '/user/devices/check/',
+        AppConfig.deviceCheck,
         queryParameters: {
           'user_id': userId,
           'device_id': deviceId,
@@ -443,7 +451,7 @@ class DeviceManager extends GetxService {
   }) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -454,7 +462,7 @@ class DeviceManager extends GetxService {
       print('   device_id: $deviceId (SAME)');
 
       final response = await dio.post(
-        '/user/device-token/update/',
+        AppConfig.deviceTokenUpdate,
         data: {
           'token': fcmToken,
           'device_id': deviceId,
@@ -483,7 +491,7 @@ class DeviceManager extends GetxService {
   }) async {
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -495,7 +503,7 @@ class DeviceManager extends GetxService {
       print('   location: $location');
 
       final response = await dio.patch(
-        '/user/device-token/location/',
+        AppConfig.deviceLocation,
         data: {
           'device_id': deviceId,
           'location': location,
@@ -556,10 +564,6 @@ class DeviceManager extends GetxService {
 
   // ============================================================
   // ✅ REGISTER DEVICE - SMART LOGIC
-  // ✅ (user_id + device_id + device_name) = UNIQUE
-  // ✅ If all three match AND same user → UPDATE
-  // ✅ If different user → ALWAYS CREATE NEW
-  // ✅ If any one is different → CREATE NEW
   // ============================================================
   Future<DeviceRegistrationResult> registerDevice({
     required String jwtToken,
@@ -609,7 +613,6 @@ class DeviceManager extends GetxService {
       print('   📱 Device Name: $deviceName');
 
       // ✅ Check if device exists for this user with same ID + NAME
-      // ✅ This now has the CRITICAL FIX: different user → returns exists=false
       final existingDevice = await _checkDeviceExistsForUser(
         jwtToken: jwtToken,
         deviceId: deviceId,
@@ -742,7 +745,7 @@ class DeviceManager extends GetxService {
       }
 
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {
           'Authorization': 'Bearer $jwtToken',
           'Content-Type': 'application/json',
@@ -757,7 +760,7 @@ class DeviceManager extends GetxService {
       print('   📱 platform: $platform');
       print('   📱 os_version: $osVersion');
 
-      final response = await dio.post('/user/device-token/', data: requestBody);
+      final response = await dio.post(AppConfig.deviceToken, data: requestBody);
 
       if (response.statusCode == 200 || response.statusCode == 201) {
         await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
@@ -814,10 +817,10 @@ class DeviceManager extends GetxService {
     isLoading.value = true;
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
-      final response = await dio.get('/user/devices/');
+      final response = await dio.get(AppConfig.devices);
 
       if (response.statusCode == 200 && response.data['result'] == 'success') {
         final devicesList = (response.data['data'] as List)
@@ -844,7 +847,7 @@ class DeviceManager extends GetxService {
     isLoading.value = true;
     try {
       final dio = Dio(BaseOptions(
-        baseUrl: 'https://backend.arcmedialabs.in/api',
+        baseUrl: AppConfig.apiBaseUrl,  // ✅ SINGLE SOURCE
         headers: {'Authorization': 'Bearer $jwtToken'},
       ));
 
@@ -852,7 +855,7 @@ class DeviceManager extends GetxService {
       print('   👤 User: ${SharedPrefsHelper.getUserEmail() ?? 'Unknown'}');
 
       final response = await dio.post(
-        '/user/devices/logout/',
+        AppConfig.deviceLogout,
         data: {'device_id': deviceRecordId},
       );
 

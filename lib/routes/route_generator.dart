@@ -41,7 +41,7 @@ class RouteGenerator {
     GetPage(name: AppRoutes.favorites, page: () => FavoritesView()),
     GetPage(
       name: AppRoutes.notifications,
-      page: () => const NotificationScreen(),
+      page: () =>  NotificationScreen(),
       binding: BindingsBuilder(() {
         if (!Get.isRegistered<NotificationService>()) {
           Get.put(NotificationService());

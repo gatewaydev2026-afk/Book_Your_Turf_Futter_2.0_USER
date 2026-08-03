@@ -1,14 +1,11 @@
 // home_view_model.dart - Complete with Pagination & Location Support
-// ✅ Based on API documentation: /api/user/turfs/
-// ✅ Supports lat, lng, radius, search, pagination
-// ✅ Fixed pagination using next URL from API
-// ✅ Shows nearby turfs by default
-// ✅ SEARCH: Shows ALL turfs matching search query (any distance) - FIXED
-// ✅ Public getters for _hasMoreData and _currentPage
-// ✅ Sync with FavoritesViewModel
+// ✅ SINGLE DOMAIN CONFIGURATION
+// ✅ Duplicate API call prevention
 
 import 'dart:async';
 import 'dart:convert';
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
@@ -50,25 +47,27 @@ class HomeViewModel extends GetxController {
   int _apiCallCount = 0;
 
   DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(minutes: 10);
+  static const _cacheDuration = AppConfig.cacheDuration;
 
   final Set<int> _favoriteIds = <int>{};
   final isFavoritesLoading = false.obs;
 
-  // ✅ Pagination - Private fields
   int _currentPage = 1;
   int _totalPages = 1;
   bool _hasMoreData = true;
-  static const int _pageSize = 20;
+  static const int _pageSize = AppConfig.defaultPageSize;
 
-  // ✅ Public getters for pagination
+  // ✅ DUPLICATE API CALL PREVENTION
+  DateTime? _lastTurfsFetchTime;
+  static const _minFetchInterval = Duration(seconds: 5);
+  Timer? _locationDebounceTimer;
+  static const _locationDebounceDuration = Duration(seconds: 2);
+  bool _isRefreshingFromLocation = false;
+
   int get currentPage => _currentPage;
   int get totalPages => _totalPages;
   bool get hasMoreData => _hasMoreData;
   int get pageSize => _pageSize;
-
-  static const String googleMapsApiKey = 'AIzaSyBQ6kiaROyTfm7TLKG2c_FA1XER8IVaMlY';
-  static const double MAX_DISTANCE_KM = 25.0;
 
   @override
   void onInit() {
@@ -120,6 +119,7 @@ class HomeViewModel extends GetxController {
   void onClose() {
     print('🏠 HomeViewModel closing');
     _searchDebounceTimer?.cancel();
+    _locationDebounceTimer?.cancel();
     super.onClose();
   }
 
@@ -135,6 +135,15 @@ class HomeViewModel extends GetxController {
       print('⚠️ Token expired, skipping home data load');
       await SharedPrefsHelper.clearToken();
       return;
+    }
+
+    // ✅ Prevent duplicate calls within 5 seconds
+    if (!forceRefresh && _lastTurfsFetchTime != null) {
+      final elapsed = DateTime.now().difference(_lastTurfsFetchTime!);
+      if (elapsed < _minFetchInterval) {
+        print('⏭️ Home data load skipped (${elapsed.inMilliseconds}ms since last fetch)');
+        return;
+      }
     }
 
     if (_isFetching && !forceRefresh) {
@@ -246,27 +255,37 @@ class HomeViewModel extends GetxController {
     }
   }
 
+  // ✅ DEBOUNCED location update - prevents multiple API calls
   Future<void> _getFreshLocationInBackground() async {
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.medium,
-        timeLimit: const Duration(seconds: 10),
-      );
-      if (position != null) {
-        currentLocation.value = position;
-        await _updateLocationNameFromCoordinates(position);
-        await fetchTurfs(forceRefresh: true);
+    _locationDebounceTimer?.cancel();
+    _locationDebounceTimer = Timer(_locationDebounceDuration, () async {
+      if (_isRefreshingFromLocation) {
+        print('⏭️ Location refresh already in progress');
+        return;
       }
-    } catch (e) {
-      print('⚠️ Background location fetch failed: $e');
-    }
+      _isRefreshingFromLocation = true;
+
+      try {
+        final position = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium,
+          timeLimit: const Duration(seconds: 10),
+        );
+        if (position != null) {
+          currentLocation.value = position;
+          await _updateLocationNameFromCoordinates(position);
+          await fetchTurfs(forceRefresh: true);
+        }
+      } catch (e) {
+        print('⚠️ Background location fetch failed: $e');
+      } finally {
+        _isRefreshingFromLocation = false;
+      }
+    });
   }
 
   Future<void> _updateLocationNameFromCoordinates(Position position) async {
     try {
-      final url = Uri.parse(
-        'https://maps.googleapis.com/maps/api/geocode/json?latlng=${position.latitude},${position.longitude}&key=$googleMapsApiKey',
-      );
+      final url = Uri.parse(AppConfig.geocodeUrl(position.latitude, position.longitude));
 
       print('📍 Calling Google Maps API...');
       final response = await http.get(url);
@@ -342,6 +361,21 @@ class HomeViewModel extends GetxController {
       return;
     }
 
+    // ✅ FIX: Prevent duplicate calls within 5 seconds
+    if (!forceRefresh && !loadMore && _lastTurfsFetchTime != null) {
+      final elapsed = DateTime.now().difference(_lastTurfsFetchTime!);
+      if (elapsed < _minFetchInterval) {
+        print('⏭️ Turfs fetch skipped (${elapsed.inMilliseconds}ms since last fetch)');
+        return;
+      }
+    }
+
+    // ✅ FIX: Prevent concurrent fetches
+    if (_isFetching) {
+      print('⏳ Fetch already in progress');
+      return;
+    }
+
     if (currentLocation.value == null && !loadMore) {
       print('📍 No location, fetching location first...');
       await getUserLocation();
@@ -349,11 +383,6 @@ class HomeViewModel extends GetxController {
         print('⚠️ Still no location, skipping API call');
         return;
       }
-    }
-
-    if (_isFetching) {
-      print('⏳ Fetch already in progress');
-      return;
     }
 
     if (!loadMore && !forceRefresh && _initialFetchDone && allTurfs.isNotEmpty) {
@@ -398,11 +427,10 @@ class HomeViewModel extends GetxController {
         queryParams['lat'] = currentLocation.value!.latitude.toString();
         queryParams['lng'] = currentLocation.value!.longitude.toString();
         if (searchQuery.value.isNotEmpty) {
-          // ✅ SEARCH: Use large radius to get ALL turfs matching the query
           queryParams['radius'] = '1000';
           print('🔍 SEARCH MODE: Using radius 1000km to find all matching turfs');
         } else {
-          queryParams['radius'] = MAX_DISTANCE_KM.toString();
+          queryParams['radius'] = AppConfig.maxDistanceKm.toString();
         }
         print('📍 Location params: lat=${queryParams['lat']}, lng=${queryParams['lng']}, radius=${queryParams['radius']}');
       } else {
@@ -417,7 +445,7 @@ class HomeViewModel extends GetxController {
       print('📡 API GET /user/turfs/ with params: $queryParams');
 
       final response = await dio.get(
-        '/user/turfs/',
+        AppConfig.turfs,
         queryParameters: queryParams,
       );
 
@@ -452,17 +480,15 @@ class HomeViewModel extends GetxController {
 
         _initialFetchDone = true;
 
-        // ✅ FIX: Apply different logic based on search mode
         if (searchQuery.value.isNotEmpty) {
-          // 🔍 SEARCH MODE: Show ALL turfs matching search (any location)
           _applySearchResults(turfsWithFavorites);
         } else {
-          // 🏠 NORMAL MODE: Show nearby turfs only
           _applyLocationFilter();
         }
 
         _lastRefreshTime = DateTime.now();
         _lastFetchTime = DateTime.now();
+        _lastTurfsFetchTime = DateTime.now();
 
         if (!loadMore) {
           await SharedPrefsHelper.cacheTurfs(jsonEncode(results));
@@ -516,7 +542,6 @@ class HomeViewModel extends GetxController {
     await fetchTurfs(loadMore: true);
   }
 
-  // ✅ FIXED: Show ALL search results WITHOUT location filtering
   void _applySearchResults(List<TurfModel> fetchedTurfs) {
     print('🔍 Applying search results for: "${searchQuery.value}"');
     print('🔍 Total matching turfs: ${fetchedTurfs.length}');
@@ -525,22 +550,18 @@ class HomeViewModel extends GetxController {
 
     var sorted = List<TurfModel>.from(fetchedTurfs);
     sorted.sort((a, b) {
-      // 1. Favorites first
       final aIsFav = _favoriteIds.contains(a.id);
       final bIsFav = _favoriteIds.contains(b.id);
       if (aIsFav && !bIsFav) return -1;
       if (!aIsFav && bIsFav) return 1;
 
-      // 2. Sort by distance (but show ALL, even far away)
       final aDist = a.distanceKm ?? double.infinity;
       final bDist = b.distanceKm ?? double.infinity;
       if (aDist != bDist) return aDist.compareTo(bDist);
 
-      // 3. Alphabetical by name
       return a.name.compareTo(b.name);
     });
 
-    // ✅ Assign ALL search results to turfs (no location filtering)
     turfs.assignAll(sorted);
 
     print('✅ Showing ${turfs.length} search results for "${searchQuery.value}" (ALL LOCATIONS)');
@@ -550,7 +571,6 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ✅ Apply location filter for normal browsing (within 25km)
   void _applyLocationFilter() {
     if (currentLocation.value == null) {
       locationError.value = 'Location unavailable - showing all turfs';
@@ -563,7 +583,7 @@ class HomeViewModel extends GetxController {
     final userPos = currentLocation.value!;
     final nearbyTurfsList = <TurfModel>[];
 
-    print('📍 Filtering turfs within ${MAX_DISTANCE_KM}km of (${userPos.latitude}, ${userPos.longitude})');
+    print('📍 Filtering turfs within ${AppConfig.maxDistanceKm}km of (${userPos.latitude}, ${userPos.longitude})');
     print('   Total turfs to filter: ${allTurfs.length}');
 
     for (var turf in allTurfs) {
@@ -581,7 +601,7 @@ class HomeViewModel extends GetxController {
         );
       }
 
-      if (distance != null && distance <= MAX_DISTANCE_KM) {
+      if (distance != null && distance <= AppConfig.maxDistanceKm) {
         if (turf.distanceKm == null && distance != null) {
           final updatedTurf = turf.copyWith(distanceKm: distance);
           nearbyTurfsList.add(updatedTurf);
@@ -603,12 +623,12 @@ class HomeViewModel extends GetxController {
 
     turfs.assignAll(nearbyTurfsList);
 
-    print('✅ Found ${nearbyTurfsList.length} turfs within ${MAX_DISTANCE_KM}km');
+    print('✅ Found ${nearbyTurfsList.length} turfs within ${AppConfig.maxDistanceKm}km');
 
     if (nearbyTurfsList.isEmpty && allTurfs.isNotEmpty) {
       Get.snackbar(
         'No nearby turfs',
-        'No turfs found within ${MAX_DISTANCE_KM}km of your location',
+        'No turfs found within ${AppConfig.maxDistanceKm}km of your location',
         backgroundColor: Colors.orange,
         colorText: Colors.white,
         duration: const Duration(seconds: 2),
@@ -724,7 +744,7 @@ class HomeViewModel extends GetxController {
       );
 
       final dio = Get.find<Dio>();
-      await dio.post('/user/favorites/toggle/', data: {'turf_id': turfId});
+      await dio.post(AppConfig.toggleFavorite, data: {'turf_id': turfId});
 
     } catch (e) {
       print('Error toggling favorite: $e');
@@ -772,27 +792,51 @@ class HomeViewModel extends GetxController {
 
   // ========== SEARCH ==========
 
+  // ✅ NO API CALL WHILE TYPING.
+  // Every keystroke just filters the turfs already loaded on device (instant, zero network).
+  // The real server search only fires from performSearch() — i.e. Enter key or search icon tap.
   void onSearchTextChanged(String query) {
     searchQuery.value = query;
     showSuggestions.value = query.isNotEmpty;
+    _searchDebounceTimer?.cancel();
 
     if (query.trim().isEmpty) {
       isSearching.value = false;
       searchResults.clear();
-      // ✅ When search is cleared, go back to nearby turfs
       turfs.assignAll(nearbyTurfs);
       return;
     }
 
-    isSearching.value = true;
-    _searchDebounceTimer?.cancel();
-    _searchDebounceTimer = Timer(const Duration(milliseconds: 500), () {
-      _performSearch(query.trim());
-    });
+    _applyLocalFilter(query.trim());
   }
 
-  Future<void> _performSearch(String query) async {
-    print('🔍 Performing search for: "$query" (ANY DISTANCE - ALL LOCATIONS)');
+  // ✅ Instant client-side filter — no network call
+  void _applyLocalFilter(String query) {
+    final lowerQuery = query.toLowerCase();
+    final filtered = nearbyTurfs.where((turf) {
+      return turf.name.toLowerCase().contains(lowerQuery) ||
+          turf.gameType.toLowerCase().contains(lowerQuery) ||
+          turf.address.toLowerCase().contains(lowerQuery);
+    }).toList();
+    turfs.assignAll(filtered);
+    print('🔎 Local filter "$query": ${filtered.length} match(es) (no API call)');
+  }
+
+  // ✅ ONLY entry point that hits the server — call this on Enter key / search icon tap
+  Future<void> performSearch(String query) async {
+    final trimmed = query.trim();
+    _searchDebounceTimer?.cancel();
+
+    if (trimmed.isEmpty) {
+      clearSearch();
+      return;
+    }
+
+    searchQuery.value = trimmed;
+    showSuggestions.value = false;
+    isSearching.value = true;
+
+    print('🔍 Performing search for: "$trimmed" (ANY DISTANCE - ALL LOCATIONS)');
 
     _currentPage = 1;
     _hasMoreData = true;
@@ -807,13 +851,11 @@ class HomeViewModel extends GetxController {
     selectedCategory.value = category;
 
     if (searchQuery.value.isNotEmpty) {
-      // ✅ When searching, filter from ALL search results
       final filtered = searchResults.where((t) =>
           t.gameType.toLowerCase().contains(category.toLowerCase())
       ).toList();
       turfs.assignAll(filtered);
     } else {
-      // ✅ When not searching, filter from nearby turfs
       final filtered = nearbyTurfs.where((t) =>
           t.gameType.toLowerCase().contains(category.toLowerCase())
       ).toList();
@@ -827,7 +869,6 @@ class HomeViewModel extends GetxController {
     isSearching.value = false;
     searchResults.clear();
     _searchController?.clear();
-    // ✅ Go back to nearby turfs
     turfs.assignAll(nearbyTurfs);
     selectedCategory.value = '';
   }
@@ -878,6 +919,7 @@ class HomeViewModel extends GetxController {
 
       _lastRefreshTime = DateTime.now();
       _lastFetchTime = DateTime.now();
+      _lastTurfsFetchTime = DateTime.now();
       homeError.value = '';
       print('✅ Refresh completed');
 

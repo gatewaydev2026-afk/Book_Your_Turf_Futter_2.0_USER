@@ -1,5 +1,6 @@
 // views/profile_view.dart
 // ✅ Complete with Device Management menu item & Lazy Loading
+// ✅ Duplicate API call prevention with flags
 
 import 'dart:io';
 import 'package:flutter/material.dart';
@@ -38,11 +39,28 @@ class ProfileView extends StatelessWidget {
   final AuthViewModel authVm = Get.find<AuthViewModel>();
   final WalletViewModel walletVm = Get.find<WalletViewModel>();
 
+  // ✅ DUPLICATE API CALL PREVENTION FLAGS
+  bool _isRefreshing = false;
+  bool _isDialogOpen = false;
+  bool _isBottomSheetOpen = false;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       body: RefreshIndicator(
-        onRefresh: () => vm.refresh(),
+        onRefresh: () async {
+          // ✅ Prevent duplicate refreshes
+          if (_isRefreshing) {
+            print('⏭️ Profile refresh already in progress - skipping duplicate');
+            return;
+          }
+          _isRefreshing = true;
+          try {
+            await vm.refresh();
+          } finally {
+            _isRefreshing = false;
+          }
+        },
         child: Obx(() {
           if (vm.isLoading.value && vm.name.value.isEmpty) {
             return const Center(child: CircularProgressIndicator());
@@ -292,7 +310,6 @@ class ProfileView extends StatelessWidget {
                                 onTap: () {
                                   final mainPageVm = Get.find<MainPageViewModel>();
                                   mainPageVm.changeTab(1);
-                                  // ✅ Load bookings when navigating to Bookings tab
                                   final bookingVm = Get.find<BookingViewModel>();
                                   bookingVm.loadBookings();
                                 },
@@ -314,7 +331,6 @@ class ProfileView extends StatelessWidget {
                                 title: 'Wallet Transactions',
                                 icon: Icons.history,
                                 onTap: () {
-                                  // ✅ Load wallet data when navigating
                                   final walletVm = Get.find<WalletViewModel>();
                                   walletVm.loadWalletData();
                                   Get.to(() => const WalletTransactionsView());
@@ -325,7 +341,6 @@ class ProfileView extends StatelessWidget {
                                 title: 'Coin History',
                                 icon: 'assets/icons/coin.svg',
                                 onTap: () {
-                                  // ✅ Load coin data when navigating
                                   final coinVm = Get.find<CoinViewModel>();
                                   coinVm.loadCoinData();
                                   Get.to(() => const CoinTransactionsView());
@@ -350,7 +365,6 @@ class ProfileView extends StatelessWidget {
                                 onTap: () => Get.toNamed(AppRoutes.termAndCondition),
                               ),
                               Divider(color: AppColors.grey.withOpacity(0.3)),
-                              // ✅ NEW: Manage Devices Menu Item
                               others(
                                 title: 'Manage Devices',
                                 icon: Icons.devices,
@@ -435,7 +449,15 @@ class ProfileView extends StatelessWidget {
     );
   }
 
+  // ✅ FIXED: Wallet options with duplicate prevention
   void _showWalletOptions() {
+    if (_isBottomSheetOpen || (Get.isBottomSheetOpen ?? false)) {
+      print('⏭️ Wallet options already open - skipping duplicate');
+      return;
+    }
+
+    _isBottomSheetOpen = true;
+
     Get.bottomSheet(
       Container(
         padding: const EdgeInsets.all(20),
@@ -500,7 +522,6 @@ class ProfileView extends StatelessWidget {
               title: const Text('View Transactions'),
               onTap: () {
                 Get.back();
-                // ✅ Load wallet data when navigating
                 walletVm.loadWalletData();
                 Get.to(() => const WalletTransactionsView());
               },
@@ -509,10 +530,20 @@ class ProfileView extends StatelessWidget {
           ],
         ),
       ),
-    );
+    ).whenComplete(() {
+      _isBottomSheetOpen = false;
+    });
   }
 
+  // ✅ FIXED: Logout confirmation with duplicate prevention
   void _showLogoutConfirmation() {
+    if (_isDialogOpen || (Get.isDialogOpen ?? false)) {
+      print('⏭️ Dialog already open - skipping duplicate');
+      return;
+    }
+
+    _isDialogOpen = true;
+
     Get.dialog(
       Dialog(
         backgroundColor: Colors.transparent,
@@ -581,10 +612,19 @@ class ProfileView extends StatelessWidget {
         ),
       ),
       barrierDismissible: false,
-    );
+    ).whenComplete(() {
+      _isDialogOpen = false;
+    });
   }
 
+  // ✅ FIXED: Edit profile with duplicate prevention
   void _showEditProfileDialog(BuildContext context) {
+    if (_isBottomSheetOpen || (Get.isBottomSheetOpen ?? false)) {
+      print('⏭️ Edit profile already open - skipping duplicate');
+      return;
+    }
+
+    _isBottomSheetOpen = true;
     final nameController = TextEditingController(text: vm.name.value);
     File? selectedImageFile;
 
@@ -616,11 +656,21 @@ class ProfileView extends StatelessWidget {
           );
         },
       ),
-    );
+    ).whenComplete(() {
+      _isBottomSheetOpen = false;
+    });
   }
 
+  // ✅ FIXED: Convert coins dialog with duplicate prevention
   void _showConvertCoinsDialog() {
+    if (_isDialogOpen || (Get.isDialogOpen ?? false)) {
+      print('⏭️ Dialog already open - skipping duplicate');
+      return;
+    }
+
+    _isDialogOpen = true;
     final coinsController = TextEditingController();
+
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -691,11 +741,17 @@ class ProfileView extends StatelessWidget {
           ),
         ],
       ),
-    );
+      barrierDismissible: false,
+    ).whenComplete(() {
+      _isDialogOpen = false;
+    });
   }
 }
 
+// ============================================================
 // Full Screen Image Viewer with Zoom
+// ============================================================
+
 class FullScreenImageViewer extends StatelessWidget {
   final String imageUrl;
 
@@ -759,7 +815,10 @@ class FullScreenImageViewer extends StatelessWidget {
   }
 }
 
+// ============================================================
 // Edit Profile Content Widget
+// ============================================================
+
 class EditProfileContent extends StatefulWidget {
   final ProfileViewModel vm;
   final File? selectedImageFile;
@@ -1139,7 +1198,10 @@ class _EditProfileContentState extends State<EditProfileContent> {
   }
 }
 
+// ============================================================
 // Menu Item Widget
+// ============================================================
+
 class others extends StatelessWidget {
   final String title;
   final dynamic icon;
@@ -1190,7 +1252,10 @@ class others extends StatelessWidget {
   }
 }
 
+// ============================================================
 // Responsive Wrapper Widget
+// ============================================================
+
 Widget responsiveWrapper({
   required Widget child,
   double maxWidth = 600,
@@ -1216,7 +1281,10 @@ Widget responsiveWrapper({
   );
 }
 
+// ============================================================
 // Points and Wallet Card
+// ============================================================
+
 class PointsCard extends StatelessWidget {
   final int points;
   final double walletBalance;
@@ -1349,7 +1417,6 @@ class PointsCard extends StatelessWidget {
               Expanded(
                 child: GestureDetector(
                   onTap: () {
-                    // ✅ Load coin data when navigating
                     final coinVm = Get.find<CoinViewModel>();
                     coinVm.loadCoinData();
                     Get.to(() => const CoinTransactionsView());
@@ -1384,7 +1451,10 @@ class PointsCard extends StatelessWidget {
   }
 }
 
+// ============================================================
 // Refer and Earn Card
+// ============================================================
+
 Widget referEarnCard({
   required String image,
   required String code,

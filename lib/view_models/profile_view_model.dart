@@ -1,6 +1,11 @@
-// view_models/profile_view_model.dart - COMPLETE
+// view_models/profile_view_model.dart - With Cache Management
+// ✅ Duplicate API call prevention
+// ✅ Fixed: Static access issues
 
 import 'dart:io';
+import 'dart:async';
+import 'package:book_your_turf/config/app_config.dart';
+import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide MultipartFile, FormData;
 import 'package:dio/dio.dart';
@@ -28,13 +33,21 @@ class ProfileViewModel extends GetxController {
 
   static bool _initialFetchDone = false;
   static DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(seconds: 30);
+  static const _cacheDuration = AppConfig.profileCacheDuration;
   static Map<String, dynamic>? _cachedUserData;
+
+  // ✅ DUPLICATE API CALL PREVENTION - ALL STATIC
+  static bool _isFetchingProfile = false;
+  static DateTime? _lastFetchCallTime;  // ✅ Made static
+  static const _minFetchInterval = Duration(seconds: 3);
+  // ✅ Timer cannot be static - kept as instance variable
+  Timer? _refreshDebounceTimer;
+  static const _refreshDebounceDuration = Duration(milliseconds: 500);
 
   @override
   void onInit() {
     super.onInit();
-    print('📋 ProfileViewModel initialized (lazy loading - will fetch when needed)');
+    print('📋 ProfileViewModel initialized (lazy loading)');
     _loadFromCache();
   }
 
@@ -51,6 +64,24 @@ class ProfileViewModel extends GetxController {
       return;
     }
 
+    // ✅ FIX: Prevent duplicate calls within 3 seconds
+    if (!forceRefresh && _lastFetchCallTime != null) {
+      final elapsed = DateTime.now().difference(_lastFetchCallTime!);
+      if (elapsed < _minFetchInterval) {
+        print('⏭️ Profile fetch skipped (${elapsed.inMilliseconds}ms since last fetch)');
+        return;
+      }
+    }
+
+    // ✅ FIX: Prevent concurrent fetches. Lock applies EVEN when
+    // forceRefresh=true — same reasoning as BookingViewModel.loadBookings():
+    // forceRefresh should only skip the freshness/cache checks below, not
+    // let two overlapping forceRefresh callers both bypass the in-flight lock.
+    if (_isFetchingProfile) {
+      print('⏭️ Profile fetch already in progress - skipping duplicate (forceRefresh: $forceRefresh)');
+      return;
+    }
+
     if (!forceRefresh && _initialFetchDone && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration) {
@@ -64,12 +95,13 @@ class ProfileViewModel extends GetxController {
       return;
     }
 
+    _isFetchingProfile = true;
     print('📡 Fetching profile from API...');
     isLoading.value = true;
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.get('/user/profile/');
+      final response = await dio.get(AppConfig.profile);
 
       if (response.data['result'] == 'success') {
         final user = response.data['data'];
@@ -78,6 +110,7 @@ class ProfileViewModel extends GetxController {
 
         _initialFetchDone = true;
         _lastFetchTime = DateTime.now();
+        _lastFetchCallTime = DateTime.now();
         await SharedPrefsHelper.setLastProfileFetch(DateTime.now());
 
         print('✅ Profile fetched successfully');
@@ -90,6 +123,7 @@ class ProfileViewModel extends GetxController {
       _loadFromCache();
     } finally {
       isLoading.value = false;
+      _isFetchingProfile = false;
     }
   }
 
@@ -127,7 +161,7 @@ class ProfileViewModel extends GetxController {
       if (cachedEmail != null) email.value = cachedEmail;
       if (cachedPhone != null) phone.value = cachedPhone;
 
-      print('📦 Loaded profile from cache');
+      print('📦 Loaded profile from SharedPreferences cache');
     }
   }
 
@@ -140,7 +174,7 @@ class ProfileViewModel extends GetxController {
     isRefreshingWallet.value = true;
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.get('/user/profile/');
+      final response = await dio.get(AppConfig.profile);
 
       if (response.data['result'] == 'success') {
         final user = response.data['data'];
@@ -234,7 +268,7 @@ class ProfileViewModel extends GetxController {
       }
 
       final response = await dio.patch(
-        '/user/profile/',
+        AppConfig.profileUpdate,
         data: formData,
         options: Options(
           headers: {
@@ -278,7 +312,7 @@ class ProfileViewModel extends GetxController {
       formData.fields.add(MapEntry('_method', 'PATCH'));
 
       final response = await dio.post(
-        '/user/profile/',
+        AppConfig.profileUpdate,
         data: formData,
         options: Options(
           headers: {
@@ -302,7 +336,9 @@ class ProfileViewModel extends GetxController {
   }
 
   Future<void> _handleUpdateSuccess() async {
-    _initialFetchDone = false;
+    if (Get.isRegistered<CacheManager>()) {
+      Get.find<CacheManager>().clearAllCaches();
+    }
     await fetchUser(forceRefresh: true);
     imageVersion.value++;
 
@@ -325,7 +361,7 @@ class ProfileViewModel extends GetxController {
 
   Future<void> _refreshDashboard() async {
     if (Get.isRegistered<HomeViewModel>()) {
-      await Get.find<HomeViewModel>().refreshTurfs();
+      await Get.find<HomeViewModel>().refreshTurfs(showLoading: true);
     }
     if (Get.isRegistered<BookingViewModel>()) {
       await Get.find<BookingViewModel>().refreshBookings();
@@ -343,7 +379,7 @@ class ProfileViewModel extends GetxController {
     isLoading.value = true;
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post('/user/convert-coins/', data: {
+      final response = await dio.post(AppConfig.convertCoins, data: {
         'coins_to_convert': coinsToConvert,
       });
 
@@ -379,14 +415,28 @@ class ProfileViewModel extends GetxController {
   }
 
   Future<void> refresh() async {
-    _initialFetchDone = false;
-    await fetchUser(forceRefresh: true);
-    imageVersion.value++;
+    _refreshDebounceTimer?.cancel();
+    _refreshDebounceTimer = Timer(_refreshDebounceDuration, () async {
+      _initialFetchDone = false;
+      if (Get.isRegistered<CacheManager>()) {
+        Get.find<CacheManager>().clearAllCaches();
+      }
+      await fetchUser(forceRefresh: true);
+      imageVersion.value++;
+    });
   }
 
   static void resetCache() {
     _initialFetchDone = false;
     _lastFetchTime = null;
     _cachedUserData = null;
+    _isFetchingProfile = false;
+    _lastFetchCallTime = null;
+  }
+
+  @override
+  void onClose() {
+    _refreshDebounceTimer?.cancel();
+    super.onClose();
   }
 }
