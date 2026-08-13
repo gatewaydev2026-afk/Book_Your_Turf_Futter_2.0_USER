@@ -1,4 +1,4 @@
-// view_models/slot_view_model.dart - COMPLETELY FIXED WITH DECIMAL PRICE HANDLING
+// slot_view_model.dart - Updated with updateTurf method
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -6,13 +6,9 @@ import 'package:dio/dio.dart';
 import '../models/turf_model.dart';
 import '../models/slot_model.dart';
 import '../services/shared_prefs_helper.dart';
-import '../view_models/profile_view_model.dart';
-import '../view_models/booking_view_model.dart';
-import '../view_models/main_page_view_model.dart';
-import '../routes/app_routes.dart';
 
 class SlotViewModel extends GetxController {
-  final TurfModel turf;
+  late TurfModel turf;
   SlotViewModel(this.turf);
 
   final selectedDateIndex = 0.obs;
@@ -41,6 +37,17 @@ class SlotViewModel extends GetxController {
 
     _refreshDates();
     fetchSlotsForCurrentDate();
+  }
+
+  // ✅ NEW: Update turf and refresh data
+  void updateTurf(TurfModel newTurf) {
+    print('🔄 Updating turf in ViewModel');
+    turf = newTurf;
+    _refreshDates();
+    _slotsCache.clear();
+    selectedSlots.clear();
+    fetchSlotsForCurrentDate();
+    print('✅ Turf updated: ${turf.name}');
   }
 
   void _refreshDates() {
@@ -250,7 +257,6 @@ class SlotViewModel extends GetxController {
           }
         } else {
           // ✅ FIX: 00:00 end time = midnight = 1440 minutes (not 0!)
-          // e.g. 11PM-12AM slot has endTime "00:00" but it's NOT past yet at 11PM
           int slotEndMinutes = (endHour == 0 && endMinute == 0)
               ? 1440
               : endHour * 60 + endMinute;
@@ -326,7 +332,6 @@ class SlotViewModel extends GetxController {
       }
 
       // ✅ FIX: 00:00 end time = midnight = 1440 minutes (not 0!)
-      // e.g. 11PM-12AM slot has endTime "00:00" but it's NOT past yet at 11PM
       int slotEndMinutes = (endHour == 0 && endMinute == 0)
           ? 1440
           : endHour * 60 + endMinute;

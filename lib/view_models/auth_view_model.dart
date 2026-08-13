@@ -49,6 +49,38 @@ class AuthViewModel extends GetxController {
   // ✅ DUPLICATE API CALL PREVENTION
   bool _isLoggingIn = false;
 
+  // ✅ FIX: These auth calls (sendRegistrationOtp/verifyOtp/login) can run
+  // while ANOTHER dialog (GuestBookingAuthDialog) is already open on top of
+  // SlotView. Get.dialog() just pushes another route, so we'd end up with
+  // TWO dialogs stacked: [GuestBookingAuthDialog, this loading spinner].
+  //
+  // The old code used `if (Get.isDialogOpen ?? false) Get.back();` to close
+  // the spinner once the API call finished — but Get.isDialogOpen only
+  // checks "is ANY dialog open", not "is MY spinner still open". If the
+  // user pressed the hardware back button while the spinner was showing,
+  // Android/GetX would pop the spinner route immediately (nothing here
+  // stopped it), leaving GuestBookingAuthDialog as the new topmost dialog.
+  // When the in-flight API call finally resolved, `Get.back()` would then
+  // pop THAT dialog instead — closing the booking flow early while the
+  // rest of the function (e.g. login() opening its own spinner afterwards)
+  // kept running against a disposed widget. Net effect: an orphaned
+  // loading dialog with nothing left to close it = stuck on a loading
+  // screen forever.
+  //
+  // Fix: wrap the spinner in a PopScope(canPop: false) so the hardware
+  // back button can never pop it directly. Now there is exactly one way
+  // to close it — the explicit Get.back() below — so the two dialogs can
+  // never get out of sync.
+  void _showBlockingLoader() {
+    Get.dialog(
+      PopScope(
+        canPop: false,
+        child: const Center(child: CircularProgressIndicator()),
+      ),
+      barrierDismissible: false,
+    );
+  }
+
   @override
   void onClose() {
     _timer?.cancel();
@@ -102,6 +134,16 @@ class AuthViewModel extends GetxController {
     required String password,
     String? referralCode,
     required String verificationMethod,
+    // ✅ FIX: GuestBookingAuthDialog is itself a Get.dialog() and already
+    // shows its own inline spinner in the "Send OTP" button. If we also
+    // open AuthViewModel's full-screen spinner here, we end up with TWO
+    // dialogs stacked. Get.isDialogOpen is a single bool (not a per-dialog
+    // or stack-depth tracker), so once nested dialogs are involved it can
+    // report the wrong thing and a spinner can be left open with nothing
+    // left to close it — the "stuck on loading, back does nothing" bug.
+    // Callers that already have their own dialog + busy indicator should
+    // pass showLoadingOverlay: false.
+    bool showLoadingOverlay = true,
   }) async {
     if (verificationMethod == 'email' && (email.isEmpty || !email.contains('@'))) {
       _showError('Please enter a valid email address');
@@ -113,7 +155,7 @@ class AuthViewModel extends GetxController {
     }
 
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    if (showLoadingOverlay) _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
@@ -141,7 +183,7 @@ class AuthViewModel extends GetxController {
 
       final response = await dio.post(AppConfig.authSendOtp, data: requestData);
 
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
 
       print('📥 SEND OTP Response: ${response.data}');
@@ -157,12 +199,12 @@ class AuthViewModel extends GetxController {
         return false;
       }
     } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _showError(_getApiErrorMessage(e));
       return false;
     } catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _showError('Something went wrong. Please try again.');
       return false;
@@ -171,15 +213,15 @@ class AuthViewModel extends GetxController {
 
   // ==================== RESEND OTP ====================
 
-  Future<bool> resendOtp(String identifier) async {
+  Future<bool> resendOtp(String identifier, {bool showLoadingOverlay = true}) async {
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    if (showLoadingOverlay) _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(AppConfig.authResendOtp, data: {'identifier': identifier});
 
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
 
       if (response.data['result'] == 'success') {
@@ -193,7 +235,7 @@ class AuthViewModel extends GetxController {
         return false;
       }
     } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _showError(_getApiErrorMessage(e));
       return false;
@@ -202,20 +244,20 @@ class AuthViewModel extends GetxController {
 
   // ==================== VERIFY OTP & CREATE ACCOUNT ====================
 
-  Future<bool> verifyOtp(String otp, String identifier) async {
+  Future<bool> verifyOtp(String otp, String identifier, {bool showLoadingOverlay = true}) async {
     if (isOtpTimeExpired()) {
       _showError('OTP has expired. Please request a new one.');
       return false;
     }
 
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    if (showLoadingOverlay) _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(AppConfig.authVerifyOtp, data: {'identifier': identifier, 'otp': otp});
 
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
 
       if (response.statusCode == 201 && response.data['result'] == 'success') {
@@ -245,7 +287,7 @@ class AuthViewModel extends GetxController {
         return false;
       }
     } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _showError(_getApiErrorMessage(e));
       return false;
@@ -260,7 +302,7 @@ class AuthViewModel extends GetxController {
     String? phone,
   }) async {
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
@@ -304,7 +346,7 @@ class AuthViewModel extends GetxController {
     }
 
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
@@ -339,7 +381,13 @@ class AuthViewModel extends GetxController {
   // ✅ Duplicate prevention
   // ============================================================
 
-  Future<bool> login(String loginId, String password) async {
+  // ✅ NEW: navigateOnSuccess lets callers suppress the automatic redirect to
+  // MainPage. The guest-registration-with-booking flow (OTP verification
+  // screen) needs this: it wants to auto-login and then return the user to
+  // their in-progress SlotView, not get yanked to MainPage first. Defaults
+  // to true so every other existing call site (plain login screen etc.)
+  // behaves exactly as before.
+  Future<bool> login(String loginId, String password, {bool navigateOnSuccess = true, bool showLoadingOverlay = true}) async {
     // ✅ FIX: Prevent concurrent login attempts
     if (_isLoggingIn) {
       print('⏭️ Login already in progress - skipping duplicate');
@@ -353,7 +401,7 @@ class AuthViewModel extends GetxController {
 
     _isLoggingIn = true;
     isLoading.value = true;
-    Get.dialog(const Center(child: CircularProgressIndicator()), barrierDismissible: false);
+    if (showLoadingOverlay) _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
@@ -389,7 +437,7 @@ class AuthViewModel extends GetxController {
 
       final response = await dio.post(AppConfig.authLogin, data: requestData);
 
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _isLoggingIn = false;
 
@@ -459,24 +507,28 @@ class AuthViewModel extends GetxController {
         await AppInitializer.initializeApp();
 
         _showSuccess('Welcome ${user['name']}!');
-        Get.offAllNamed(AppRoutes.mainPage);
+        if (navigateOnSuccess) {
+          Get.offAllNamed(AppRoutes.mainPage);
+        } else {
+          print('⏭️ Skipping auto-redirect to MainPage (navigateOnSuccess: false)');
+        }
         _isLoggingIn = false;
         return true;
       } else {
         print('⚠️ Login failed with all fields, trying individual fields...');
-        final result = await _tryLoginWithIndividualFields(loginId, password, dio);
+        final result = await _tryLoginWithIndividualFields(loginId, password, dio, navigateOnSuccess: navigateOnSuccess);
         _isLoggingIn = false;
         return result;
       }
     } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _isLoggingIn = false;
 
       print('⚠️ DioException, trying individual fields...');
       try {
         final dio = Get.find<Dio>();
-        return await _tryLoginWithIndividualFields(loginId, password, dio);
+        return await _tryLoginWithIndividualFields(loginId, password, dio, navigateOnSuccess: navigateOnSuccess);
       } catch (e2) {
         if (e.response?.statusCode == 400) {
           _showError('Invalid email/phone or password. Please try again.');
@@ -488,7 +540,7 @@ class AuthViewModel extends GetxController {
         return false;
       }
     } catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
+      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
       _isLoggingIn = false;
       print('❌ Login error: $e');
@@ -498,7 +550,7 @@ class AuthViewModel extends GetxController {
   }
 
   // ✅ FIXED: Try individual fields with a limit, not infinite loop
-  Future<bool> _tryLoginWithIndividualFields(String loginId, String password, Dio dio) async {
+  Future<bool> _tryLoginWithIndividualFields(String loginId, String password, Dio dio, {bool navigateOnSuccess = true}) async {
     List<String> fieldNames = [];
     String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
 
@@ -562,7 +614,11 @@ class AuthViewModel extends GetxController {
           await AppInitializer.initializeApp();
 
           _showSuccess('Welcome ${user['name']}!');
-          Get.offAllNamed(AppRoutes.mainPage);
+          if (navigateOnSuccess) {
+            Get.offAllNamed(AppRoutes.mainPage);
+          } else {
+            print('⏭️ Skipping auto-redirect to MainPage (navigateOnSuccess: false)');
+          }
           return true;
         }
       } catch (e) {
@@ -584,6 +640,7 @@ class AuthViewModel extends GetxController {
     required String phone,
     required String password,
     required String name,
+    bool navigateOnSuccess = true,
   }) async {
     print('\n╔════════════════════════════════════════════════════════════╗');
     print('║  📱 AUTO-LOGIN AFTER REGISTRATION                          ║');
@@ -591,7 +648,7 @@ class AuthViewModel extends GetxController {
 
     try {
       String loginId = phone.isNotEmpty ? phone : email;
-      return await login(loginId, password);
+      return await login(loginId, password, navigateOnSuccess: navigateOnSuccess);
     } catch (e) {
       print('❌ Auto-login error: $e');
       return false;

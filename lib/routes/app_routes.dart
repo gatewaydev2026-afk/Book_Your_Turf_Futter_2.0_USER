@@ -1,7 +1,9 @@
 class AppRoutes {
   static const String splash = '/';
+  static const String guestOrLogin = '/guest-or-login';
   static const String login = '/login';
   static const String register = '/register';
+  static const String registerWithBooking = '/register-with-booking'; // ✅ NEW
   static const String forgotPassword = '/forgot-password';
   static const String otpVerification = '/otp-verification';
   static const String resetPassword = '/reset-password';
@@ -16,6 +18,6 @@ class AppRoutes {
   static const String privacyPolicy = '/privacy-policy';
   static const String aboutUs = '/about-us';
   static const String favorites = '/favorites';
-  static const notifications = '/notifications';
-  static const notificationDetails = '/notification-details';
+  static const String notifications = '/notifications';
+  static const String notificationDetails = '/notification-details';
 }

@@ -1,4 +1,5 @@
 // turf_details_view.dart - NO API CALL, Use passed data only
+// ✅ FIXED: Arguments parsed once in initState, cached for rebuilds
 // ✅ Added Lemon Yellow Blinking Discount Badge below Verified badge
 
 import 'package:book_your_turf/widgets/sports_amentites.dart';
@@ -37,10 +38,17 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
   double _cardMargin = 16.0;
   double _scrollOffset = 0.0;
 
+  // ✅ Cached turf - parsed once in initState
+  TurfModel? _cachedTurf;
+  bool _isInitialized = false;
+
   @override
   void initState() {
     super.initState();
     _carouselController = CarouselSliderController();
+
+    // ✅ Parse arguments ONCE in initState
+    _parseArguments();
 
     // ✅ Initialize blinking animation
     _blinkController = AnimationController(
@@ -72,6 +80,45 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
     });
 
     _scrollController.addListener(_onScroll);
+  }
+
+  // ✅ Parse arguments once - called from initState
+  void _parseArguments() {
+    final dynamic args = Get.arguments;
+
+    print('🔍 TurfDetailsView - Args type: ${args.runtimeType}');
+
+    if (args == null) {
+      print('❌ TurfDetailsView: No arguments provided');
+      _isInitialized = false;
+      return;
+    }
+
+    try {
+      if (args is TurfModel) {
+        // ✅ Already a TurfModel - use it directly
+        _cachedTurf = args;
+        print('✅ TurfDetailsView: Received TurfModel directly: ${_cachedTurf!.name}');
+        _isInitialized = true;
+      } else if (args is Map<String, dynamic>) {
+        // ✅ Check if this Map contains a TurfModel
+        if (args.containsKey('turf') && args['turf'] is TurfModel) {
+          _cachedTurf = args['turf'] as TurfModel;
+          print('✅ TurfDetailsView: Extracted TurfModel from Map: ${_cachedTurf!.name}');
+        } else {
+          // ✅ Convert Map to TurfModel
+          _cachedTurf = TurfModel.fromJson(args);
+          print('✅ TurfDetailsView: Converted Map to TurfModel: ${_cachedTurf!.name}');
+        }
+        _isInitialized = true;
+      } else {
+        print('❌ TurfDetailsView: Invalid arguments type: ${args.runtimeType}');
+        _isInitialized = false;
+      }
+    } catch (e) {
+      print('❌ TurfDetailsView: Error parsing arguments: $e');
+      _isInitialized = false;
+    }
   }
 
   void _startAutoSlide() {
@@ -219,18 +266,8 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
 
   @override
   Widget build(BuildContext context) {
-    final dynamic args = Get.arguments;
-
-    TurfModel turf;
-
-    if (args is TurfModel) {
-      turf = args;
-      print('✅ Using passed TurfModel: ${turf.name}');
-    } else if (args is Map<String, dynamic>) {
-      turf = TurfModel.fromJson(args);
-      print('✅ Converted Map to TurfModel: ${turf.name}');
-    } else {
-      print('❌ No valid turf data passed');
+    // ✅ If not initialized or no turf, show error
+    if (!_isInitialized || _cachedTurf == null) {
       return Scaffold(
         body: SafeArea(
           child: Center(
@@ -262,6 +299,8 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
         ),
       );
     }
+
+    final turf = _cachedTurf!;
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isTablet = screenWidth > 600;

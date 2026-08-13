@@ -1,4 +1,4 @@
-// main_page.dart - Tab மாறும்போது மட்டுமே API call
+// main_page.dart - Updated to handle guest mode
 
 import 'package:book_your_turf/services/shared_prefs_helper.dart';
 import 'package:book_your_turf/view_models/booking_view_model.dart';
@@ -13,11 +13,12 @@ import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui' as ui;
 
+import '../routes/app_routes.dart';
+
 class MainPage extends StatelessWidget {
   MainPage({super.key});
   final MainPageViewModel controller = Get.find();
 
-  // Track which tabs have been loaded
   final RxSet<int> _loadedTabs = <int>{}.obs;
 
   final List<Widget> screens = [
@@ -122,9 +123,7 @@ class MainPage extends StatelessWidget {
 
     return GestureDetector(
       onTap: () {
-        // Change tab first
         controller.changeTab(index);
-        // Then load data for that tab (only once per tab)
         _loadTabData(index);
       },
       child: AnimatedContainer(
@@ -203,8 +202,19 @@ class MainPage extends StatelessWidget {
 
   // ✅ Tab-க்கு ஏற்ப ONLY ONE TIME API call
   void _loadTabData(int index) async {
+    // ✅ Guest mode check - don't load Booking/Profile data if guest
+    final homeVm = Get.find<HomeViewModel>();
+    final isGuest = homeVm.isGuestMode.value;
+
+    if (isGuest && index != 0) {
+      print('👤 Guest mode - Showing login prompt for tab $index');
+      // Show login prompt when guest tries to access restricted tabs
+      _showLoginRequiredDialog(index);
+      return;
+    }
+
     final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
+    if (token == null || token.isEmpty && !isGuest) {
       print('🚫 User not logged in, skipping data load');
       return;
     }
@@ -219,10 +229,9 @@ class MainPage extends StatelessWidget {
 
     try {
       switch (index) {
-        case 0: // Home Tab
-          final homeVm = Get.find<HomeViewModel>();
+        case 0: // Home Tab - works for both guest and logged-in
           if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
-            print('🏠 Loading Home data...');
+            print('🏠 Loading Home data... (Guest: $isGuest)');
             await homeVm.loadHomeData();
             _loadedTabs.add(index);
           } else {
@@ -231,32 +240,62 @@ class MainPage extends StatelessWidget {
           }
           break;
 
-        case 1: // Bookings Tab
-          final bookingVm = Get.find<BookingViewModel>();
-          if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
-            print('📅 Loading Bookings data...');
-            await bookingVm.loadBookings();
-            _loadedTabs.add(index);
-          } else {
-            print('✅ Bookings data already available (${bookingVm.bookings.length} bookings)');
-            _loadedTabs.add(index);
+        case 1: // Bookings Tab - requires login
+          if (!isGuest) {
+            final bookingVm = Get.find<BookingViewModel>();
+            if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
+              print('📅 Loading Bookings data...');
+              await bookingVm.loadBookings();
+              _loadedTabs.add(index);
+            } else {
+              print('✅ Bookings data already available (${bookingVm.bookings.length} bookings)');
+              _loadedTabs.add(index);
+            }
           }
           break;
 
-        case 2: // Profile Tab
-          final profileVm = Get.find<ProfileViewModel>();
-          if (profileVm.name.value.isEmpty && !profileVm.isLoading.value) {
-            print('👤 Loading Profile data...');
-            await profileVm.fetchUser();
-            _loadedTabs.add(index);
-          } else {
-            print('✅ Profile data already available');
-            _loadedTabs.add(index);
+        case 2: // Profile Tab - requires login
+          if (!isGuest) {
+            final profileVm = Get.find<ProfileViewModel>();
+            if (profileVm.name.value.isEmpty && !profileVm.isLoading.value) {
+              print('👤 Loading Profile data...');
+              await profileVm.fetchUser();
+              _loadedTabs.add(index);
+            } else {
+              print('✅ Profile data already available');
+              _loadedTabs.add(index);
+            }
           }
           break;
       }
     } catch (e) {
       print('❌ Error loading data for tab $index: $e');
     }
+  }
+
+  void _showLoginRequiredDialog(int index) {
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Login Required'),
+        content: const Text('Please login to access this feature.'),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              Get.offAllNamed(AppRoutes.login);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+            ),
+            child: const Text('Login', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+      barrierDismissible: true,
+    );
   }
 }

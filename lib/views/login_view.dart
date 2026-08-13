@@ -22,33 +22,46 @@ class _LoginViewState extends State<LoginView> {
     final size = MediaQuery.of(context).size;
     final isTablet = size.width > 600;
 
-    return SafeArea(
-      top: false,
-      child: Scaffold(
-        body: SizedBox(
-          width: double.infinity,
-          height: size.height,
-          child: Container(
-            constraints: BoxConstraints(minHeight: size.height),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-                colors: [
-                  Colors.green.shade800,
-                  Colors.green.shade600,
-                  Colors.green.shade400,
-                ],
-              ),
+    return Scaffold(
+      appBar: AppBar(
+        backgroundColor: Colors.green.shade800,
+        elevation: 0,
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back, color: Colors.white),
+          onPressed: () {
+            // Navigate back to GuestOrLoginView
+            Get.offAllNamed(AppRoutes.guestOrLogin);
+          },
+        ),
+        title: const Text(
+          'Sign In',
+          style: TextStyle(color: Colors.white),
+        ),
+        centerTitle: true,
+      ),
+      body: SizedBox(
+        width: double.infinity,
+        height: size.height,
+        child: Container(
+          constraints: BoxConstraints(minHeight: size.height),
+          decoration: BoxDecoration(
+            gradient: LinearGradient(
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+              colors: [
+                Colors.green.shade800,
+                Colors.green.shade600,
+                Colors.green.shade400,
+              ],
             ),
-            child: SafeArea(
-              child: SingleChildScrollView(
-                physics: const BouncingScrollPhysics(),
-                padding: EdgeInsets.symmetric(horizontal: isTablet ? 50 : 24),
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minHeight: size.height * 0.9),
-                  child: bodyContent(),
-                ),
+          ),
+          child: SafeArea(
+            child: SingleChildScrollView(
+              physics: const BouncingScrollPhysics(),
+              padding: EdgeInsets.symmetric(horizontal: isTablet ? 50 : 24),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(minHeight: size.height * 0.9),
+                child: bodyContent(),
               ),
             ),
           ),
@@ -61,8 +74,7 @@ class _LoginViewState extends State<LoginView> {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        const SizedBox(height: 40),
-        const SizedBox(height: 30),
+        const SizedBox(height: 20),
         Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -263,9 +275,8 @@ class _LoginViewState extends State<LoginView> {
           TextField(
             controller: c,
             obscureText: !isVisible,
-            maxLength: 20, // Add this line to restrict to 20 characters
+            maxLength: 20,
             buildCounter: (context, {required currentLength, required isFocused, maxLength}) {
-              // This hides the default counter text
               return null;
             },
             decoration: InputDecoration(

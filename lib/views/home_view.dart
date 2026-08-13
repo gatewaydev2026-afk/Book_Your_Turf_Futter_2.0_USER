@@ -1,8 +1,8 @@
-// home_view.dart - Complete with Better Pagination Design
-// ✅ Modern loading indicator
-// ✅ Smooth pagination with shimmer effect
-// ✅ Pull to refresh with improved UI
-// ✅ FIXED: Search shows ALL turfs (any distance)
+// home_view.dart - COMPLETE FIXED VERSION
+// ✅ Proper Obx usage
+// ✅ No overflow issues
+// ✅ Guest mode fully working
+// ✅ Greeting text size reduced
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile_view.dart';
@@ -154,15 +154,20 @@ class _HomeViewState extends State<HomeView>
     }
 
     final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('🚫 User not logged in, skipping home data load');
+    final isGuest = token == null || token.isEmpty;
+
+    if (isGuest) {
+      print('👤 Guest mode - Loading turfs without token');
+      await homeVm.loadHomeData();
+      _dataLoaded = true;
       return;
     }
 
     if (!SharedPrefsHelper.isTokenValid()) {
-      print('⚠️ Token expired, redirecting to login');
+      print('⚠️ Token expired, switching to guest mode');
       await SharedPrefsHelper.clearToken();
-      Get.offAllNamed(AppRoutes.login);
+      await homeVm.loadHomeData();
+      _dataLoaded = true;
       return;
     }
 
@@ -185,8 +190,7 @@ class _HomeViewState extends State<HomeView>
     if (delta > 5 && !_isCategoryMinimized && currentOffset > 30) {
       _isCategoryMinimized = true;
       _categoryAnimationController.forward();
-    }
-    else if (delta < -5 && _isCategoryMinimized && currentOffset < 50) {
+    } else if (delta < -5 && _isCategoryMinimized && currentOffset < 50) {
       _isCategoryMinimized = false;
       _categoryAnimationController.reverse();
     }
@@ -233,7 +237,8 @@ class _HomeViewState extends State<HomeView>
     print('App state: $state - Updating notification badge only');
     if (state == AppLifecycleState.resumed) {
       _notificationService.updateUnreadCount();
-      if (SharedPrefsHelper.isLoggedIn() && SharedPrefsHelper.isTokenValid()) {
+      final token = SharedPrefsHelper.getToken();
+      if (token != null && token.isNotEmpty && SharedPrefsHelper.isTokenValid()) {
         _loadHomeData();
       }
     }
@@ -291,6 +296,11 @@ class _HomeViewState extends State<HomeView>
   }
 
   Future<void> _onProfileTap() async {
+    if (homeVm.isGuestMode.value) {
+      _showLoginRequiredDialog();
+      return;
+    }
+
     await _handleClick('profile', () async {
       final result = await Navigator.push(
         context,
@@ -305,6 +315,32 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
+  void _showLoginRequiredDialog() {
+    Get.dialog(
+      AlertDialog(
+        title: const Text('Login Required'),
+        content: const Text('Please login to view your profile and access all features.'),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Get.back();
+              Get.offAllNamed(AppRoutes.login);
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+            ),
+            child: const Text('Login', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+      barrierDismissible: true,
+    );
+  }
+
   Future<void> _onCategoryTap(String filter) async {
     await _handleClick('category_$filter', () async {
       homeVm.filterByCategory(filter);
@@ -316,7 +352,7 @@ class _HomeViewState extends State<HomeView>
   }
 
   void _openNotificationScreen() {
-    Get.to(() =>  NotificationScreen());
+    Get.to(() => NotificationScreen());
   }
 
   @override
@@ -340,14 +376,16 @@ class _HomeViewState extends State<HomeView>
                       Container(
                         height: 40,
                         alignment: Alignment.center,
-                        child: Text(
-                          "Hello $_cachedUserName!",
+                        child: Obx(() => Text(
+                          homeVm.isGuestMode.value
+                              ? "Hello Guest! 👋"
+                              : "Hello $_cachedUserName!",
                           style: const TextStyle(
-                            fontSize: 18,
+                            fontSize: 14, // ✅ Reduced from 18
                             fontWeight: FontWeight.bold,
                             color: Colors.green,
                           ),
-                        ),
+                        )),
                       ),
                     if (!_showGreeting) _headerSection(context),
                     _searchBar(),
@@ -632,7 +670,7 @@ class _HomeViewState extends State<HomeView>
         );
       }
 
-      // ✅ Search Empty State - Show when search has no results
+      // ✅ Search Empty State
       if (homeVm.searchQuery.value.isNotEmpty &&
           homeVm.turfs.isEmpty &&
           !homeVm.isLoading.value) {
@@ -679,7 +717,6 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  // ✅ Search Empty State
   Widget _buildSearchEmptyState() {
     return Center(
       child: Column(
@@ -795,159 +832,219 @@ class _HomeViewState extends State<HomeView>
   }
 
   // ============================================================
-  // HEADER SECTION
+  // HEADER SECTION - WITH GUEST MODE SUPPORT
   // ============================================================
   Widget _headerSection(BuildContext context) {
-    final profileImage = profileVm.profileImageUrl.value;
-
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Row(
-        children: [
-          Flexible(
-            flex: 3,
-            child: Row(
-              children: [
-                InkWell(
-                  onTap: _onProfileTap,
-                  child: CircleAvatar(
-                    radius: MediaQuery.of(context).size.width > 600 ? 26 : 22,
-                    backgroundColor: Colors.grey[200],
-                    backgroundImage: profileImage.isNotEmpty
-                        ? NetworkImage('${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
-                        : const AssetImage('assets/images/person_1.png') as ImageProvider,
+      child: Obx(() {
+        final profileImage = profileVm.profileImageUrl.value;
+        final isGuest = homeVm.isGuestMode.value;
+
+        return Row(
+          children: [
+            Flexible(
+              flex: 3,
+              child: Row(
+                children: [
+                  InkWell(
+                    onTap: _onProfileTap,
+                    child: CircleAvatar(
+                      radius: MediaQuery.of(context).size.width > 600 ? 26 : 22,
+                      backgroundColor: Colors.grey[200],
+                      backgroundImage: (!isGuest && profileImage.isNotEmpty)
+                          ? NetworkImage('${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
+                          : const AssetImage('assets/images/person_1.png') as ImageProvider,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Obx(
-                                  () => Text(
-                                "Hello ${profileVm.name.value.isEmpty ? _cachedUserName : profileVm.name.value}",
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                isGuest
+                                    ? "Hello Guest 👋"
+                                    : "Hello ${profileVm.name.value.isEmpty ? _cachedUserName : profileVm.name.value}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 14, // ✅ Reduced from 18
+                                ),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
-                          ),
-                          const SizedBox(width: 4),
-                          SizedBox(
-                            height: 20,
-                            width: 20,
-                            child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
-                          ),
-                        ],
-                      ),
-                      GestureDetector(
-                        onTap: _openLocationInMap,
-                        child: Row(
-                          children: [
-                            const Icon(Icons.location_on, size: 14, color: Colors.green),
                             const SizedBox(width: 4),
-                            Expanded(
-                              child: Obx(
-                                    () => Text(
-                                  homeVm.currentLocationName.value.isEmpty
-                                      ? (homeVm.isLocationLoading.value ? "Fetching location..." : "Location unavailable")
-                                      : homeVm.currentLocationName.value,
-                                  style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                                  overflow: TextOverflow.ellipsis,
+                            SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
+                            ),
+                            if (isGuest)
+                              Container(
+                                margin: const EdgeInsets.only(left: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade300,
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                                child: const Text(
+                                  'Guest',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.black54,
+                                  ),
                                 ),
                               ),
-                            ),
+                            if (isGuest)
+                              GestureDetector(
+                                onTap: () {
+                                  Get.offAllNamed(AppRoutes.login);
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(left: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.green.shade300, width: 0.5),
+                                  ),
+                                  child: Text(
+                                    'Login',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ),
                           ],
                         ),
-                      ),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-          ),
-          // Refresh Icon Button
-          Obx(() => Container(
-            width: 40,
-            height: 40,
-            decoration: BoxDecoration(
-              color: Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: IconButton(
-              padding: EdgeInsets.zero,
-              icon: homeVm.isRefreshing.value
-                  ? const SizedBox(
-                width: 20,
-                height: 20,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.green,
-                ),
-              )
-                  : const Icon(Icons.refresh, color: Colors.green, size: 22),
-              onPressed: homeVm.isRefreshing.value ? null : _handleRefresh,
-              tooltip: 'Refresh',
-            ),
-          )),
-          const SizedBox(width: 8),
-          // Notification Icon with Badge
-          Obx(() {
-            final count = _notificationService.unreadCount.value;
-            return Stack(
-              clipBehavior: Clip.none,
-              children: [
-                Container(
-                  width: 40,
-                  height: 40,
-                  decoration: BoxDecoration(
-                    color: Colors.grey.shade100,
-                    borderRadius: BorderRadius.circular(20),
-                  ),
-                  child: IconButton(
-                    padding: EdgeInsets.zero,
-                    icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
-                    onPressed: () async {
-                      await Get.to(() =>  NotificationScreen());
-                      _notificationService.updateUnreadCount();
-                    },
-                  ),
-                ),
-                if (count > 0)
-                  Positioned(
-                    right: -2,
-                    top: -2,
-                    child: Container(
-                      padding: const EdgeInsets.all(4),
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                      constraints: const BoxConstraints(
-                        minWidth: 18,
-                        minHeight: 18,
-                      ),
-                      child: Text(
-                        count > 99 ? '99+' : count.toString(),
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 10,
-                          fontWeight: FontWeight.bold,
+                        GestureDetector(
+                          onTap: _openLocationInMap,
+                          child: Row(
+                            children: [
+                              const Icon(Icons.location_on, size: 14, color: Colors.green),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Obx(
+                                      () => Text(
+                                    homeVm.currentLocationName.value.isEmpty
+                                        ? (homeVm.isLocationLoading.value ? "Fetching location..." : "Location unavailable")
+                                        : homeVm.currentLocationName.value,
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
-                        textAlign: TextAlign.center,
-                      ),
+                        if (isGuest)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Browsing as Guest • Login for full access',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                      ],
                     ),
                   ),
-              ],
-            );
-          }),
-        ],
-      ),
+                ],
+              ),
+            ),
+            // Refresh Button
+            Obx(() => Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(20),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: homeVm.isRefreshing.value
+                    ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.green,
+                  ),
+                )
+                    : const Icon(Icons.refresh, color: Colors.green, size: 22),
+                onPressed: homeVm.isRefreshing.value ? null : _handleRefresh,
+                tooltip: 'Refresh',
+              ),
+            )),
+            const SizedBox(width: 8),
+            // Notification Icon with Badge
+            Obx(() {
+              final count = _notificationService.unreadCount.value;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
+                      onPressed: () async {
+                        await Get.to(() => NotificationScreen());
+                        _notificationService.updateUnreadCount();
+                      },
+                    ),
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          count > 99 ? '99+' : count.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ],
+        );
+      }),
     );
   }
 
+  // ============================================================
+  // ✅ SEARCH BAR - FIXED with proper Obx usage
+  // ============================================================
   Widget _searchBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -964,7 +1061,6 @@ class _HomeViewState extends State<HomeView>
             onTap: () {
               final query = _searchController.text;
               if (query.trim().isNotEmpty) {
-                // ✅ Explicit trigger — this is what fires the API call
                 homeVm.performSearch(query);
                 _searchFocusNode.unfocus();
               } else {
@@ -988,7 +1084,6 @@ class _HomeViewState extends State<HomeView>
               textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.search,
               onSubmitted: (query) {
-                // ✅ Explicit trigger — this is what fires the API call
                 homeVm.performSearch(query);
                 _searchFocusNode.unfocus();
               },
@@ -1001,24 +1096,10 @@ class _HomeViewState extends State<HomeView>
                 contentPadding: EdgeInsets.zero,
                 hintText: 'Search turfs, locations...',
                 hintStyle: const TextStyle(color: Colors.grey, fontSize: 14),
-                suffixIcon: Obx(() {
-                  if (homeVm.searchQuery.value.isNotEmpty) {
-                    return IconButton(
-                      icon: const Icon(Icons.clear, size: 18),
-                      onPressed: () async {
-                        _searchController.clear();
-                        homeVm.clearSearch();
-                        homeVm.showSuggestions.value = false;
-                        _searchFocusNode.unfocus();
-                      },
-                    );
-                  }
-                  return const SizedBox.shrink();
-                }),
+                suffixIcon: _buildSearchSuffixIcon(),
               ),
             ),
           ),
-          // ✅ Search loading indicator
           Obx(() {
             if (homeVm.isSearching.value) {
               return const SizedBox(
@@ -1035,5 +1116,22 @@ class _HomeViewState extends State<HomeView>
         ],
       ),
     );
+  }
+
+  Widget _buildSearchSuffixIcon() {
+    return Obx(() {
+      if (homeVm.searchQuery.value.isNotEmpty) {
+        return IconButton(
+          icon: const Icon(Icons.clear, size: 18),
+          onPressed: () {
+            _searchController.clear();
+            homeVm.clearSearch();
+            homeVm.showSuggestions.value = false;
+            _searchFocusNode.unfocus();
+          },
+        );
+      }
+      return const SizedBox.shrink();
+    });
   }
 }

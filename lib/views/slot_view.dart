@@ -1,3 +1,5 @@
+// slot_view.dart - Complete with proper back navigation, argument handling, and duplicate prevention
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/slot_model.dart';
@@ -5,6 +7,8 @@ import '../models/turf_model.dart';
 import '../view_models/slot_view_model.dart';
 import '../routes/app_routes.dart';
 import '../utils/helpers.dart';
+import '../services/shared_prefs_helper.dart';
+import 'demoview/signup_with_booking_view.dart';
 
 // Helper functions
 IconData _getSportIcon(String gameType) {
@@ -68,23 +72,217 @@ String _getTotalHours(String openTime, String closeTime) {
   }
 }
 
-class SlotView extends StatelessWidget {
-  SlotView({super.key}) {
-    // Delete existing ViewModel to ensure fresh state
+class SlotView extends StatefulWidget {
+  final dynamic _args;
+
+  SlotView({super.key}) : _args = Get.arguments;
+
+  @override
+  State<SlotView> createState() => _SlotViewState();
+}
+
+class _SlotViewState extends State<SlotView> {
+  bool _pendingRestored = false;
+  TurfModel? _cachedTurf;
+  SlotViewModel? _cachedVm;
+  bool _isInitialized = false;
+
+  // ✅ Prevent multiple "Proceed to Pay" calls
+  bool _isProceedingToPay = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeView();
+  }
+
+  void _initializeView() {
+    if (_isInitialized) return;
+
+    final args = widget._args;
+
+    if (args == null) {
+      print('❌ SlotView: No arguments provided');
+      return;
+    }
+
+    try {
+      TurfModel? turf;
+
+      if (args is Map && args['_pendingBooking'] == true) {
+        print('🔄 Restoring pending booking data from Get.back()...');
+
+        final turfArg = args['turf'];
+        if (turfArg is TurfModel) {
+          turf = turfArg;
+          print('✅ SlotView: Received TurfModel from pending booking: ${turf.name}');
+        } else if (turfArg is Map<String, dynamic>) {
+          print('✅ SlotView: Converting Map to TurfModel from pending booking');
+          turf = TurfModel.fromJson(turfArg);
+        }
+
+        if (turf != null) {
+          _cachedTurf = turf;
+          _setupViewModel(turf!);
+
+          WidgetsBinding.instance.addPostFrameCallback((_) {
+            _restorePendingBooking(args, turf!);
+          });
+        }
+      }
+      else if (args is TurfModel) {
+        turf = args;
+        print('✅ SlotView: Received TurfModel directly: ${turf.name}');
+        _cachedTurf = turf;
+        _setupViewModel(turf);
+      }
+      else if (args is Map<String, dynamic>) {
+        print('✅ SlotView: Received Map, converting to TurfModel');
+        if (args.containsKey('turf') && args['turf'] is TurfModel) {
+          turf = args['turf'] as TurfModel;
+          print('✅ SlotView: Extracted TurfModel from Map: ${turf.name}');
+        } else {
+          try {
+            turf = TurfModel.fromJson(args);
+            print('✅ SlotView: Converted Map to TurfModel: ${turf.name}');
+          } catch (e) {
+            print('❌ SlotView: Error converting Map to TurfModel: $e');
+            if (args.containsKey('turf') && args['turf'] is Map<String, dynamic>) {
+              turf = TurfModel.fromJson(args['turf'] as Map<String, dynamic>);
+            }
+          }
+        }
+        if (turf != null) {
+          _cachedTurf = turf;
+          _setupViewModel(turf);
+        }
+      }
+      else {
+        print('❌ SlotView: Invalid arguments type: ${args.runtimeType}');
+      }
+
+      _isInitialized = true;
+    } catch (e) {
+      print('❌ SlotView initialization error: $e');
+    }
+  }
+
+  void _setupViewModel(TurfModel turf) {
     if (Get.isRegistered<SlotViewModel>()) {
+      final existing = Get.find<SlotViewModel>();
+      if (existing.turf.id == turf.id) {
+        print('♻️ Reusing existing SlotViewModel for turf ${turf.name}');
+        _cachedVm = existing;
+        return;
+      }
+      print('🆕 Different turf selected — resetting SlotViewModel');
       Get.delete<SlotViewModel>();
     }
+    _cachedVm = Get.put(SlotViewModel(turf));
+  }
+
+  void _restorePendingBooking(Map args, TurfModel turf) {
+    if (_pendingRestored) return;
+    _pendingRestored = true;
+
+    final vm = _cachedVm;
+    if (vm == null) return;
+
+    final pendingSlots = args['pendingSlots'] as List<SlotModel>?;
+    if (pendingSlots != null && pendingSlots.isNotEmpty) {
+      vm.selectedSlots.assignAll(pendingSlots);
+      print('✅ Restored ${pendingSlots.length} slots');
+    }
+
+    final pendingCourt = args['pendingCourt'] as int?;
+    if (pendingCourt != null && vm.courtCount > 0) {
+      vm.selectedCourt.value = pendingCourt - 1;
+      print('✅ Restored court: $pendingCourt');
+    }
+
+    final pendingDate = args['pendingDate'] as DateTime?;
+    if (pendingDate != null) {
+      final dateIndex = vm.dates.indexWhere((d) =>
+      d.year == pendingDate.year &&
+          d.month == pendingDate.month &&
+          d.day == pendingDate.day
+      );
+      if (dateIndex != -1) {
+        vm.selectedDateIndex.value = dateIndex;
+        print('✅ Restored date: ${pendingDate.toIso8601String().split('T').first}');
+      }
+    }
+
+    final pendingPaymentType = args['pendingPaymentType'] as String?;
+    if (pendingPaymentType != null) {
+      vm.selectedPaymentType.value = pendingPaymentType;
+      print('✅ Restored payment type: $pendingPaymentType');
+    }
+
+    Get.snackbar(
+      '✅ Welcome!',
+      'Your selected slots are restored. Please proceed to pay.',
+      backgroundColor: Colors.green,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 3),
+    );
+  }
+
+  Widget _buildErrorWidget() {
+    return Scaffold(
+      body: SafeArea(
+        child: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              const Icon(Icons.error_outline, size: 64, color: Colors.red),
+              const SizedBox(height: 16),
+              const Text(
+                'Unable to load turf details',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Please go back and try again',
+                style: TextStyle(fontSize: 14, color: Colors.grey.shade600),
+              ),
+              const SizedBox(height: 24),
+              ElevatedButton(
+                onPressed: () => Get.back(),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                ),
+                child: const Text('Go Back', style: TextStyle(color: Colors.white)),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
   Widget build(BuildContext context) {
-    final turf = Get.arguments as TurfModel;
-    final vm = Get.put(SlotViewModel(turf));
+    if (!_isInitialized || _cachedTurf == null) {
+      return _buildErrorWidget();
+    }
+
+    final turf = _cachedTurf!;
+    final vm = _cachedVm;
+
+    if (vm == null) {
+      return _buildErrorWidget();
+    }
+
+    return _buildSlotViewUI(context, vm, turf);
+  }
+
+  Widget _buildSlotViewUI(BuildContext context, SlotViewModel vm, TurfModel turf) {
     final width = MediaQuery.of(context).size.width;
+    final isGuest = SharedPrefsHelper.getToken() == null || SharedPrefsHelper.getToken()!.isEmpty;
 
     int crossCount = width > 600 ? 4 : 3;
     double timeFontSize = width > 600 ? 12 : 11;
-
     final courtTurfLabel = _isCricketOrFootball(turf.gameType) ? "Turf" : "Court";
 
     return Scaffold(
@@ -98,7 +296,6 @@ class SlotView extends StatelessWidget {
             if (vm.courtCount > 1) _buildCourtSelector(context, vm, courtTurfLabel),
             const SizedBox(height: 6),
             _buildLegend(),
-
             const SizedBox(height: 6),
             _buildTodayInfoBanner(vm),
             const SizedBox(height: 6),
@@ -114,7 +311,7 @@ class SlotView extends StatelessWidget {
                 );
               }),
             ),
-            _buildBottomBar(context, vm, turf, width),
+            _buildBottomBar(context, vm, turf, width, isGuest),
           ],
         ),
       ),
@@ -131,7 +328,10 @@ class SlotView extends StatelessWidget {
             children: [
               IconButton(
                 icon: const Icon(Icons.arrow_back_ios_new, size: 20),
-                onPressed: () => Get.back(),
+                onPressed: () {
+                  print('🔙 Going back to TurfDetailsView');
+                  Get.back();
+                },
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
               ),
@@ -147,7 +347,6 @@ class SlotView extends StatelessWidget {
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
-              // Refresh button
               IconButton(
                 icon: Icon(Icons.refresh, size: 18, color: Colors.green.shade700),
                 onPressed: () => vm.resetToToday(),
@@ -395,7 +594,6 @@ class SlotView extends StatelessWidget {
     );
   }
 
-
   Widget _buildTodayInfoBanner(SlotViewModel vm) {
     return Obx(() {
       final selectedDate = vm.dates[vm.selectedDateIndex.value];
@@ -430,7 +628,6 @@ class SlotView extends StatelessWidget {
     });
   }
 
-  // Get display slots - simple filtering
   List<SlotModel> _getDisplaySlots(SlotViewModel vm) {
     final selectedDate = vm.dates[vm.selectedDateIndex.value];
     final now = DateTime.now();
@@ -438,16 +635,13 @@ class SlotView extends StatelessWidget {
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
 
-    // For non-today dates, show all slots
     if (!isToday) {
       return vm.allSlots;
     }
 
-    // For today's date, filter slots based on time
     final currentTimeMinutes = now.hour * 60 + now.minute;
 
     return vm.allSlots.where((slot) {
-      // If it's a next-day slot from server, always show it
       if (slot.isNextDay) {
         return true;
       }
@@ -459,8 +653,6 @@ class SlotView extends StatelessWidget {
         endHour = int.parse(endParts[0]);
         endMinute = int.parse(endParts[1]);
 
-        // ✅ FIX: 00:00 = midnight = 1440 minutes (not 0!)
-        // 11PM-12AM slot has endTime "00:00" — should NOT be filtered out at 11PM
         int slotEndMinutes = (endHour == 0 && endMinute == 0)
             ? 1440
             : endHour * 60 + endMinute;
@@ -498,18 +690,13 @@ class SlotView extends StatelessWidget {
     );
   }
 
-  // ==================== FIXED: Slot Card - Shows exact prices with decimals ====================
   Widget _buildSlotCard(SlotModel slot, SlotViewModel vm, double timeFontSize) {
     final isAvailable = slot.isAvailable;
     final isBooked = slot.isBooked;
     final isReserved = slot.isReserved;
     final isBlocked = slot.status == 'Blocked' || slot.isUnavailable;
 
-    // SIMPLE: Use the isNextDay flag directly from server
-    // NEXT DAY text will show ONLY if this is true
     final bool isNextDaySlot = slot.isNextDay;
-
-    // Use the formatted price from slot model (shows decimals only when needed)
     final String formattedPrice = slot.formattedPrice;
 
     return Obx(() {
@@ -521,12 +708,11 @@ class SlotView extends StatelessWidget {
       Color textColor;
       String statusText = "";
 
-      // NEXT DAY slot styling (only when isNextDay = true)
       if (isNextDaySlot && isAvailable && !isSelected) {
         backgroundColor = Colors.purple.shade50;
         borderColor = Colors.purple;
         textColor = Colors.purple.shade800;
-        statusText = "NEXT DAY";  // Show ONLY when isNextDay = true
+        statusText = "NEXT DAY";
       }
       else if (isSelected && isAvailable) {
         backgroundColor = Colors.green;
@@ -597,7 +783,6 @@ class SlotView extends StatelessWidget {
                     ),
                   ),
                   const SizedBox(height: 2),
-                  // Show statusText ONLY if it's not empty
                   if (statusText.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
@@ -618,7 +803,6 @@ class SlotView extends StatelessWidget {
                         ),
                       ),
                     ),
-                  // FIXED: Show price with proper decimal formatting using slot.formattedPrice
                   if (slot.price != '0' && isAvailable && !isSelected)
                     Padding(
                       padding: const EdgeInsets.only(top: 1),
@@ -685,9 +869,9 @@ class SlotView extends StatelessWidget {
   }
 
   // ============================================================
-  // ✅ BOTTOM BAR - FIXED: Properly passes payment type
+  // ✅ BOTTOM BAR - Always shows "Proceed to Pay"
   // ============================================================
-  Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf, double width) {
+  Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf, double width, bool isGuest) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -704,14 +888,12 @@ class SlotView extends StatelessWidget {
         children: [
           Row(
             children: [
-              // ✅ Advance Payment Button
               Expanded(
                 child: Obx(
                       () => GestureDetector(
                     onTap: () {
                       print('🟠 Advance Payment Selected');
                       vm.selectedPaymentType.value = 'advance';
-                      print('   Payment Type: ${vm.selectedPaymentType.value}');
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -765,14 +947,12 @@ class SlotView extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-              // ✅ Full Payment Button
               Expanded(
                 child: Obx(
                       () => GestureDetector(
                     onTap: () {
                       print('🔵 Full Payment Selected');
                       vm.selectedPaymentType.value = 'full';
-                      print('   Payment Type: ${vm.selectedPaymentType.value}');
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(vertical: 8),
@@ -885,7 +1065,7 @@ class SlotView extends StatelessWidget {
                     () => GestureDetector(
                   onTap: vm.selectedSlots.isEmpty || !vm.isMinSlotsMet
                       ? null
-                      : () => _proceedToSummary(context, vm, turf),
+                      : () => _proceedToPay(context, vm, turf, isGuest),
                   child: Container(
                     width: width * 0.45,
                     padding: const EdgeInsets.symmetric(vertical: 12),
@@ -910,15 +1090,32 @@ class SlotView extends StatelessWidget {
               ),
             ],
           ),
+          if (isGuest)
+            Padding(
+              padding: const EdgeInsets.only(top: 6),
+              child: Text(
+                '🔒 You will be asked to sign up before payment',
+                style: TextStyle(
+                  fontSize: 11,
+                  color: Colors.grey.shade600,
+                ),
+              ),
+            ),
         ],
       ),
     );
   }
 
   // ============================================================
-  // ✅ PROCEED TO SUMMARY - FIXED: Logs payment type
+  // ✅ PROCEED TO PAY - With duplicate prevention
   // ============================================================
-  void _proceedToSummary(BuildContext context, SlotViewModel vm, TurfModel turf) {
+  void _proceedToPay(BuildContext context, SlotViewModel vm, TurfModel turf, bool isGuest) {
+    // ✅ Prevent multiple calls
+    if (_isProceedingToPay) {
+      print('⏭️ Already proceeding to pay - skipping duplicate');
+      return;
+    }
+
     final selectedPaymentType = vm.selectedPaymentType.value;
     final totalAmount = vm.totalPrice;
     final requiredAdvance = vm.requiredAdvance;
@@ -934,9 +1131,8 @@ class SlotView extends StatelessWidget {
     final selectedCourt = vm.selectedCourt.value + 1;
     final selectedDate = vm.dates[vm.selectedDateIndex.value];
 
-    // ✅ DEBUG: Log the payment type being passed
     print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║  🔍 PROCEEDING TO BOOKING SUMMARY                           ║');
+    print('║  🔍 PROCEEDING TO PAY - Guest Mode: $isGuest               ║');
     print('╚════════════════════════════════════════════════════════════╝');
     print('   📌 Payment Type: "$selectedPaymentType"');
     print('   💰 Total Amount: ₹$totalAmount');
@@ -946,19 +1142,48 @@ class SlotView extends StatelessWidget {
     print('   📋 Slots Selected: ${selectedSlots.length}');
     print('═══════════════════════════════════════════════════════════════\n');
 
+    final bookingData = {
+      'turf': turf,
+      'selectedSlots': selectedSlots,
+      'selectedCourt': selectedCourt,
+      'selectedDate': selectedDate,
+      'selectedPaymentType': selectedPaymentType,
+      'totalAmount': totalAmount,
+      'payableAmount': payableAmount,
+      'requiredAdvance': requiredAdvance,
+    };
+
+    // ✅ Set flag to prevent duplicate calls
+    _isProceedingToPay = true;
+
+    // ✅ If guest, show the signup+OTP dialog ON TOP of this SlotView
+    if (isGuest) {
+      print('👤 Guest user - Showing signup/OTP dialog');
+      showGuestBookingAuthDialog(
+        bookingData: bookingData,
+        onSuccess: () {
+          // ✅ Reset flag
+          _isProceedingToPay = false;
+          // ✅ Navigate to booking summary
+          Get.toNamed(
+            AppRoutes.bookingSummary,
+            arguments: bookingData,
+          );
+        },
+      ).whenComplete(() {
+        // ✅ Reset flag if dialog is closed without success (e.g., user pressed back)
+        _isProceedingToPay = false;
+      });
+      return;
+    }
+
+    // ✅ Logged-in user - Go directly to summary
     Get.toNamed(
       AppRoutes.bookingSummary,
-      arguments: {
-        'turf': turf,
-        'selectedSlots': selectedSlots,
-        'selectedCourt': selectedCourt,
-        'selectedDate': selectedDate,
-        'selectedPaymentType': selectedPaymentType,
-        'totalAmount': totalAmount,
-        'payableAmount': payableAmount,
-        'requiredAdvance': requiredAdvance,
-      },
+      arguments: bookingData,
     );
+    // ✅ Reset flag after navigation
+    _isProceedingToPay = false;
   }
 
   String _getCurrentTimeFormatted() {

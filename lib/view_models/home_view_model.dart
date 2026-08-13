@@ -1,6 +1,4 @@
-// home_view_model.dart - Complete with Pagination & Location Support
-// ✅ SINGLE DOMAIN CONFIGURATION
-// ✅ Duplicate API call prevention
+// home_view_model.dart - Updated to support guest mode (no token required for listing)
 
 import 'dart:async';
 import 'dart:convert';
@@ -30,6 +28,9 @@ class HomeViewModel extends GetxController {
   final showSuggestions = false.obs;
   final homeError = ''.obs;
   final isSearching = false.obs;
+
+  // ✅ Track if user is in guest mode
+  final isGuestMode = false.obs;
 
   final currentLocation = Rx<Position?>(null);
   final isLocationLoading = true.obs;
@@ -73,6 +74,12 @@ class HomeViewModel extends GetxController {
   void onInit() {
     super.onInit();
     print('🏠 HomeViewModel initialized');
+
+    // ✅ Check if user is in guest mode (no token)
+    final token = SharedPrefsHelper.getToken();
+    isGuestMode.value = (token == null || token.isEmpty);
+    print('👤 Guest Mode: ${isGuestMode.value}');
+
     _loadFavoritesFromStorage();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -125,16 +132,18 @@ class HomeViewModel extends GetxController {
 
   // ========== LOAD HOME DATA ==========
   Future<void> loadHomeData({bool forceRefresh = false}) async {
-    final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('🚫 User not logged in, skipping home data load');
-      return;
-    }
-
-    if (!SharedPrefsHelper.isTokenValid()) {
-      print('⚠️ Token expired, skipping home data load');
-      await SharedPrefsHelper.clearToken();
-      return;
+    // ✅ For guest mode: no token check, just fetch turfs
+    if (!isGuestMode.value) {
+      final token = SharedPrefsHelper.getToken();
+      if (token == null || token.isEmpty) {
+        print('🚫 User not logged in, switching to guest mode');
+        isGuestMode.value = true;
+        // Continue with guest mode fetch
+      } else if (!SharedPrefsHelper.isTokenValid()) {
+        print('⚠️ Token expired, switching to guest mode');
+        await SharedPrefsHelper.clearToken();
+        isGuestMode.value = true;
+      }
     }
 
     // ✅ Prevent duplicate calls within 5 seconds
@@ -195,7 +204,7 @@ class HomeViewModel extends GetxController {
       }
     }
 
-    print('🏠 Loading home data...');
+    print('🏠 Loading home data... (Guest mode: ${isGuestMode.value})');
     if (currentLocation.value == null) {
       await getUserLocation();
     }
@@ -255,7 +264,6 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ✅ DEBOUNCED location update - prevents multiple API calls
   Future<void> _getFreshLocationInBackground() async {
     _locationDebounceTimer?.cancel();
     _locationDebounceTimer = Timer(_locationDebounceDuration, () async {
@@ -345,23 +353,28 @@ class HomeViewModel extends GetxController {
   }
 
   // ========== FETCH TURFS WITH PAGINATION & LOCATION ==========
+  // ✅ UPDATED: Works with AND without token (guest mode)
   Future<void> fetchTurfs({
     bool forceRefresh = false,
     bool loadMore = false,
   }) async {
+    // ✅ Check if token exists - if yes, use it; if no, still allow guest access
     final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('🚫 User not logged in');
-      return;
-    }
+    final bool hasToken = token != null && token.isNotEmpty;
 
-    if (!SharedPrefsHelper.isTokenValid()) {
-      print('⚠️ Token expired, skipping turfs fetch');
+    // ✅ Update guest mode status
+    isGuestMode.value = !hasToken;
+    print('👤 Fetching turfs - Guest Mode: ${isGuestMode.value}');
+
+    // ✅ If token exists but expired, clear it and continue as guest
+    if (hasToken && !SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired, clearing and continuing as guest');
       await SharedPrefsHelper.clearToken();
-      return;
+      isGuestMode.value = true;
+      // Continue with guest mode - don't return
     }
 
-    // ✅ FIX: Prevent duplicate calls within 5 seconds
+    // ✅ Prevent duplicate calls within 5 seconds
     if (!forceRefresh && !loadMore && _lastTurfsFetchTime != null) {
       final elapsed = DateTime.now().difference(_lastTurfsFetchTime!);
       if (elapsed < _minFetchInterval) {
@@ -370,7 +383,6 @@ class HomeViewModel extends GetxController {
       }
     }
 
-    // ✅ FIX: Prevent concurrent fetches
     if (_isFetching) {
       print('⏳ Fetch already in progress');
       return;
@@ -409,6 +421,7 @@ class HomeViewModel extends GetxController {
     print('\n╔════════════════════════════════════════════════════════════╗');
     print('║  🏟️ FETCH TURFS API CALL #$_apiCallCount                     ║');
     print('║  📄 Page: $_currentPage, Page Size: $_pageSize                ║');
+    print('║  👤 Guest Mode: ${isGuestMode.value}                          ║');
     print('║  📍 Location: ${currentLocation.value != null ? "Available" : "None"}');
     if (searchQuery.value.isNotEmpty) {
       print('║  🔍 SEARCH: "${searchQuery.value}" (ANY DISTANCE)            ║');
@@ -416,7 +429,28 @@ class HomeViewModel extends GetxController {
     print('╚════════════════════════════════════════════════════════════╝');
 
     try {
+      // ✅ Create Dio instance with or without token
       final dio = Get.find<Dio>();
+
+      // ✅ Build headers - include token only if available
+      Map<String, String> headers = {
+        'Content-Type': 'application/json',
+      };
+
+      // ✅ Add token ONLY if user is logged in
+      if (!isGuestMode.value) {
+        final currentToken = SharedPrefsHelper.getToken();
+        if (currentToken != null && currentToken.isNotEmpty) {
+          headers['Authorization'] = 'Bearer $currentToken';
+          print('🔑 Using token for authenticated request');
+        } else {
+          // Token not available, switch to guest mode
+          isGuestMode.value = true;
+          print('👤 No token available, switching to guest mode');
+        }
+      } else {
+        print('👤 Guest mode: No token in request');
+      }
 
       Map<String, dynamic> queryParams = {
         'page': _currentPage,
@@ -443,10 +477,13 @@ class HomeViewModel extends GetxController {
       }
 
       print('📡 API GET /user/turfs/ with params: $queryParams');
+      print('🔑 Auth: ${isGuestMode.value ? "No token (Guest)" : "With token"}}');
 
+      // ✅ Make API call - works with OR without token
       final response = await dio.get(
         AppConfig.turfs,
         queryParameters: queryParams,
+        options: Options(headers: headers),
       );
 
       print('📥 API Response Status: ${response.statusCode}');
@@ -509,6 +546,16 @@ class HomeViewModel extends GetxController {
     } catch (e) {
       print('❌ Error: $e');
       homeError.value = 'Failed to load turfs';
+
+      // ✅ On error, try without token if it was an auth error
+      if (e is DioException && e.response?.statusCode == 401) {
+        print('🔑 Auth error - switching to guest mode and retrying...');
+        isGuestMode.value = true;
+        await SharedPrefsHelper.clearToken();
+        // Retry without token
+        await fetchTurfs(forceRefresh: true);
+        return;
+      }
     } finally {
       isLoading.value = false;
       isLoadingMore.value = false;
@@ -708,6 +755,18 @@ class HomeViewModel extends GetxController {
   bool isFavorite(int turfId) => _favoriteIds.contains(turfId);
 
   Future<void> toggleFavorite(int turfId) async {
+    // ✅ Guest cannot add favorites
+    if (isGuestMode.value) {
+      Get.snackbar(
+        'Login Required',
+        'Please login to add favorites',
+        backgroundColor: Colors.orange,
+        colorText: Colors.white,
+        duration: const Duration(seconds: 2),
+      );
+      return;
+    }
+
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       Get.snackbar('Login Required', 'Please login to add favorites',
@@ -792,9 +851,6 @@ class HomeViewModel extends GetxController {
 
   // ========== SEARCH ==========
 
-  // ✅ NO API CALL WHILE TYPING.
-  // Every keystroke just filters the turfs already loaded on device (instant, zero network).
-  // The real server search only fires from performSearch() — i.e. Enter key or search icon tap.
   void onSearchTextChanged(String query) {
     searchQuery.value = query;
     showSuggestions.value = query.isNotEmpty;
@@ -810,7 +866,6 @@ class HomeViewModel extends GetxController {
     _applyLocalFilter(query.trim());
   }
 
-  // ✅ Instant client-side filter — no network call
   void _applyLocalFilter(String query) {
     final lowerQuery = query.toLowerCase();
     final filtered = nearbyTurfs.where((turf) {
@@ -822,7 +877,6 @@ class HomeViewModel extends GetxController {
     print('🔎 Local filter "$query": ${filtered.length} match(es) (no API call)');
   }
 
-  // ✅ ONLY entry point that hits the server — call this on Enter key / search icon tap
   Future<void> performSearch(String query) async {
     final trimmed = query.trim();
     _searchDebounceTimer?.cancel();
@@ -882,17 +936,12 @@ class HomeViewModel extends GetxController {
   // ========== REFRESH ==========
 
   Future<void> refreshTurfs({bool showLoading = true}) async {
+    // ✅ Check token status - if expired, switch to guest mode
     final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      print('🚫 User not logged in');
-      return;
-    }
-
-    if (!SharedPrefsHelper.isTokenValid()) {
-      print('⚠️ Token expired, redirecting to login');
+    if (token != null && token.isNotEmpty && !SharedPrefsHelper.isTokenValid()) {
+      print('⚠️ Token expired during refresh, switching to guest mode');
       await SharedPrefsHelper.clearToken();
-      Get.offAllNamed(AppRoutes.login);
-      return;
+      isGuestMode.value = true;
     }
 
     if (_isRefreshingLock || _isFetching) {
@@ -900,7 +949,7 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    print('\n🔄 Manual refresh triggered');
+    print('\n🔄 Manual refresh triggered (Guest: ${isGuestMode.value})');
     _isRefreshingLock = true;
     if (showLoading) isRefreshing.value = true;
 

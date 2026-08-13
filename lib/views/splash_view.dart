@@ -1,4 +1,4 @@
-// views/splash_view.dart - FIXED for first launch
+// splash_view.dart - FIXED for first launch with duplicate navigation prevention
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -22,6 +22,10 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
 
   final Color subtitleColor = Colors.grey.shade600;
 
+  // ✅ Prevent duplicate navigation
+  bool _isNavigating = false;
+  bool _isInitialized = false;
+
   @override
   void initState() {
     super.initState();
@@ -36,7 +40,13 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
     _fadeController.forward();
     _typeText();
 
-    _checkAndNavigate();
+    // ✅ Only call navigation once
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_isInitialized) {
+        _isInitialized = true;
+        _checkAndNavigate();
+      }
+    });
   }
 
   void _typeText() async {
@@ -47,7 +57,17 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
   }
 
   Future<void> _checkAndNavigate() async {
+    // ✅ Prevent duplicate navigation
+    if (_isNavigating) {
+      print('⏭️ Navigation already in progress - skipping');
+      return;
+    }
+
     await Future.delayed(const Duration(milliseconds: 3000));
+
+    if (!mounted) return;
+
+    _isNavigating = true;
 
     // Get first launch status
     final isFirstLaunch = SharedPrefsHelper.isFirstLaunch();
@@ -58,31 +78,36 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
     print('\n========== SPLASH NAVIGATION ==========');
     print('Is First Launch: $isFirstLaunch');
     print('Token exists: ${token != null}');
-
     if (token != null && token.isNotEmpty) {
       print('Token preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
     }
 
-    if (mounted) {
-      // If it's first launch, ALWAYS go to login regardless of token
-      if (isFirstLaunch) {
-        print('✅ First launch detected - Navigating to Login');
-        // Clear any existing token on first launch
-        await SharedPrefsHelper.clearAll();
-        await SharedPrefsHelper.setFirstLaunch(false);
-        Get.offAllNamed(AppRoutes.login);
-      }
-      // If token exists and not first launch, go to main page
-      else if (token != null && token.isNotEmpty) {
-        print('✅ Token found - Navigating to MainPage');
-        Get.offAllNamed(AppRoutes.mainPage);
-      }
-      // No token and not first launch, go to login
-      else {
-        print('❌ No token found - Navigating to Login');
-        Get.offAllNamed(AppRoutes.login);
+    if (!mounted) return;
+
+    // If it's first launch, ALWAYS go to the Guest/Existing-user picker
+    if (isFirstLaunch) {
+      print('✅ First launch detected - Navigating to Guest/Login picker');
+      await SharedPrefsHelper.clearAll();
+      await SharedPrefsHelper.setFirstLaunch(false);
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.guestOrLogin);
       }
     }
+    // If token exists and not first launch, go to main page
+    else if (token != null && token.isNotEmpty) {
+      print('✅ Token found - Navigating to MainPage');
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.mainPage);
+      }
+    }
+    // No token and not first launch, go to Guest/Existing-user picker
+    else {
+      print('❌ No token found - Navigating to Guest/Login picker');
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.guestOrLogin);
+      }
+    }
+
     print('========================================\n');
   }
 
