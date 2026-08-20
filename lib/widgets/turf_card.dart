@@ -1,4 +1,4 @@
-// widgets/turf_card.dart - Fixed to show correct location for search results
+// widgets/turf_card.dart - Fixed to show City, District, State
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -96,40 +96,65 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
     final distance = latestTurf.distanceKm ?? 0;
     final isFarAway = distance > 25.0;
 
-    // ✅ Get the CORRECT location to display
-    // For search results, use the DISTRICT from API (which is accurate)
-    // For nearby turfs, use the address
+    // ✅ Get the CORRECT location to display - Show City, District, State
     String locationDisplay = '';
 
-    if (isSearchResult && isFarAway) {
-      // ✅ For far-away search results: Use district from API
-      if (latestTurf.district.isNotEmpty && latestTurf.district != 'null') {
-        locationDisplay = latestTurf.district;
-      } else if (latestTurf.state.isNotEmpty && latestTurf.state != 'null') {
-        locationDisplay = latestTurf.state;
-      } else {
-        // Fallback: try to extract city from address
-        final addressParts = latestTurf.address.split(',');
-        if (addressParts.length >= 3) {
-          // Get the city part (usually 3rd from last)
-          final cityPart = addressParts[addressParts.length - 3]?.trim() ?? '';
-          if (cityPart.isNotEmpty && cityPart != 'India') {
-            locationDisplay = cityPart;
-          }
-        }
-      }
-    } else {
-      // ✅ For nearby turfs: Show shortened address
-      final addressParts = latestTurf.address.split(',');
-      if (addressParts.length > 1) {
-        // Show area + city
-        final area = addressParts[0].trim();
-        final city = addressParts.length > 1 ? addressParts[1].trim() : '';
-        locationDisplay = "$area, $city";
-      } else {
-        locationDisplay = latestTurf.address;
+    // Extract city from address
+    String city = '';
+    final addressParts = latestTurf.address.split(',');
+    if (addressParts.length >= 2) {
+      // City is usually the second part from the end or second part
+      if (addressParts.length >= 3) {
+        city = addressParts[addressParts.length - 3]?.trim() ?? '';
+      } else if (addressParts.length >= 2) {
+        city = addressParts[1]?.trim() ?? '';
       }
     }
+
+    // If city is empty, try to use district
+    if (city.isEmpty || city == 'India') {
+      city = latestTurf.district.isNotEmpty && latestTurf.district != 'null'
+          ? latestTurf.district
+          : '';
+    }
+
+    String district = latestTurf.district.isNotEmpty && latestTurf.district != 'null'
+        ? latestTurf.district
+        : '';
+
+    String state = latestTurf.state.isNotEmpty && latestTurf.state != 'null'
+        ? latestTurf.state
+        : '';
+
+    // Build location from City, District, State
+    List<String> parts = [];
+
+    // Add City (if available and not same as district)
+    if (city.isNotEmpty && city != district && city != state) {
+      parts.add(city);
+    }
+
+    // Add District (if available)
+    if (district.isNotEmpty) {
+      parts.add(district);
+    }
+
+    // Add State (if available and not same as district)
+    if (state.isNotEmpty && district != state) {
+      parts.add(state);
+    }
+
+    // If we have no parts, use the address or district
+    if (parts.isEmpty) {
+      if (district.isNotEmpty) {
+        parts.add(district);
+      }
+      if (state.isNotEmpty && district != state) {
+        parts.add(state);
+      }
+    }
+
+    locationDisplay = parts.isNotEmpty ? parts.join(', ') : latestTurf.address;
 
     return GestureDetector(
       onTap: _handleTap,
@@ -331,7 +356,7 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                     ),
                     const SizedBox(height: 2),
 
-                    // ✅ Location - Show correct location
+                    // ✅ Location - Show City, District, State
                     Row(
                       children: [
                         const Icon(
