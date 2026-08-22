@@ -1,6 +1,7 @@
 // view_models/booking_view_model.dart - With Lazy Loading + Caching
-// ✅ Duplicate API call prevention
+// ✅ Duplicate API call prevention - FIXED
 // ✅ Fixed: Removed unused _currentBalanceAmount
+// ✅ Success snackbar - White background with black text
 
 import 'dart:async';
 import 'package:flutter/material.dart';
@@ -28,7 +29,6 @@ class BookingViewModel extends GetxController {
 
   late Razorpay _razorpay;
   int? _currentBookingId;
-  // ✅ REMOVED: double? _currentBalanceAmount; - Not used anywhere
 
   static bool _dataLoaded = false;
   static DateTime? _lastFetchTime;
@@ -36,10 +36,43 @@ class BookingViewModel extends GetxController {
 
   // ✅ DUPLICATE API CALL PREVENTION
   static bool _isFetchingBookings = false;
-  static DateTime? _lastFetchCallTime;  // ✅ Made static
+  static DateTime? _lastFetchCallTime;
   static const _minFetchInterval = Duration(seconds: 3);
   Timer? _refreshDebounceTimer;
-  static const _refreshDebounceDuration = Duration(milliseconds: 500);
+  static const _refreshDebounceDuration = Duration(milliseconds: 300); // Reduced from 500ms
+
+  // ✅ NEW: Track if refresh is in progress
+  static bool _isRefreshInProgress = false;
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color, {Color textColor = Colors.white}) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: textColor,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: textColor,
+        size: 18,
+      ),
+    );
+  }
 
   @override
   void onInit() {
@@ -79,20 +112,13 @@ class BookingViewModel extends GetxController {
       }
     }
 
-    // ✅ FIX: Prevent concurrent fetches. This lock now applies EVEN when
-    // forceRefresh=true. Previously `_isFetchingBookings && !forceRefresh`
-    // let forceRefresh bypass this lock entirely, so if two callers both
-    // triggered a forceRefresh at nearly the same time (e.g. cancelBooking()
-    // and a UI-level refresh call), BOTH fired the API back-to-back - visible
-    // in logs as "Fetching bookings from API..." printed twice in a row.
-    // forceRefresh should only skip the cache-freshness checks further below,
-    // not allow two overlapping in-flight requests.
+    // ✅ FIX: Prevent concurrent fetches
     if (_isFetchingBookings) {
       print('⏭️ Bookings fetch already in progress - skipping duplicate (forceRefresh: $forceRefresh)');
       return;
     }
 
-    // Check cache
+    // ✅ Check cache
     if (!forceRefresh && _dataLoaded && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration) {
@@ -290,8 +316,7 @@ class BookingViewModel extends GetxController {
   Future<bool> cancelBooking(int bookingId) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to cancel booking',
-          backgroundColor: Colors.orange, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to cancel booking', Colors.orange);
       return false;
     }
 
@@ -305,24 +330,21 @@ class BookingViewModel extends GetxController {
 
       if (response.data['result'] == 'success') {
         _dataLoaded = false;
+        // ✅ Use forceRefresh directly to bypass cache
         await loadBookings(forceRefresh: true);
-        Get.snackbar('Success', 'Booking cancelled and amount refunded to wallet!',
-            backgroundColor: Colors.green, colorText: Colors.white);
+        _showSmallSnackbar('Success', 'Booking cancelled and amount refunded to wallet!', Colors.white, textColor: Colors.black);
         return true;
       } else {
-        Get.snackbar('Error', response.data['message'] ?? 'Cancellation failed',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Cancellation failed', Colors.red);
         return false;
       }
     } on DioException catch (e) {
       print('Cancel error: ${e.response?.statusCode} - ${e.response?.data}');
-      Get.snackbar('Error', 'Failed to cancel booking. Please try again.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to cancel booking. Please try again.', Colors.red);
       return false;
     } catch (e) {
       print('Cancel error: $e');
-      Get.snackbar('Error', 'Failed to cancel booking',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to cancel booking', Colors.red);
       return false;
     } finally {
       isCancelling.value = false;
@@ -334,8 +356,7 @@ class BookingViewModel extends GetxController {
   Future<void> initiateBalancePayment(int bookingId, double amount) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to make payment',
-          backgroundColor: Colors.orange, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to make payment', Colors.orange);
       return;
     }
 
@@ -352,13 +373,11 @@ class BookingViewModel extends GetxController {
         _currentBookingId = bookingId;
         _openRazorpayForBalance(orderData);
       } else {
-        Get.snackbar('Error', response.data['message'] ?? 'Failed to initiate payment',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Failed to initiate payment', Colors.red);
         isPayingBalance.value = false;
       }
     } catch (e) {
-      Get.snackbar('Error', 'Failed to initiate payment',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to initiate payment', Colors.red);
       isPayingBalance.value = false;
     }
   }
@@ -383,8 +402,7 @@ class BookingViewModel extends GetxController {
       _razorpay.open(options);
     } catch (e) {
       print('Error opening Razorpay: $e');
-      Get.snackbar('Error', 'Could not open payment gateway',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Could not open payment gateway', Colors.red);
       isPayingBalance.value = false;
     }
   }
@@ -406,15 +424,12 @@ class BookingViewModel extends GetxController {
       if (confirmResponse.data['result'] == 'success') {
         _dataLoaded = false;
         await loadBookings(forceRefresh: true);
-        Get.snackbar('Success', 'Balance payment completed successfully!',
-            backgroundColor: Colors.green, colorText: Colors.white);
+        _showSmallSnackbar('Success', 'Balance payment completed successfully!', Colors.white, textColor: Colors.black);
       } else {
-        Get.snackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed', Colors.red);
       }
     } catch (e) {
-      Get.snackbar('Error', 'Failed to confirm payment',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to confirm payment', Colors.red);
     } finally {
       isPayingBalance.value = false;
       _currentBookingId = null;
@@ -423,8 +438,7 @@ class BookingViewModel extends GetxController {
 
   void _handleBalancePaymentError(PaymentFailureResponse response) {
     print('Balance Payment Error: ${response.code} - ${response.message}');
-    Get.snackbar('Payment Failed', response.message ?? 'Payment failed. Please try again.',
-        backgroundColor: Colors.red, colorText: Colors.white);
+    _showSmallSnackbar('Payment Failed', response.message ?? 'Payment failed. Please try again.', Colors.red);
     isPayingBalance.value = false;
   }
 
@@ -450,29 +464,27 @@ class BookingViewModel extends GetxController {
 
       if (response.data['result'] == 'success') {
         _dataLoaded = false;
+        // ✅ Use forceRefresh directly to bypass cache
         await loadBookings(forceRefresh: true);
-        Get.snackbar(
+        _showSmallSnackbar(
           'Payment Successful',
           '₹${amount.toStringAsFixed(2)} deducted from wallet',
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-          snackPosition: SnackPosition.BOTTOM,
+          Colors.white,
+          textColor: Colors.black,
         );
       } else {
-        Get.snackbar(
+        _showSmallSnackbar(
           'Payment Failed',
           response.data['message'] ?? 'Something went wrong',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
+          Colors.red,
         );
       }
     } catch (e) {
       print('Wallet balance payment error: $e');
-      Get.snackbar(
+      _showSmallSnackbar(
         'Error',
         'Payment failed: ${e.toString()}',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
+        Colors.red,
       );
     } finally {
       isPayingBalance.value = false;
@@ -482,26 +494,38 @@ class BookingViewModel extends GetxController {
   // ==================== REFRESH ====================
 
   Future<void> refreshBookings() async {
+    // ✅ Prevent duplicate refresh calls
+    if (_isRefreshInProgress) {
+      print('⏭️ Refresh already in progress - skipping duplicate');
+      return;
+    }
+
+    _isRefreshInProgress = true;
     _refreshDebounceTimer?.cancel();
 
-    // ✅ FIX: previously this method returned immediately without waiting for the
-    // debounced Timer to actually fire, so any `await refreshBookings()` caller
-    // thought the refresh was done before the real API call even started - the UI
-    // (dialogs / lists) then looked "stuck" on old/cached data right after payment.
-    final completer = Completer<void>();
-    _refreshDebounceTimer = Timer(_refreshDebounceDuration, () async {
+    // ✅ Use a small delay to debounce multiple rapid calls
+    await Future.delayed(const Duration(milliseconds: 100));
+
+    try {
       _dataLoaded = false;
       await loadBookings(forceRefresh: true);
-      if (!completer.isCompleted) completer.complete();
-    });
-    return completer.future;
+      print('✅ Refresh completed successfully');
+    } catch (e) {
+      print('❌ Refresh error: $e');
+    } finally {
+      _isRefreshInProgress = false;
+    }
   }
+
+  // ✅ Simplified refresh method without Completer
+  // The caller can await refreshBookings() directly now
 
   static void resetCache() {
     _dataLoaded = false;
     _lastFetchTime = null;
     _isFetchingBookings = false;
     _lastFetchCallTime = null;
+    _isRefreshInProgress = false;
   }
 
   // ==================== DATE HELPERS ====================

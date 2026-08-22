@@ -5,6 +5,8 @@
 // FIXED: CircularProgressIndicator division by zero error
 // FIXED: Extra closing bracket removed
 // FIXED: Duplicate API call prevention with flags
+// FIXED: Small snackbar with 1-second duration at TOP
+// FIXED: Success snackbar - White background with black text
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -32,6 +34,36 @@ class BookingHistoryView extends StatelessWidget {
   static bool _isShowingDetails = false;
   static bool _isShowingCancelDialog = false;
   static bool _isShowingPaymentMethod = false;
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color, {Color textColor = Colors.white}) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: textColor,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: textColor,
+        size: 18,
+      ),
+    );
+  }
 
   // Helper: Format price with decimals only when needed
   String _formatPrice(double price) {
@@ -1304,13 +1336,11 @@ class BookingHistoryView extends StatelessWidget {
 
       if (response.data['result'] == 'success') {
         if (Get.context != null) {
-          Get.snackbar(
+          _showSmallSnackbar(
             'Payment Successful',
             '₹${_formatPrice(booking.remainingAmount)} deducted from wallet',
-            backgroundColor: Colors.green,
-            colorText: Colors.white,
-            snackPosition: SnackPosition.BOTTOM,
-            duration: const Duration(seconds: 2),
+            Colors.white,
+            textColor: Colors.black,
           );
         }
 
@@ -1318,11 +1348,10 @@ class BookingHistoryView extends StatelessWidget {
 
       } else {
         if (Get.context != null) {
-          Get.snackbar(
+          _showSmallSnackbar(
             'Payment Failed',
             response.data['message'] ?? 'Something went wrong',
-            backgroundColor: Colors.red,
-            colorText: Colors.white,
+            Colors.red,
           );
         }
       }
@@ -1332,11 +1361,10 @@ class BookingHistoryView extends StatelessWidget {
       _isPayingBalance = false;
 
       if (Get.context != null) {
-        Get.snackbar(
+        _showSmallSnackbar(
           'Error',
           'Payment failed: ${e.toString()}',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
+          Colors.red,
         );
       }
     }
@@ -1535,6 +1563,9 @@ class BookingHistoryView extends StatelessWidget {
                   await vm.refreshBookings();
                   await profileVm.fetchUser();
                   vm.changeTab("cancelled");
+                  _showSmallSnackbar('Success', 'Booking cancelled successfully', Colors.white, textColor: Colors.black);
+                } else {
+                  _showSmallSnackbar('Error', 'Failed to cancel booking', Colors.red);
                 }
               },
               style: ElevatedButton.styleFrom(backgroundColor: Colors.red),

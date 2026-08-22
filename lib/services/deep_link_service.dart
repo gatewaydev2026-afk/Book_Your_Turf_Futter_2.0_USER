@@ -181,9 +181,9 @@ class DeepLinkService {
       Get.snackbar(
         '🎉 Referral Code Applied!',
         'You will get bonus coins on your next booking!',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 4),
+        backgroundColor: Colors.white,
+        colorText: Colors.black,
+        duration: const Duration(seconds: 1),
         snackPosition: SnackPosition.TOP,
         icon: const Icon(Icons.card_giftcard, color: Colors.white),
       );
@@ -235,9 +235,9 @@ class SignupController extends GetxController {
         Get.snackbar(
           '🎉 Referral Code Applied!',
           'Referral code "$pendingCode" has been auto-filled',
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-          duration: const Duration(seconds: 3),
+          backgroundColor: Colors.white,
+          colorText: Colors.black,
+          duration: const Duration(seconds: 1),
           snackPosition: SnackPosition.TOP,
           icon: const Icon(Icons.card_giftcard, color: Colors.white),
         );
@@ -266,9 +266,9 @@ class SignupController extends GetxController {
       Get.snackbar(
         '🎉 Referral Code Applied!',
         'Referral code "$code" has been applied',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 2),
+        backgroundColor: Colors.black,
+        colorText: Colors.black,
+        duration: const Duration(seconds: 1),
         snackPosition: SnackPosition.TOP,
         icon: const Icon(Icons.card_giftcard, color: Colors.white),
       );

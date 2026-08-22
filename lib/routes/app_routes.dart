@@ -1,9 +1,14 @@
+// routes/app_routes.dart
+// ✅ Added Phone Auth routes
+
 class AppRoutes {
   static const String splash = '/';
   static const String guestOrLogin = '/guest-or-login';
   static const String login = '/login';
+  static const String phoneLogin = '/phone-login';
+  static const String phoneOtpVerification = '/phone-otp-verification';
   static const String register = '/register';
-  static const String registerWithBooking = '/register-with-booking'; // ✅ NEW
+  static const String registerWithBooking = '/register-with-booking';
   static const String forgotPassword = '/forgot-password';
   static const String otpVerification = '/otp-verification';
   static const String resetPassword = '/reset-password';

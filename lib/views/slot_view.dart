@@ -8,9 +8,11 @@ import '../view_models/slot_view_model.dart';
 import '../routes/app_routes.dart';
 import '../utils/helpers.dart';
 import '../services/shared_prefs_helper.dart';
-import 'demoview/signup_with_booking_view.dart';
 
-// Helper functions
+// ============================================================
+// ✅ HELPER FUNCTIONS
+// ============================================================
+
 IconData _getSportIcon(String gameType) {
   final type = gameType.toLowerCase();
   if (type.contains('football')) return Icons.sports_soccer;
@@ -71,6 +73,92 @@ String _getTotalHours(String openTime, String closeTime) {
     return '';
   }
 }
+
+// ============================================================
+// ✅ GUEST BOOKING AUTH DIALOG
+// ============================================================
+
+void showGuestBookingAuthDialog({
+  required Map<String, dynamic> bookingData,
+  required VoidCallback onSuccess,
+}) {
+  Get.dialog(
+    PopScope(
+      canPop: false,
+      child: AlertDialog(
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+        ),
+        title: const Text(
+          'Login Required',
+          style: TextStyle(fontWeight: FontWeight.bold),
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const Icon(
+              Icons.login,
+              size: 60,
+              color: Colors.green,
+            ),
+            const SizedBox(height: 16),
+            const Text(
+              'Please login to continue with your booking',
+              textAlign: TextAlign.center,
+              style: TextStyle(fontSize: 14),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Your selected slots will be preserved',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 12,
+                color: Colors.grey.shade600,
+              ),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Get.back(),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              // Close dialog
+              Get.back();
+
+              // Navigate to phone login with booking data
+              Get.toNamed(
+                AppRoutes.phoneLogin,
+                arguments: {
+                  '_pendingBooking': true,
+                  'bookingData': bookingData,
+                },
+              )?.then((_) {
+                // When user returns from login, check if they logged in
+                final token = SharedPrefsHelper.getToken();
+                if (token != null && token.isNotEmpty) {
+                  onSuccess();
+                }
+              });
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Login / Sign Up'),
+          ),
+        ],
+      ),
+    ),
+    barrierDismissible: true,
+  );
+}
+
+// ============================================================
+// ✅ SLOT VIEW STATE
+// ============================================================
 
 class SlotView extends StatefulWidget {
   final dynamic _args;
@@ -1170,9 +1258,13 @@ class _SlotViewState extends State<SlotView> {
             arguments: bookingData,
           );
         },
-      ).whenComplete(() {
-        // ✅ Reset flag if dialog is closed without success (e.g., user pressed back)
-        _isProceedingToPay = false;
+      );
+      // ✅ Dialog will handle navigation - reset flag if dialog closes without success
+      Future.delayed(const Duration(seconds: 2), () {
+        // If dialog is closed without navigating, reset flag
+        if (Get.isDialogOpen != true) {
+          _isProceedingToPay = false;
+        }
       });
       return;
     }

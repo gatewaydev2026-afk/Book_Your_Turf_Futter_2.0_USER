@@ -1,4 +1,5 @@
 // view_models/wallet_view_model.dart - With Cache Management
+// ✅ Small snackbar with 1-second duration at TOP
 
 import 'package:book_your_turf/config/app_config.dart';
 import 'package:book_your_turf/services/cache_manager.dart';
@@ -21,6 +22,36 @@ class WalletViewModel extends GetxController {
   late Razorpay _razorpay;
   String? _currentOrderId;
   String? _currentReferenceId;
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.black,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
+  }
 
   @override
   void onInit() {
@@ -120,10 +151,6 @@ class WalletViewModel extends GetxController {
       }
     } finally {
       isLoading.value = false;
-      // ✅ FIX: startWalletFetch() only ACQUIRES the fetch lock. Re-calling it
-      // here (as the old code did) never released it, so after the very first
-      // fetch (success or error) the lock stayed permanently held and every
-      // future loadWalletData() call silently skipped itself forever.
       cacheManager.endWalletFetch();
     }
   }
@@ -150,14 +177,12 @@ class WalletViewModel extends GetxController {
   Future<void> initiateRecharge(double amount) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to recharge wallet',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to recharge wallet', Colors.red);
       return;
     }
 
     if (amount < 1) {
-      Get.snackbar('Invalid Amount', 'Minimum recharge amount is ₹1',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Invalid Amount', 'Minimum recharge amount is ₹1', Colors.red);
       return;
     }
 
@@ -175,14 +200,12 @@ class WalletViewModel extends GetxController {
         _currentReferenceId = data['reference_id'];
         _openRazorpayCheckout(data, amount);
       } else {
-        Get.snackbar('Error', response.data['message'] ?? 'Failed to initiate recharge',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Failed to initiate recharge', Colors.red);
         isRecharging.value = false;
       }
     } catch (e) {
       print('Error initiating recharge: $e');
-      Get.snackbar('Error', 'Failed to initiate recharge. Please try again.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to initiate recharge. Please try again.', Colors.red);
       isRecharging.value = false;
     }
   }
@@ -205,8 +228,7 @@ class WalletViewModel extends GetxController {
       _razorpay.open(options);
     } catch (e) {
       print('Error opening Razorpay: $e');
-      Get.snackbar('Error', 'Could not open payment gateway',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Could not open payment gateway', Colors.red);
       isRecharging.value = false;
     }
   }
@@ -233,17 +255,13 @@ class WalletViewModel extends GetxController {
         if (Get.isRegistered<ProfileViewModel>()) {
           await Get.find<ProfileViewModel>().fetchUser(forceRefresh: true);
         }
-        Get.snackbar('Success', 'Wallet recharged successfully!',
-            backgroundColor: Colors.green, colorText: Colors.white,
-            duration: const Duration(seconds: 3));
+        _showSmallSnackbar('Success', 'Wallet recharged successfully!', Colors.white);
       } else {
-        Get.snackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed', Colors.red);
       }
     } catch (e) {
       print('Error confirming recharge: $e');
-      Get.snackbar('Error', 'Failed to confirm payment. Please contact support.',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to confirm payment. Please contact support.', Colors.red);
     } finally {
       isRecharging.value = false;
       _currentOrderId = null;
@@ -254,16 +272,14 @@ class WalletViewModel extends GetxController {
   void _handlePaymentError(PaymentFailureResponse response) {
     print('Wallet Recharge Error: ${response.code} - ${response.message}');
 
-    String errorMessage = 'Payment failed. Please try again.';
+    String errorMessage = 'Please try again.';
     if (response.code == 0) {
       errorMessage = 'Payment cancelled by user';
     } else if (response.code == 1) {
-      errorMessage = 'Payment failed. Please check your payment method.';
+      errorMessage = 'Please check your payment method.';
     }
 
-    Get.snackbar('Payment Failed', errorMessage,
-        backgroundColor: Colors.red, colorText: Colors.white,
-        duration: const Duration(seconds: 3));
+    _showSmallSnackbar('Payment Failed', errorMessage, Colors.red);
     isRecharging.value = false;
   }
 

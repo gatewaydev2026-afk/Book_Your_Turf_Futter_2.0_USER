@@ -54,8 +54,9 @@ class AppConfig {
   // ============================================================
   // 🔐 OTP & AUTH
   // ============================================================
-  static const int otpValidDuration = 60; // seconds
+  static const int otpValidDuration = 300; // 5 minutes
   static const int otpResendCooldown = 60; // seconds
+  static const int otpLength = 6;
 
   // ============================================================
   // 📱 UPDATE CHECK
@@ -63,7 +64,13 @@ class AppConfig {
   static const int updateCheckInterval = 24; // hours
 
   // ============================================================
-  // 🌐 API ENDPOINTS - AUTH
+  // 🌐 API ENDPOINTS - PHONE AUTH (NEW)
+  // ============================================================
+  static String get phoneSendOtp => '$apiBaseUrl/user/phone/send-otp/';
+  static String get phoneVerifyOtp => '$apiBaseUrl/user/phone/verify-otp/';
+
+  // ============================================================
+  // 🌐 API ENDPOINTS - AUTH (LEGACY - KEEP FOR BACKWARD COMPAT)
   // ============================================================
   static String get authLogin => '$apiBaseUrl/user/login/';
   static String get authRegister => '$apiBaseUrl/user/register/';

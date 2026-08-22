@@ -19,7 +19,7 @@ class FavoritesViewModel extends GetxController {
   // ✅ Cache control
   static bool _dataLoaded = false;
   static DateTime? _lastFetchTime;
-  static const _cacheDuration = Duration(minutes: 5);
+  static const _cacheDuration = Duration(minutes: 1);
 
   // ✅ Reference to HomeViewModel for sync
   HomeViewModel? _homeVm;
@@ -156,7 +156,6 @@ class FavoritesViewModel extends GetxController {
   // ✅ Remove a favorite locally (after unliking)
   void removeFavoriteLocally(int turfId) {
     favorites.removeWhere((t) => t.id == turfId);
-    print('🗑️ Removed favorite: $turfId (${favorites.length} remaining)');
 
     // ✅ Also remove from HomeViewModel
     try {
@@ -165,7 +164,6 @@ class FavoritesViewModel extends GetxController {
         _homeVm!.removeFavoriteLocally(turfId);
       }
     } catch (e) {
-      print('⚠️ Could not update HomeViewModel: $e');
     }
   }
 
@@ -173,7 +171,6 @@ class FavoritesViewModel extends GetxController {
   void addFavoriteLocally(TurfModel turf) {
     if (!favorites.any((t) => t.id == turf.id)) {
       favorites.add(turf.copyWith(isFavorite: true));
-      print('❤️ Added favorite: ${turf.name} (${favorites.length} total)');
 
       // ✅ Also add to HomeViewModel
       try {
@@ -182,7 +179,6 @@ class FavoritesViewModel extends GetxController {
           _homeVm!.addFavoriteLocally(turf);
         }
       } catch (e) {
-        print('⚠️ Could not update HomeViewModel: $e');
       }
     }
   }

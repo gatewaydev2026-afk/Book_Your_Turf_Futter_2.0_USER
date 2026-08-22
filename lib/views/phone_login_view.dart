@@ -1,25 +1,23 @@
-// views/demoview/GuestOrLoginView.dart
-// ✅ Simplified: Just loads stored number from splash detection
-// ✅ Welcome screen + Phone display + OTP login + Privacy/Terms
+// views/phone_login_view.dart
+// ✅ Auto-detect SIM + Dual SIM choose + One-click OTP + Professional Design
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
-import '../../routes/app_routes.dart';
-import '../../themes/app_colors.dart';
-import '../../view_models/auth_view_model.dart';
-import '../../services/phone_auto_detect_service.dart';
-import '../term_condition_view.dart';
-import '../privacy_policy_view.dart';
+import '../themes/app_colors.dart';
+import '../view_models/auth_view_model.dart';
+import '../routes/app_routes.dart';
+import '../services/phone_auto_detect_service.dart';
 
 // -----------------------------------------------------------------------
 // Design tokens — centralised so the whole screen stays visually consistent
 // -----------------------------------------------------------------------
-class _GLColors {
-  static const primary = Color(0xFF0F9D58);
+class _PLColors {
+  static const primary = Color(0xFF0F9D58); // deep professional green
   static const primaryDark = Color(0xFF0B7A43);
   static const primarySoft = Color(0xFFE6F4EA);
   static const surface = Color(0xFFFFFFFF);
+  static const background = Color(0xFFF7F8FA);
   static const border = Color(0xFFE2E5E9);
   static const textPrimary = Color(0xFF14181F);
   static const textSecondary = Color(0xFF6B7280);
@@ -28,14 +26,14 @@ class _GLColors {
   static const errorSoft = Color(0xFFFCEBEB);
 }
 
-class GuestOrLoginView extends StatefulWidget {
-  const GuestOrLoginView({super.key});
+class PhoneLoginView extends StatefulWidget {
+  const PhoneLoginView({super.key});
 
   @override
-  State<GuestOrLoginView> createState() => _GuestOrLoginViewState();
+  State<PhoneLoginView> createState() => _PhoneLoginViewState();
 }
 
-class _GuestOrLoginViewState extends State<GuestOrLoginView> {
+class _PhoneLoginViewState extends State<PhoneLoginView> {
   final AuthViewModel authVm = Get.find<AuthViewModel>();
   final TextEditingController _phoneController = TextEditingController();
   final FocusNode _phoneFocusNode = FocusNode();
@@ -53,7 +51,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     super.initState();
     _phoneController.addListener(_validatePhone);
     authVm.resetPhoneAuth();
-    _loadStoredNumber(); // ✅ Just load stored number (already detected in splash)
+    _autoDetectPhoneNumber();
   }
 
   @override
@@ -64,45 +62,42 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     super.dispose();
   }
 
-  // ---------------------------------------------------------------------
-  // Load stored number (no detection, no permission requests)
-  // ---------------------------------------------------------------------
-
-  Future<void> _loadStoredNumber() async {
+  Future<void> _autoDetectPhoneNumber() async {
     setState(() {
       _isLoading = true;
       _detectionError = null;
     });
 
     try {
-      // ✅ Just get stored number (already detected in splash)
+      // First check stored number
       final stored = await PhoneAutoDetectService.getStoredNumber();
-
       if (stored != null && stored.isNotEmpty) {
         _detectedNumbers = [stored];
         _selectedNumber = stored;
         _showManualEntry = false;
-        print('📱 GuestOrLoginView: Loaded stored number: $stored');
+        setState(() => _isLoading = false);
+        return;
+      }
+
+      // Detect from SIM
+      final numbers = await PhoneAutoDetectService.getSimPhoneNumbers();
+      if (numbers.isNotEmpty) {
+        _detectedNumbers = numbers;
+        _selectedNumber = numbers.first;
+        _showManualEntry = false;
       } else {
         _detectedNumbers = [];
         _selectedNumber = null;
         _showManualEntry = true;
-        _detectionError = 'No number detected. Please enter manually.';
-        print('ℹ️ GuestOrLoginView: No stored number found');
+        _detectionError = 'No SIM number detected. Please enter manually.';
       }
     } catch (e) {
-      print('❌ GuestOrLoginView: Error loading number: $e');
       _detectedNumbers = [];
       _selectedNumber = null;
       _showManualEntry = true;
-      _detectionError = 'Could not load number. Please enter manually.';
+      _detectionError = 'Could not detect number. Please enter manually.';
     } finally {
       if (mounted) setState(() => _isLoading = false);
-
-      // ✅ Auto-open dialog if number found
-      if (mounted && !_showManualEntry && _detectedNumbers.isNotEmpty) {
-        _autoOpenNumberDialog();
-      }
     }
   }
 
@@ -150,16 +145,6 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     return '${cleaned.substring(0, 3)} ${cleaned.substring(3, 6)} ${cleaned.substring(6)}';
   }
 
-  void _autoOpenNumberDialog() {
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (mounted) _openNumberDialog();
-    });
-  }
-
-  // ---------------------------------------------------------------------
-  // Build
-  // ---------------------------------------------------------------------
-
   @override
   Widget build(BuildContext context) {
     return Obx(() {
@@ -170,7 +155,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
       }
 
       return Scaffold(
-        backgroundColor: Colors.white,
+        backgroundColor: _PLColors.background,
         body: SafeArea(
           child: SingleChildScrollView(
             physics: const ClampingScrollPhysics(),
@@ -183,128 +168,33 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
               child: Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 24),
                 child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    // ✅ Logo
-                    Align(
-                      alignment: Alignment.center,
-                      child: Image.asset(
-                        'assets/images/BYTUSER.png',
-                        height: 60,
-                        fit: BoxFit.contain,
-                      ),
-                    ),
-
-                    // ✅ "Welcome Player" with Gradient
-                    ShaderMask(
-                      shaderCallback: (bounds) => const LinearGradient(
-                        colors: [Color(0xFF0F9D58), Color(0xFF0B7A43)],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ).createShader(bounds),
-                      child: const Text(
-                        'Welcome Player',
-                        style: TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.white,
-                          letterSpacing: 1.2,
-                          shadows: [
-                            Shadow(
-                              color: Colors.black12,
-                              blurRadius: 4,
-                              offset: Offset(0, 2),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
                     const SizedBox(height: 8),
-
-                    // ✅ Subtitle
-                    const Text(
-                      'Let\'s Play!',
-                      style: TextStyle(
-                        fontSize: 14,
-                        color: Colors.grey,
-                        fontWeight: FontWeight.w400,
-                      ),
-                    ),
-                    const SizedBox(height: 20),
-
-                    // ✅ Logo Image
-                    Image.asset(
-                      'assets/images/logo.png',
-                      height: 160,
-                      fit: BoxFit.contain,
-                      errorBuilder: (_, __, ___) => const Icon(
-                        Icons.sports_cricket,
-                        size: 60,
-                        color: AppColors.primary,
-                      ),
-                    ),
+                    _buildBackButton(),
                     const SizedBox(height: 24),
+                    _buildHeader(),
+                    const SizedBox(height: 32),
 
-                    // ✅ Phone number section
                     if (_isLoading)
                       _buildLoadingState()
                     else if (!_showManualEntry && _detectedNumbers.isNotEmpty)
-                      _buildDetectedNumberRow()
+                      _buildDetectedNumbersList()
                     else
                       _buildManualEntryCard(),
 
                     if (_detectionError != null && _showManualEntry) ...[
-                      const SizedBox(height: 12),
+                      const SizedBox(height: 14),
                       _buildErrorBanner(_detectionError!),
                     ],
 
-                    const SizedBox(height: 20),
-
-                    // ✅ Send OTP Button
+                    const SizedBox(height: 28),
                     _buildSendOtpButton(),
-
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
                     _buildToggleAction(),
 
-                    const SizedBox(height: 22),
-
-                    // ✅ Clickable Disclaimer
-                    GestureDetector(
-                      onTap: () => _showTermsAndPrivacyBottomSheet(context),
-                      child: Container(
-                        padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
-                        child: RichText(
-                          textAlign: TextAlign.center,
-                          text: TextSpan(
-                            style: const TextStyle(
-                              fontSize: 12,
-                              color: Colors.grey,
-                            ),
-                            children: [
-                              const TextSpan(text: 'By continuing, you agree to our '),
-                              TextSpan(
-                                text: 'Terms & Conditions',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                              const TextSpan(text: ' and '),
-                              TextSpan(
-                                text: 'Privacy Policy',
-                                style: TextStyle(
-                                  color: AppColors.primary,
-                                  fontWeight: FontWeight.w600,
-                                  decoration: TextDecoration.underline,
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ),
-                    const SizedBox(height: 26),
+                    const SizedBox(height: 230),
+                    _buildFooter(),
                   ],
                 ),
               ),
@@ -316,35 +206,93 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
+  // Header
+  // ---------------------------------------------------------------------
+
+  Widget _buildBackButton() {
+    return Container(
+      width: 42,
+      height: 42,
+      decoration: BoxDecoration(
+        color: _PLColors.surface,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _PLColors.border),
+      ),
+      child: IconButton(
+        padding: EdgeInsets.zero,
+        splashRadius: 20,
+        icon: const Icon(Icons.arrow_back_rounded, size: 20, color: _PLColors.textPrimary),
+        onPressed: () => Get.back(),
+      ),
+    );
+  }
+
+  Widget _buildHeader() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: _PLColors.primarySoft,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: const Icon(Icons.phone_iphone_rounded, color: _PLColors.primary, size: 26),
+        ),
+        const SizedBox(height: 18),
+        const Text(
+          'Verify your mobile number',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: _PLColors.textPrimary,
+            height: 1.25,
+            letterSpacing: -0.3,
+          ),
+        ),
+        const SizedBox(height: 8),
+        const Text(
+          'We\'ll send a one-time password (OTP) to verify\nyour number securely.',
+          style: TextStyle(
+            fontSize: 14,
+            color: _PLColors.textSecondary,
+            height: 1.4,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------------
   // Loading state
   // ---------------------------------------------------------------------
 
   Widget _buildLoadingState() {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(vertical: 18),
+      padding: const EdgeInsets.symmetric(vertical: 44),
       decoration: BoxDecoration(
-        color: _GLColors.surface,
-        borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: _GLColors.border),
+        color: _PLColors.surface,
+        borderRadius: BorderRadius.circular(18),
+        border: Border.all(color: _PLColors.border),
       ),
       child: const Column(
-        mainAxisSize: MainAxisSize.min,
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
           SizedBox(
-            width: 22,
-            height: 22,
+            width: 32,
+            height: 32,
             child: CircularProgressIndicator(
-              strokeWidth: 2.2,
-              color: _GLColors.primary,
+              strokeWidth: 2.4,
+              color: _PLColors.primary,
             ),
           ),
-          SizedBox(height: 10),
+          SizedBox(height: 16),
           Text(
-            'Loading your number…',
+            'Detecting SIM number…',
             style: TextStyle(
-              fontSize: 13,
-              color: _GLColors.textSecondary,
+              fontSize: 13.5,
+              color: _PLColors.textSecondary,
               fontWeight: FontWeight.w500,
             ),
           ),
@@ -360,23 +308,23 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   Widget _buildErrorBanner(String message) {
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(12),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: _GLColors.errorSoft,
-        borderRadius: BorderRadius.circular(10),
-        border: Border.all(color: _GLColors.error.withOpacity(0.25)),
+        color: _PLColors.errorSoft,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: _PLColors.error.withOpacity(0.25)),
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Icon(Icons.info_outline_rounded, color: _GLColors.error, size: 16),
-          const SizedBox(width: 8),
+          const Icon(Icons.info_outline_rounded, color: _PLColors.error, size: 18),
+          const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
               style: const TextStyle(
-                color: _GLColors.error,
-                fontSize: 12.5,
+                color: _PLColors.error,
+                fontSize: 13,
                 height: 1.35,
                 fontWeight: FontWeight.w500,
               ),
@@ -388,10 +336,10 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Detected number row (tap to open confirmation dialog)
+  // Detected SIM numbers
   // ---------------------------------------------------------------------
 
-  Widget _buildDetectedNumberRow() {
+  Widget _buildDetectedNumbersList() {
     final hasMultiple = _detectedNumbers.length > 1;
     final selected = _selectedNumber ?? _detectedNumbers.first;
 
@@ -404,9 +352,9 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
           width: double.infinity,
           padding: const EdgeInsets.symmetric(vertical: 13, horizontal: 14),
           decoration: BoxDecoration(
-            color: _GLColors.surface,
+            color: _PLColors.surface,
             borderRadius: BorderRadius.circular(14),
-            border: Border.all(color: _GLColors.border),
+            border: Border.all(color: _PLColors.border),
           ),
           child: Row(
             children: [
@@ -414,10 +362,10 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                 width: 34,
                 height: 34,
                 decoration: BoxDecoration(
-                  color: _GLColors.primarySoft,
+                  color: _PLColors.primarySoft,
                   borderRadius: BorderRadius.circular(10),
                 ),
-                child: const Icon(Icons.sim_card_rounded, size: 17, color: _GLColors.primary),
+                child: const Icon(Icons.sim_card_rounded, size: 17, color: _PLColors.primary),
               ),
               const SizedBox(width: 12),
               Expanded(
@@ -426,10 +374,10 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                   children: [
                     Text(
                       hasMultiple ? 'SIM number' : 'Detected number',
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
-                        color: _GLColors.textMuted,
+                        color: _PLColors.textMuted,
                         letterSpacing: 0.3,
                       ),
                     ),
@@ -439,14 +387,14 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                       style: const TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
-                        color: _GLColors.textPrimary,
+                        color: _PLColors.textPrimary,
                         letterSpacing: 0.2,
                       ),
                     ),
                   ],
                 ),
               ),
-              const Icon(Icons.chevron_right_rounded, size: 20, color: _GLColors.textMuted),
+              Icon(Icons.chevron_right_rounded, size: 20, color: _PLColors.textMuted),
             ],
           ),
         ),
@@ -455,7 +403,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Number confirmation dialog
+  // Compact professional confirmation dialog
   // ---------------------------------------------------------------------
 
   void _openNumberDialog() {
@@ -469,11 +417,11 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
             final selected = _selectedNumber ?? _detectedNumbers.first;
             return Dialog(
               backgroundColor: Colors.transparent,
-              insetPadding: const EdgeInsets.symmetric(horizontal: 56),
+              insetPadding: const EdgeInsets.symmetric(horizontal: 40),
               child: Container(
-                padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
+                padding: const EdgeInsets.fromLTRB(18, 18, 18, 14),
                 decoration: BoxDecoration(
-                  color: _GLColors.surface,
+                  color: _PLColors.surface,
                   borderRadius: BorderRadius.circular(16),
                   boxShadow: [
                     BoxShadow(
@@ -487,41 +435,41 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Container(
-                      width: 34,
-                      height: 34,
-                      decoration: const BoxDecoration(
-                        color: _GLColors.primarySoft,
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: _PLColors.primarySoft,
                         shape: BoxShape.circle,
                       ),
-                      child: const Icon(Icons.sim_card_rounded, color: _GLColors.primary, size: 17),
+                      child: const Icon(Icons.sim_card_rounded, color: _PLColors.primary, size: 20),
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 10),
                     Text(
                       hasMultiple ? 'Choose your number' : 'Confirm your number',
                       style: const TextStyle(
-                        fontSize: 13,
+                        fontSize: 14.5,
                         fontWeight: FontWeight.w700,
-                        color: _GLColors.textPrimary,
+                        color: _PLColors.textPrimary,
                       ),
                     ),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 12),
 
                     if (!hasMultiple)
                       Container(
                         width: double.infinity,
-                        padding: const EdgeInsets.symmetric(vertical: 8),
+                        padding: const EdgeInsets.symmetric(vertical: 10),
                         decoration: BoxDecoration(
-                          color: _GLColors.primarySoft,
-                          borderRadius: BorderRadius.circular(9),
+                          color: _PLColors.primarySoft,
+                          borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
                           '+91 ${_formatPhone(selected)}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
-                            fontSize: 15,
+                            fontSize: 17,
                             fontWeight: FontWeight.w700,
-                            color: _GLColors.textPrimary,
-                            letterSpacing: 0.2,
+                            color: _PLColors.textPrimary,
+                            letterSpacing: 0.3,
                           ),
                         ),
                       )
@@ -543,10 +491,10 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                                   width: double.infinity,
                                   padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 12),
                                   decoration: BoxDecoration(
-                                    color: isSelected ? _GLColors.primarySoft : const Color(0xFFF7F8FA),
+                                    color: isSelected ? _PLColors.primarySoft : _PLColors.background,
                                     borderRadius: BorderRadius.circular(10),
                                     border: Border.all(
-                                      color: isSelected ? _GLColors.primary : _GLColors.border,
+                                      color: isSelected ? _PLColors.primary : _PLColors.border,
                                       width: isSelected ? 1.4 : 1,
                                     ),
                                   ),
@@ -557,12 +505,12 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                                         style: TextStyle(
                                           fontSize: 14.5,
                                           fontWeight: FontWeight.w700,
-                                          color: isSelected ? _GLColors.primaryDark : _GLColors.textPrimary,
+                                          color: isSelected ? _PLColors.primaryDark : _PLColors.textPrimary,
                                         ),
                                       ),
                                       const Spacer(),
                                       if (isSelected)
-                                        const Icon(Icons.check_circle_rounded, size: 17, color: _GLColors.primary),
+                                        const Icon(Icons.check_circle_rounded, size: 17, color: _PLColors.primary),
                                     ],
                                   ),
                                 ),
@@ -575,13 +523,13 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                     const SizedBox(height: 4),
                     SizedBox(
                       width: double.infinity,
-                      height: 34,
+                      height: 38,
                       child: TextButton(
                         onPressed: () => Navigator.of(dialogContext).pop(),
                         style: TextButton.styleFrom(
-                          backgroundColor: _GLColors.primary,
+                          backgroundColor: _PLColors.primary,
                           foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(9)),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
                         ),
                         child: const Text(
                           'Done',
@@ -606,16 +554,16 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   Widget _buildManualEntryCard() {
     return Container(
       decoration: BoxDecoration(
-        color: _GLColors.surface,
+        color: _PLColors.surface,
         borderRadius: BorderRadius.circular(16),
         border: Border.all(
-          color: _isValid ? _GLColors.primary : _GLColors.border,
+          color: _isValid ? _PLColors.primary : _PLColors.border,
           width: _isValid ? 1.6 : 1,
         ),
         boxShadow: _isValid
             ? [
           BoxShadow(
-            color: _GLColors.primary.withOpacity(0.10),
+            color: _PLColors.primary.withOpacity(0.10),
             blurRadius: 14,
             offset: const Offset(0, 5),
           ),
@@ -628,20 +576,23 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
             padding: const EdgeInsets.symmetric(horizontal: 16),
             child: Row(
               children: [
-                const Text('🇮🇳', style: TextStyle(fontSize: 16)),
-                const SizedBox(width: 6),
                 const Text(
+                  '🇮🇳',
+                  style: TextStyle(fontSize: 16),
+                ),
+                const SizedBox(width: 6),
+                Text(
                   '+91',
                   style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.w600,
-                    color: _GLColors.textPrimary,
+                    color: _PLColors.textPrimary,
                   ),
                 ),
               ],
             ),
           ),
-          Container(width: 1, height: 26, color: _GLColors.border),
+          Container(width: 1, height: 26, color: _PLColors.border),
           Expanded(
             child: TextField(
               controller: _phoneController,
@@ -655,23 +606,23 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
               style: const TextStyle(
                 fontSize: 17,
                 fontWeight: FontWeight.w600,
-                color: _GLColors.textPrimary,
+                color: _PLColors.textPrimary,
                 letterSpacing: 0.3,
               ),
-              cursorColor: _GLColors.primary,
+              cursorColor: _PLColors.primary,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 hintText: 'Enter mobile number',
                 hintStyle: TextStyle(
                   fontSize: 15,
                   fontWeight: FontWeight.w400,
-                  color: _GLColors.textMuted,
+                  color: _PLColors.textMuted,
                 ),
                 contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 17),
                 suffixIcon: _isValid
                     ? const Padding(
                   padding: EdgeInsets.all(12),
-                  child: Icon(Icons.check_circle_rounded, color: _GLColors.primary, size: 22),
+                  child: Icon(Icons.check_circle_rounded, color: _PLColors.primary, size: 22),
                 )
                     : null,
               ),
@@ -692,7 +643,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Send OTP button
+  // Primary action button
   // ---------------------------------------------------------------------
 
   Widget _buildSendOtpButton() {
@@ -703,35 +654,43 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
 
     return SizedBox(
       width: double.infinity,
-      height: 56,
+      height: 54,
       child: ElevatedButton(
         onPressed: disabled ? null : _handleSendOtp,
         style: ElevatedButton.styleFrom(
-          backgroundColor: AppColors.primary,
-          disabledBackgroundColor: AppColors.primary.withOpacity(0.4),
+          backgroundColor: _PLColors.primary,
+          disabledBackgroundColor: _PLColors.primary.withOpacity(0.4),
           foregroundColor: Colors.white,
           elevation: 0,
+          shadowColor: Colors.transparent,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
+            borderRadius: BorderRadius.circular(14),
           ),
         ),
         child: authVm.isLoading.value
             ? const SizedBox(
-          width: 24,
-          height: 24,
-          child: CircularProgressIndicator(strokeWidth: 2.2, color: Colors.white),
+          width: 22,
+          height: 22,
+          child: CircularProgressIndicator(
+            strokeWidth: 2.2,
+            color: Colors.white,
+          ),
         )
             : Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            const Icon(Icons.phone_android, size: 22),
-            const SizedBox(width: 10),
             Text(
               (!_showManualEntry && _selectedNumber != null)
-                  ? 'Login '
-                  : 'Login',
-              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                  ? 'Send OTP to this number'
+                  : 'Send OTP',
+              style: const TextStyle(
+                fontSize: 15.5,
+                fontWeight: FontWeight.w600,
+                letterSpacing: 0.2,
+              ),
             ),
+            const SizedBox(width: 8),
+            const Icon(Icons.arrow_forward_rounded, size: 19),
           ],
         ),
       ),
@@ -743,22 +702,29 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
       return Center(
         child: TextButton(
           onPressed: _showManualNumberEntry,
-          style: TextButton.styleFrom(foregroundColor: _GLColors.textSecondary),
+          style: TextButton.styleFrom(
+            foregroundColor: _PLColors.textSecondary,
+          ),
           child: const Text(
             'Use a different number',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
           ),
         ),
       );
     } else if (_showManualEntry && _detectedNumbers.isNotEmpty) {
       return Center(
         child: TextButton.icon(
-          onPressed: () => _loadStoredNumber(),
-          style: TextButton.styleFrom(foregroundColor: _GLColors.primary),
+          onPressed: () async {
+            setState(() => _isLoading = true);
+            await _autoDetectPhoneNumber();
+          },
+          style: TextButton.styleFrom(
+            foregroundColor: _PLColors.primary,
+          ),
           icon: const Icon(Icons.sim_card_rounded, size: 16),
           label: const Text(
             'Use detected number',
-            style: TextStyle(fontSize: 13, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: 13.5, fontWeight: FontWeight.w600),
           ),
         ),
       );
@@ -767,123 +733,33 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Terms & Privacy bottom sheet
+  // Footer
   // ---------------------------------------------------------------------
 
-  void _showTermsAndPrivacyBottomSheet(BuildContext context) {
-    Get.bottomSheet(
-      Container(
-        padding: const EdgeInsets.all(20),
-        decoration: const BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-        ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Container(
-              width: 40,
-              height: 4,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade300,
-                borderRadius: BorderRadius.circular(2),
-              ),
+  Widget _buildFooter() {
+    return Center(
+      child: Column(
+        children: [
+          Text(
+            'Owned by',
+            style: TextStyle(
+              fontSize: 12,
+              color: _PLColors.textMuted,
+              fontWeight: FontWeight.w500,
             ),
-            const SizedBox(height: 20),
-            const Text(
-              'Terms & Privacy',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.black87,
-              ),
+          ),
+          const SizedBox(height: 4),
+          Text(
+            'NOTTAM INFOTECH PRIVATE LIMITED',
+            textAlign: TextAlign.center,
+            style: TextStyle(
+              fontSize: 13,
+              fontWeight: FontWeight.w700,
+              letterSpacing: 0.6,
+              color: AppColors.primary,
             ),
-            const SizedBox(height: 20),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.description,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-              title: const Text(
-                'Terms & Conditions',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              trailing: const Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Colors.grey,
-              ),
-              onTap: () {
-                Get.back();
-                Get.to(() => const TermConditionView());
-              },
-            ),
-            const Divider(height: 1),
-            ListTile(
-              leading: Container(
-                padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-                  color: AppColors.primary.withOpacity(0.1),
-                  borderRadius: BorderRadius.circular(8),
-                ),
-                child: const Icon(
-                  Icons.privacy_tip,
-                  color: AppColors.primary,
-                  size: 24,
-                ),
-              ),
-              title: const Text(
-                'Privacy Policy',
-                style: TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.w500,
-                ),
-              ),
-              trailing: const Icon(
-                Icons.arrow_forward_ios,
-                size: 16,
-                color: Colors.grey,
-              ),
-              onTap: () {
-                Get.back();
-                Get.to(() => const PrivacyPolicyView());
-              },
-            ),
-            const SizedBox(height: 16),
-            SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: TextButton(
-                onPressed: () => Get.back(),
-                style: TextButton.styleFrom(
-                  backgroundColor: Colors.grey.shade100,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                ),
-                child: Text(
-                  'Close',
-                  style: TextStyle(
-                    color: Colors.grey.shade700,
-                    fontWeight: FontWeight.w600,
-                  ),
-                ),
-              ),
-            ),
-            const SizedBox(height: 8),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }

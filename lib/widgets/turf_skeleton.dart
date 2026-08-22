@@ -1,4 +1,4 @@
-// widgets/turf_skeleton.dart - Matches fixed TurfCard exactly
+// widgets/turf_skeleton.dart - Matches compact TurfCard layout
 
 import 'package:flutter/material.dart';
 import 'package:shimmer/shimmer.dart';
@@ -8,78 +8,84 @@ class TurfSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Shimmer.fromColors(
-      baseColor: Colors.grey[300]!,
-      highlightColor: Colors.grey[100]!,
-      child: Container(
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
-          boxShadow: [
-            BoxShadow(
-              color: Colors.black.withOpacity(0.06),
-              blurRadius: 6,
-              offset: const Offset(0, 2),
-            ),
-          ],
-        ),
+    return Container(
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade100, width: 1),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Shimmer.fromColors(
+        baseColor: Colors.grey[300]!,
+        highlightColor: Colors.grey[100]!,
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min,
           children: [
+            // ── Image placeholder ──────────────────────────────
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
-                top: Radius.circular(12),
+                top: Radius.circular(14),
               ),
               child: Container(
-                height: 130,
+                height: 96,
                 width: double.infinity,
                 color: Colors.white,
               ),
             ),
-            Expanded(
-              child: Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Container(
-                      width: double.infinity,
-                      height: 12,
+            // ── Content placeholder ────────────────────────────
+            Padding(
+              padding: const EdgeInsets.fromLTRB(9, 7, 9, 7),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Title line
+                  Container(
+                    width: double.infinity,
+                    height: 10,
+                    decoration: BoxDecoration(
                       color: Colors.white,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(height: 3),
-                    Row(
-                      children: [
-                        Container(width: 9, height: 9, color: Colors.white),
-                        const SizedBox(width: 2),
-                        Expanded(
-                          child: Container(
-                            height: 9,
-                            color: Colors.white,
-                          ),
-                        ),
-                      ],
+                  ),
+                  const SizedBox(height: 6),
+                  // Location line
+                  Container(
+                    width: 90,
+                    height: 8,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(2),
                     ),
-                    const SizedBox(height: 4),
-                    Container(
-                      width: 60,
-                      height: 16,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(6),
-                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Chip placeholder
+                  Container(
+                    width: 50,
+                    height: 14,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(6),
                     ),
-                    const Spacer(),
-                    Container(
-                      width: double.infinity,
-                      height: 26,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(5),
-                      ),
+                  ),
+                  const SizedBox(height: 8),
+                  // Button placeholder
+                  Container(
+                    width: double.infinity,
+                    height: 24,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
             ),
           ],

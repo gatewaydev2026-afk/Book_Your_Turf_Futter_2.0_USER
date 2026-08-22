@@ -1,5 +1,5 @@
 // services/shared_prefs_helper.dart
-// ✅ COMPLETE - With Session Management and Full Reset
+// ✅ COMPLETE - With Phone Auth Support
 
 import 'package:book_your_turf/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +35,12 @@ class SharedPrefsHelper {
   static const String _keySessionId = 'session_id';
   static const String _keyLastLogoutTime = 'last_logout_time';
   static const String _keyAppInitialized = 'app_initialized';
+
+  // ✅ Phone Auth specific keys
+  static const String _keyIsPhoneAuthUser = 'is_phone_auth_user';
+  static const String _keyIsNumberVerified = 'is_number_verified';
+  static const String _keyIsNewUser = 'is_new_user';
+  static const String _keyProfileComplete = 'profile_complete';
 
   static Future<void> init() async => _prefs = await SharedPreferences.getInstance();
 
@@ -127,6 +133,39 @@ class SharedPrefsHelper {
 
   static Future<void> setUserPhone(String phone) async => await _prefs.setString(_keyUserPhone, phone);
   static String? getUserPhone() => _prefs.getString(_keyUserPhone);
+
+  // ========== PHONE AUTH SPECIFIC ==========
+  static Future<void> setIsPhoneAuthUser(bool value) async {
+    await _prefs.setBool(_keyIsPhoneAuthUser, value);
+  }
+
+  static bool getIsPhoneAuthUser() {
+    return _prefs.getBool(_keyIsPhoneAuthUser) ?? false;
+  }
+
+  static Future<void> setIsNumberVerified(bool value) async {
+    await _prefs.setBool(_keyIsNumberVerified, value);
+  }
+
+  static bool getIsNumberVerified() {
+    return _prefs.getBool(_keyIsNumberVerified) ?? false;
+  }
+
+  static Future<void> setIsNewUser(bool value) async {
+    await _prefs.setBool(_keyIsNewUser, value);
+  }
+
+  static bool getIsNewUser() {
+    return _prefs.getBool(_keyIsNewUser) ?? true;
+  }
+
+  static Future<void> setProfileComplete(bool value) async {
+    await _prefs.setBool(_keyProfileComplete, value);
+  }
+
+  static bool getProfileComplete() {
+    return _prefs.getBool(_keyProfileComplete) ?? false;
+  }
 
   // ========== BALANCES ==========
   static Future<void> setWalletBalance(double balance) async => await _prefs.setDouble(_keyWalletBalance, balance);

@@ -1,8 +1,8 @@
-// home_view.dart - COMPLETE FIXED VERSION
-// ✅ Proper Obx usage
-// ✅ No overflow issues
+// home_view.dart - COMPLETE UPDATED VERSION
+// ✅ Compact UI - No extra space
+// ✅ API Search - Search button calls API
+// ✅ Typing shows local suggestions only
 // ✅ Guest mode fully working
-// ✅ Greeting text size reduced
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile_view.dart';
@@ -99,7 +99,11 @@ class _HomeViewState extends State<HomeView>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    _categoryHeightAnimation = Tween<double>(begin: 230, end: 65).animate(
+    // ✅ COMPACT: Reduced height values
+    _categoryHeightAnimation = Tween<double>(
+      begin: 125,
+      end: 38,
+    ).animate(
       CurvedAnimation(parent: _categoryAnimationController, curve: Curves.easeInOut),
     );
 
@@ -290,9 +294,19 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
+  // ============================================================
+  // ✅ SEARCH - UPDATED METHODS
+  // ============================================================
+
   void _onSearchChanged(String query) {
     homeVm.onSearchTextChanged(query);
-    homeVm.showSuggestions.value = query.isNotEmpty;
+  }
+
+  void _onSearchSubmitted(String query) {
+    if (query.trim().isNotEmpty) {
+      homeVm.performApiSearch(query);
+      _searchFocusNode.unfocus();
+    }
   }
 
   Future<void> _onProfileTap() async {
@@ -374,14 +388,14 @@ class _HomeViewState extends State<HomeView>
                   children: [
                     if (_showGreeting)
                       Container(
-                        height: 40,
+                        height: 30,
                         alignment: Alignment.center,
                         child: Obx(() => Text(
                           homeVm.isGuestMode.value
                               ? "Hello Guest! 👋"
                               : "Hello $_cachedUserName!",
                           style: const TextStyle(
-                            fontSize: 14, // ✅ Reduced from 18
+                            fontSize: 12,
                             fontWeight: FontWeight.bold,
                             color: Colors.green,
                           ),
@@ -389,7 +403,7 @@ class _HomeViewState extends State<HomeView>
                       ),
                     if (!_showGreeting) _headerSection(context),
                     _searchBar(),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 4),
                     AnimatedBuilder(
                       animation: _categoryAnimationController,
                       builder: (context, child) {
@@ -397,57 +411,23 @@ class _HomeViewState extends State<HomeView>
                           height: _categoryHeightAnimation.value,
                           width: double.infinity,
                           child: !_isCategoryMinimized
-                              ? SingleChildScrollView(
-                            physics: const NeverScrollableScrollPhysics(),
-                            child: Column(
-                              mainAxisSize: MainAxisSize.min,
-                              children: [
-                                _allCategoryCard(),
-                                const SizedBox(height: 8),
-                                _threeCategoriesRow(),
-                              ],
-                            ),
+                              ? Column(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              _allCategoryCard(),
+                              const SizedBox(height: 4),
+                              _threeCategoriesRow(),
+                            ],
                           )
                               : _miniCategorySection(),
                         );
                       },
                     ),
-                    const SizedBox(height: 8),
+                    const SizedBox(height: 2),
                     Expanded(
                       child: _buildMainContent(),
                     ),
                   ],
-                ),
-              ),
-            ),
-            Positioned(
-              bottom: 20,
-              right: 16,
-              child: GestureDetector(
-                onTap: _openChatbot,
-                child: Padding(
-                  padding: EdgeInsets.only(bottom: MediaQuery.of(context).padding.bottom),
-                  child: Container(
-                    decoration: BoxDecoration(
-                      borderRadius: BorderRadius.circular(20),
-                      color: Colors.white,
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.grey.withOpacity(0.6),
-                          blurRadius: 12,
-                          offset: const Offset(0, 6),
-                        ),
-                      ],
-                    ),
-                    child: Lottie.asset(
-                      'assets/lottie/chatbot.json',
-                      height: 90,
-                      width: 90,
-                      errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.chat, size: 50, color: Colors.green);
-                      },
-                    ),
-                  ),
                 ),
               ),
             ),
@@ -457,6 +437,9 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
+  // ============================================================
+  // ✅ ALL CATEGORY CARD - COMPACT
+  // ============================================================
   Widget _allCategoryCard() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -466,17 +449,26 @@ class _HomeViewState extends State<HomeView>
           onTap: () => _onCategoryTap(""),
           child: Container(
             width: double.infinity,
-            height: 95,
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+            height: 50,
+            padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
             decoration: BoxDecoration(
               gradient: const LinearGradient(
-                colors: [Color(0xff667eea), Color(0xff764ba2)],
+                colors: [Color(0xff5B6EE8), Color(0xff7B4FA0)],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: isSelected ? Colors.black : Colors.transparent, width: 2),
-              boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.08), blurRadius: 8, offset: const Offset(0, 4))],
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: isSelected ? Colors.white : Colors.transparent,
+                width: 2,
+              ),
+              boxShadow: [
+                BoxShadow(
+                  color: const Color(0xff667eea).withOpacity(0.28),
+                  blurRadius: 8,
+                  offset: const Offset(0, 3),
+                ),
+              ],
             ),
             child: Row(
               children: [
@@ -485,7 +477,12 @@ class _HomeViewState extends State<HomeView>
                     alignment: Alignment.centerLeft,
                     child: const Text(
                       "All",
-                      style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.white),
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.white,
+                        letterSpacing: 0.2,
+                      ),
                     ),
                   ),
                 ),
@@ -494,7 +491,7 @@ class _HomeViewState extends State<HomeView>
                     alignment: Alignment.bottomRight,
                     child: Image.asset(
                       'assets/sports/all .png',
-                      height: 120,
+                      height: 80,
                       fit: BoxFit.fill,
                       errorBuilder: (context, error, stackTrace) => const SizedBox(),
                     ),
@@ -508,6 +505,9 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
+  // ============================================================
+  // ✅ THREE CATEGORIES ROW - COMPACT
+  // ============================================================
   Widget _threeCategoriesRow() {
     final categories = [
       {"name": "Cricket &\n Football", "filter": "Football", "image1": "assets/sports/human_cricket.png", "colors": [const Color(0xffFF9A9E), const Color(0xffF6416C)]},
@@ -523,59 +523,63 @@ class _HomeViewState extends State<HomeView>
           final filter = category["filter"] as String;
           return Expanded(
             child: Padding(
-              padding: EdgeInsets.only(right: index != 2 ? 8 : 0),
+              padding: EdgeInsets.only(right: index != 2 ? 6 : 0),
               child: Obx(() {
                 final isSelected = homeVm.selectedCategory.value == filter;
                 return GestureDetector(
                   onTap: () => _onCategoryTap(filter),
                   child: Container(
-                    height: 120,
+                    height: 60,
                     decoration: BoxDecoration(
                       gradient: LinearGradient(
                         colors: category["colors"] as List<Color>,
                         begin: Alignment.topLeft,
                         end: Alignment.bottomRight,
                       ),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: isSelected ? Colors.black : Colors.transparent, width: 2),
-                    ),
-                    child: Stack(
-                      children: [
-                        Image.asset(
-                          category["image1"] as String,
-                          height: 180,
-                          fit: BoxFit.fill,
-                          errorBuilder: (context, error, stackTrace) => const SizedBox(),
-                        ),
-                        Center(
-                          child: Stack(
-                            alignment: Alignment.center,
-                            children: [
-                              Text(
-                                category["name"] as String,
-                                textAlign: TextAlign.center,
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  foreground: Paint()
-                                    ..style = PaintingStyle.stroke
-                                    ..strokeWidth = 2
-                                    ..color = Colors.black,
-                                ),
-                              ),
-                              Text(
-                                category["name"] as String,
-                                textAlign: TextAlign.center,
-                                style: const TextStyle(
-                                  color: Colors.white,
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                            ],
-                          ),
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: isSelected ? Colors.white : Colors.transparent,
+                        width: 2,
+                      ),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (category["colors"] as List<Color>)[1].withOpacity(0.25),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
                         ),
                       ],
+                    ),
+                    child: ClipRRect(
+                      borderRadius: BorderRadius.circular(14),
+                      child: Stack(
+                        children: [
+                          Image.asset(
+                            category["image1"] as String,
+                            height: 100,
+                            fit: BoxFit.fill,
+                            errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                          ),
+                          Center(
+                            child: Text(
+                              category["name"] as String,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontSize: 12,
+                                fontWeight: FontWeight.w700,
+                                letterSpacing: 0.1,
+                                shadows: [
+                                  Shadow(
+                                    color: Colors.black38,
+                                    blurRadius: 3,
+                                    offset: Offset(0, 1),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 );
@@ -587,18 +591,21 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
+  // ============================================================
+  // ✅ MINI CATEGORY SECTION - COMPACT
+  // ============================================================
   Widget _miniCategorySection() {
     final categories = [
       {"name": "All", "filter": ""},
       {"name": "Cricket &\nFootball", "filter": "Football"},
-      {"name": "Badminton", "filter": "Badminton"},
       {"name": "Pickleball", "filter": "Pickleball"},
+      {"name": "Badminton", "filter": "Badminton"},
     ];
 
     return Container(
-      height: 45,
+      height: 35,
       width: double.infinity,
-      padding: const EdgeInsets.symmetric(horizontal: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 2),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceEvenly,
         children: List.generate(categories.length, (index) {
@@ -611,11 +618,11 @@ class _HomeViewState extends State<HomeView>
               child: GestureDetector(
                 onTap: () => _onCategoryTap(filter),
                 child: Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 3),
-                  padding: const EdgeInsets.symmetric(vertical: 4),
+                  margin: const EdgeInsets.symmetric(horizontal: 2),
+                  padding: const EdgeInsets.symmetric(vertical: 2),
                   decoration: BoxDecoration(
                     color: isSelected ? Colors.green : Colors.white,
-                    borderRadius: BorderRadius.circular(15),
+                    borderRadius: BorderRadius.circular(12),
                     border: Border.all(
                       color: isSelected ? Colors.green : Colors.grey.shade300,
                       width: 0.8,
@@ -634,7 +641,7 @@ class _HomeViewState extends State<HomeView>
                       category["name"] as String,
                       textAlign: TextAlign.center,
                       style: TextStyle(
-                        fontSize: 9,
+                        fontSize: 8.5,
                         fontWeight: FontWeight.w600,
                         color: isSelected ? Colors.white : Colors.black87,
                       ),
@@ -650,410 +657,24 @@ class _HomeViewState extends State<HomeView>
   }
 
   // ============================================================
-  // ✅ MAIN CONTENT WITH SEARCH SUPPORT
-  // ============================================================
-  Widget _buildMainContent() {
-    return Obx(() {
-      // ✅ Loading State - Shimmer Effect
-      if (homeVm.isLoading.value && homeVm.turfs.isEmpty) {
-        return GridView.builder(
-          controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
-          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-            crossAxisCount: getCrossAxisCount(context),
-            childAspectRatio: 0.68,
-            crossAxisSpacing: 12,
-            mainAxisSpacing: 12,
-          ),
-          itemCount: 6,
-          itemBuilder: (_, __) => const TurfSkeleton(),
-        );
-      }
-
-      // ✅ Search Empty State
-      if (homeVm.searchQuery.value.isNotEmpty &&
-          homeVm.turfs.isEmpty &&
-          !homeVm.isLoading.value) {
-        return _buildSearchEmptyState();
-      }
-
-      // ✅ Search Results or Nearby Turfs
-      if (homeVm.turfs.isNotEmpty) {
-        return RefreshIndicator(
-          onRefresh: _handleRefresh,
-          color: Colors.green,
-          child: NotificationListener<ScrollNotification>(
-            onNotification: (scrollInfo) {
-              if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
-                if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
-                  homeVm.loadMoreTurfs();
-                }
-              }
-              return true;
-            },
-            child: GridView.builder(
-              controller: _scrollController,
-              padding: const EdgeInsets.symmetric(horizontal: 16),
-              gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                crossAxisCount: getCrossAxisCount(context),
-                childAspectRatio: 0.68,
-                crossAxisSpacing: 12,
-                mainAxisSpacing: 12,
-              ),
-              itemCount: homeVm.turfs.length + (homeVm.isLoadingMore.value ? 1 : 0),
-              itemBuilder: (_, index) {
-                if (index == homeVm.turfs.length && homeVm.isLoadingMore.value) {
-                  return _buildLoadingMoreIndicator();
-                }
-                return TurfCard(homeVm.turfs[index]);
-              },
-            ),
-          ),
-        );
-      }
-
-      // ✅ Default Empty State
-      return _buildEmptyState();
-    });
-  }
-
-  Widget _buildSearchEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Lottie.asset(
-            'assets/lottie/no.json',
-            height: 120,
-            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-          Text(
-            'No turfs found for "${homeVm.searchQuery.value}"',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 8),
-          const Text(
-            'Try adjusting your search terms',
-            style: TextStyle(color: Colors.grey, fontSize: 14),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () {
-              _searchController.clear();
-              homeVm.clearSearch();
-              _searchFocusNode.unfocus();
-            },
-            icon: const Icon(Icons.close, color: Colors.white),
-            label: const Text("Clear Search", style: TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildLoadingMoreIndicator() {
-    return Container(
-      margin: const EdgeInsets.symmetric(vertical: 16),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          const SizedBox(
-            width: 30,
-            height: 30,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: Colors.green,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Loading more turfs...',
-            style: TextStyle(
-              fontSize: 12,
-              color: Colors.grey.shade600,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildEmptyState() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          Lottie.asset(
-            'assets/lottie/no.json',
-            height: 120,
-            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
-          ),
-          const SizedBox(height: 16),
-          const Text(
-            "No Turfs Found",
-            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
-            style: const TextStyle(color: Colors.grey, fontSize: 12),
-          ),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: () => _handleRefresh(),
-            icon: const Icon(Icons.refresh, color: Colors.white),
-            label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  // ============================================================
-  // HEADER SECTION - WITH GUEST MODE SUPPORT
-  // ============================================================
-  Widget _headerSection(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      child: Obx(() {
-        final profileImage = profileVm.profileImageUrl.value;
-        final isGuest = homeVm.isGuestMode.value;
-
-        return Row(
-          children: [
-            Flexible(
-              flex: 3,
-              child: Row(
-                children: [
-                  InkWell(
-                    onTap: _onProfileTap,
-                    child: CircleAvatar(
-                      radius: MediaQuery.of(context).size.width > 600 ? 26 : 22,
-                      backgroundColor: Colors.grey[200],
-                      backgroundImage: (!isGuest && profileImage.isNotEmpty)
-                          ? NetworkImage('${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
-                          : const AssetImage('assets/images/person_1.png') as ImageProvider,
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                isGuest
-                                    ? "Hello Guest 👋"
-                                    : "Hello ${profileVm.name.value.isEmpty ? _cachedUserName : profileVm.name.value}",
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 14, // ✅ Reduced from 18
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            const SizedBox(width: 4),
-                            SizedBox(
-                              height: 20,
-                              width: 20,
-                              child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
-                            ),
-                            if (isGuest)
-                              Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade300,
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                                child: const Text(
-                                  'Guest',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.black54,
-                                  ),
-                                ),
-                              ),
-                            if (isGuest)
-                              GestureDetector(
-                                onTap: () {
-                                  Get.offAllNamed(AppRoutes.login);
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.only(left: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.green.shade300, width: 0.5),
-                                  ),
-                                  child: Text(
-                                    'Login',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.green.shade700,
-                                    ),
-                                  ),
-                                ),
-                              ),
-                          ],
-                        ),
-                        GestureDetector(
-                          onTap: _openLocationInMap,
-                          child: Row(
-                            children: [
-                              const Icon(Icons.location_on, size: 14, color: Colors.green),
-                              const SizedBox(width: 4),
-                              Expanded(
-                                child: Obx(
-                                      () => Text(
-                                    homeVm.currentLocationName.value.isEmpty
-                                        ? (homeVm.isLocationLoading.value ? "Fetching location..." : "Location unavailable")
-                                        : homeVm.currentLocationName.value,
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
-                                    overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        if (isGuest)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 2),
-                            child: Text(
-                              'Browsing as Guest • Login for full access',
-                              style: TextStyle(
-                                fontSize: 10,
-                                color: Colors.grey.shade600,
-                              ),
-                            ),
-                          ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            // Refresh Button
-            Obx(() => Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(20),
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: homeVm.isRefreshing.value
-                    ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.green,
-                  ),
-                )
-                    : const Icon(Icons.refresh, color: Colors.green, size: 22),
-                onPressed: homeVm.isRefreshing.value ? null : _handleRefresh,
-                tooltip: 'Refresh',
-              ),
-            )),
-            const SizedBox(width: 8),
-            // Notification Icon with Badge
-            Obx(() {
-              final count = _notificationService.unreadCount.value;
-              return Stack(
-                clipBehavior: Clip.none,
-                children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.shade100,
-                      borderRadius: BorderRadius.circular(20),
-                    ),
-                    child: IconButton(
-                      padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
-                      onPressed: () async {
-                        await Get.to(() => NotificationScreen());
-                        _notificationService.updateUnreadCount();
-                      },
-                    ),
-                  ),
-                  if (count > 0)
-                    Positioned(
-                      right: -2,
-                      top: -2,
-                      child: Container(
-                        padding: const EdgeInsets.all(4),
-                        decoration: const BoxDecoration(
-                          color: Colors.red,
-                          shape: BoxShape.circle,
-                        ),
-                        constraints: const BoxConstraints(
-                          minWidth: 18,
-                          minHeight: 18,
-                        ),
-                        child: Text(
-                          count > 99 ? '99+' : count.toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontSize: 10,
-                            fontWeight: FontWeight.bold,
-                          ),
-                          textAlign: TextAlign.center,
-                        ),
-                      ),
-                    ),
-                ],
-              );
-            }),
-          ],
-        );
-      }),
-    );
-  }
-
-  // ============================================================
-  // ✅ SEARCH BAR - FIXED with proper Obx usage
+  // ✅ SEARCH BAR
   // ============================================================
   Widget _searchBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
       padding: const EdgeInsets.symmetric(horizontal: 12),
-      height: 45,
+      height: 46,
       decoration: BoxDecoration(
-        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 4)],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
         color: Colors.white,
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade200, width: 1),
       ),
       child: Row(
         children: [
@@ -1061,7 +682,7 @@ class _HomeViewState extends State<HomeView>
             onTap: () {
               final query = _searchController.text;
               if (query.trim().isNotEmpty) {
-                homeVm.performSearch(query);
+                homeVm.performApiSearch(query);
                 _searchFocusNode.unfocus();
               } else {
                 FocusScope.of(context).requestFocus(_searchFocusNode);
@@ -1083,10 +704,7 @@ class _HomeViewState extends State<HomeView>
               controller: _searchController,
               textAlignVertical: TextAlignVertical.center,
               textInputAction: TextInputAction.search,
-              onSubmitted: (query) {
-                homeVm.performSearch(query);
-                _searchFocusNode.unfocus();
-              },
+              onSubmitted: _onSearchSubmitted,
               decoration: InputDecoration(
                 border: InputBorder.none,
                 enabledBorder: InputBorder.none,
@@ -1133,5 +751,482 @@ class _HomeViewState extends State<HomeView>
       }
       return const SizedBox.shrink();
     });
+  }
+
+  // ============================================================
+  // ✅ MAIN CONTENT
+  // ============================================================
+  Widget _buildMainContent() {
+    return Obx(() {
+      // ✅ Show loading state
+      if (homeVm.isLoading.value && homeVm.turfs.isEmpty && !homeVm.isSearching.value) {
+        return GridView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: getCrossAxisCount(context),
+            childAspectRatio: 0.68,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: 6,
+          itemBuilder: (_, __) => const TurfSkeleton(),
+        );
+      }
+
+      // ✅ Show search results (API search)
+      if (homeVm.searchQuery.value.isNotEmpty) {
+        if (homeVm.turfs.isEmpty && !homeVm.isLoading.value) {
+          return _buildSearchEmptyState();
+        }
+        if (homeVm.turfs.isNotEmpty) {
+          return _buildTurfGrid();
+        }
+      }
+
+      // ✅ Show suggestions while typing
+      if (homeVm.showSuggestions.value && homeVm.searchResults.isNotEmpty) {
+        return _buildSuggestionsList();
+      }
+
+      // ✅ Show nearby turfs (default view)
+      if (homeVm.turfs.isNotEmpty) {
+        return _buildTurfGrid();
+      }
+
+      // ✅ Empty state
+      return _buildEmptyState();
+    });
+  }
+
+  // ============================================================
+  // ✅ SUGGESTIONS LIST
+  // ============================================================
+  Widget _buildSuggestionsList() {
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      itemCount: homeVm.searchResults.length,
+      itemBuilder: (context, index) {
+        final turf = homeVm.searchResults[index];
+        return Card(
+          margin: const EdgeInsets.only(bottom: 4),
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: ListTile(
+            leading: const Icon(Icons.search, color: Colors.green, size: 20),
+            title: Text(
+              turf.name,
+              style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w500),
+            ),
+            subtitle: Text(
+              turf.address,
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+            trailing: turf.distanceKm != null
+                ? Text(
+              '${turf.distanceKm!.toStringAsFixed(1)} km',
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+            )
+                : null,
+            onTap: () {
+              _searchController.text = turf.name;
+              homeVm.performApiSearch(turf.name);
+              _searchFocusNode.unfocus();
+            },
+          ),
+        );
+      },
+    );
+  }
+
+  // ============================================================
+  // ✅ TURF GRID
+  // ============================================================
+  Widget _buildTurfGrid() {
+    return RefreshIndicator(
+      onRefresh: _handleRefresh,
+      color: Colors.green,
+      child: NotificationListener<ScrollNotification>(
+        onNotification: (scrollInfo) {
+          if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
+            if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
+              homeVm.loadMoreTurfs();
+            }
+          }
+          return true;
+        },
+        child: GridView.builder(
+          controller: _scrollController,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+            crossAxisCount: getCrossAxisCount(context),
+            childAspectRatio: 0.68,
+            crossAxisSpacing: 12,
+            mainAxisSpacing: 12,
+          ),
+          itemCount: homeVm.turfs.length + (homeVm.isLoadingMore.value ? 1 : 0),
+          itemBuilder: (_, index) {
+            if (index == homeVm.turfs.length && homeVm.isLoadingMore.value) {
+              return _buildLoadingMoreIndicator();
+            }
+            return TurfCard(homeVm.turfs[index]);
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildLoadingMoreIndicator() {
+    return Container(
+      margin: const EdgeInsets.symmetric(vertical: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(12),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.05),
+            blurRadius: 4,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(
+            width: 30,
+            height: 30,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: Colors.green,
+            ),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            'Loading more turfs...',
+            style: TextStyle(
+              fontSize: 12,
+              color: Colors.grey.shade600,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSearchEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Lottie.asset(
+            'assets/lottie/no.json',
+            height: 120,
+            errorBuilder: (_, __, ___) =>
+            const Icon(Icons.search_off, size: 80, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          Text(
+            'No turfs found for "${homeVm.searchQuery.value}"',
+            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Try adjusting your search terms or location',
+            style: TextStyle(color: Colors.grey, fontSize: 14),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () {
+              _searchController.clear();
+              homeVm.clearSearch();
+              _searchFocusNode.unfocus();
+            },
+            icon: const Icon(Icons.close, color: Colors.white),
+            label: const Text("Clear Search", style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyState() {
+    return Center(
+      child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
+        children: [
+          Lottie.asset(
+            'assets/lottie/no.json',
+            height: 120,
+            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
+          ),
+          const SizedBox(height: 16),
+          const Text(
+            "No Turfs Found",
+            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+          ),
+          const SizedBox(height: 8),
+          Text(
+            homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
+            style: const TextStyle(color: Colors.grey, fontSize: 12),
+          ),
+          const SizedBox(height: 16),
+          ElevatedButton.icon(
+            onPressed: () => _handleRefresh(),
+            icon: const Icon(Icons.refresh, color: Colors.white),
+            label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ============================================================
+  // ✅ HEADER SECTION
+  // ============================================================
+  Widget _headerSection(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Obx(() {
+        final profileImage = profileVm.profileImageUrl.value;
+        final isGuest = homeVm.isGuestMode.value;
+
+        return Row(
+          children: [
+            Flexible(
+              flex: 3,
+              child: Row(
+                children: [
+                  InkWell(
+                    onTap: _onProfileTap,
+                    borderRadius: BorderRadius.circular(100),
+                    child: Container(
+                      decoration: BoxDecoration(
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 2),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.08),
+                            blurRadius: 6,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: CircleAvatar(
+                        radius: MediaQuery.of(context).size.width > 600 ? 26 : 22,
+                        backgroundColor: Colors.grey[200],
+                        backgroundImage: (!isGuest && profileImage.isNotEmpty)
+                            ? NetworkImage('${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
+                            : const AssetImage('assets/images/person_1.png') as ImageProvider,
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                isGuest
+                                    ? "Hello Guest 👋"
+                                    : "Hello ${profileVm.name.value.isEmpty ? _cachedUserName : profileVm.name.value}",
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w700,
+                                  fontSize: 14.5,
+                                  color: Colors.black87,
+                                  letterSpacing: 0.1,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            SizedBox(
+                              height: 20,
+                              width: 20,
+                              child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
+                            ),
+                            if (isGuest)
+                              Container(
+                                margin: const EdgeInsets.only(left: 6),
+                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                decoration: BoxDecoration(
+                                  color: Colors.grey.shade100,
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey.shade300, width: 0.6),
+                                ),
+                                child: Text(
+                                  'Guest',
+                                  style: TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.w600,
+                                    color: Colors.grey.shade700,
+                                  ),
+                                ),
+                              ),
+                            if (isGuest)
+                              GestureDetector(
+                                onTap: () {
+                                  Get.offAllNamed(AppRoutes.login);
+                                },
+                                child: Container(
+                                  margin: const EdgeInsets.only(left: 6),
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(color: Colors.green.shade300, width: 0.5),
+                                  ),
+                                  child: Text(
+                                    'Login',
+                                    style: TextStyle(
+                                      fontSize: 10,
+                                      fontWeight: FontWeight.w600,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                          ],
+                        ),
+                        GestureDetector(
+                          onTap: _openLocationInMap,
+                          child: Row(
+                            children: [
+                              Icon(Icons.location_on, size: 14, color: Colors.green.shade600),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Obx(
+                                      () => Text(
+                                    homeVm.currentLocationName.value.isEmpty
+                                        ? (homeVm.isLocationLoading.value ? "Fetching location..." : "Location unavailable")
+                                        : homeVm.currentLocationName.value,
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      fontWeight: FontWeight.w500,
+                                      color: Colors.grey.shade800,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        if (isGuest)
+                          Padding(
+                            padding: const EdgeInsets.only(top: 2),
+                            child: Text(
+                              'Browsing as Guest • Login for full access',
+                              style: TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey.shade600,
+                              ),
+                            ),
+                          ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            // Refresh Button
+            Obx(() => Container(
+              width: 40,
+              height: 40,
+              decoration: BoxDecoration(
+                color: Colors.grey.shade100,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.shade200, width: 1),
+              ),
+              child: IconButton(
+                padding: EdgeInsets.zero,
+                icon: homeVm.isRefreshing.value
+                    ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.green,
+                  ),
+                )
+                    : const Icon(Icons.refresh, color: Colors.green, size: 22),
+                onPressed: homeVm.isRefreshing.value ? null : _handleRefresh,
+                tooltip: 'Refresh',
+              ),
+            )),
+            const SizedBox(width: 8),
+            // Notification Icon with Badge
+            Obx(() {
+              final count = _notificationService.unreadCount.value;
+              return Stack(
+                clipBehavior: Clip.none,
+                children: [
+                  Container(
+                    width: 40,
+                    height: 40,
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: Colors.grey.shade200, width: 1),
+                    ),
+                    child: IconButton(
+                      padding: EdgeInsets.zero,
+                      icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
+                      onPressed: () async {
+                        await Get.to(() => NotificationScreen());
+                        _notificationService.updateUnreadCount();
+                      },
+                    ),
+                  ),
+                  if (count > 0)
+                    Positioned(
+                      right: -2,
+                      top: -2,
+                      child: Container(
+                        padding: const EdgeInsets.all(4),
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                        constraints: const BoxConstraints(
+                          minWidth: 18,
+                          minHeight: 18,
+                        ),
+                        child: Text(
+                          count > 99 ? '99+' : count.toString(),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 10,
+                            fontWeight: FontWeight.bold,
+                          ),
+                          textAlign: TextAlign.center,
+                        ),
+                      ),
+                    ),
+                ],
+              );
+            }),
+          ],
+        );
+      }),
+    );
   }
 }

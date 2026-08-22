@@ -1,4 +1,4 @@
-// main_page.dart - Updated to handle guest mode
+// main_page.dart - FIXED version with proper tab reset
 
 import 'package:book_your_turf/services/shared_prefs_helper.dart';
 import 'package:book_your_turf/view_models/booking_view_model.dart';
@@ -15,17 +15,38 @@ import 'dart:ui' as ui;
 
 import '../routes/app_routes.dart';
 
-class MainPage extends StatelessWidget {
-  MainPage({super.key});
-  final MainPageViewModel controller = Get.find();
+class MainPage extends StatefulWidget {
+  const MainPage({super.key});
 
+  @override
+  State<MainPage> createState() => _MainPageState();
+}
+
+class _MainPageState extends State<MainPage> {
+  final MainPageViewModel controller = Get.find<MainPageViewModel>();
   final RxSet<int> _loadedTabs = <int>{}.obs;
+  bool _initialized = false;
 
   final List<Widget> screens = [
-    HomeView(),
+    const HomeView(),
     BookingHistoryView(),
     ProfileView(),
   ];
+
+  @override
+  void initState() {
+    super.initState();
+    // ✅ IMPORTANT: Reset to Home tab when MainPage is created
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!_initialized) {
+        _initialized = true;
+        // ✅ Force reset to home tab
+        controller.currentIndex.value = 0;
+        print('🏠 MainPage initialized - Setting tab to Home (index 0)');
+        _loadTabData(0);
+      }
+    });
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -200,76 +221,84 @@ class MainPage extends StatelessWidget {
     );
   }
 
-  // ✅ Tab-க்கு ஏற்ப ONLY ONE TIME API call
   void _loadTabData(int index) async {
-    // ✅ Guest mode check - don't load Booking/Profile data if guest
     final homeVm = Get.find<HomeViewModel>();
     final isGuest = homeVm.isGuestMode.value;
 
-    if (isGuest && index != 0) {
-      print('👤 Guest mode - Showing login prompt for tab $index');
-      // Show login prompt when guest tries to access restricted tabs
-      _showLoginRequiredDialog(index);
-      return;
-    }
-
+    // ✅ Check if user is logged in
     final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty && !isGuest) {
-      print('🚫 User not logged in, skipping data load');
-      return;
+    final bool hasToken = token != null && token.isNotEmpty;
+
+    // ✅ Update guest mode status
+    if (!hasToken) {
+      homeVm.isGuestMode.value = true;
     }
 
-    // ✅ If already loaded this tab, skip API call
-    if (_loadedTabs.contains(index)) {
-      print('✅ Tab $index already loaded, skipping API call');
-      return;
-    }
-
-    print('\n📱 Tab $index selected - Loading data for first time...');
-
-    try {
-      switch (index) {
-        case 0: // Home Tab - works for both guest and logged-in
-          if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
-            print('🏠 Loading Home data... (Guest: $isGuest)');
-            await homeVm.loadHomeData();
-            _loadedTabs.add(index);
-          } else {
-            print('✅ Home data already available (${homeVm.allTurfs.length} turfs)');
-            _loadedTabs.add(index);
-          }
-          break;
-
-        case 1: // Bookings Tab - requires login
-          if (!isGuest) {
-            final bookingVm = Get.find<BookingViewModel>();
-            if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
-              print('📅 Loading Bookings data...');
-              await bookingVm.loadBookings();
-              _loadedTabs.add(index);
-            } else {
-              print('✅ Bookings data already available (${bookingVm.bookings.length} bookings)');
-              _loadedTabs.add(index);
-            }
-          }
-          break;
-
-        case 2: // Profile Tab - requires login
-          if (!isGuest) {
-            final profileVm = Get.find<ProfileViewModel>();
-            if (profileVm.name.value.isEmpty && !profileVm.isLoading.value) {
-              print('👤 Loading Profile data...');
-              await profileVm.fetchUser();
-              _loadedTabs.add(index);
-            } else {
-              print('✅ Profile data already available');
-              _loadedTabs.add(index);
-            }
-          }
-          break;
+    // ✅ For guest, only allow Home tab
+    if (isGuest || !hasToken) {
+      if (index != 0) {
+        print('👤 Guest mode - Showing login prompt for tab $index');
+        _showLoginRequiredDialog(index);
+        return;
       }
-    } catch (e) {
-      print('❌ Error loading data for tab $index: $e');
+      // ✅ For home tab in guest mode, ensure data loads
+      if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
+        print('🏠 Guest mode - Loading home data...');
+        await homeVm.loadHomeData();
+        _loadedTabs.add(index);
+      } else {
+        print('✅ Home data available (${homeVm.allTurfs.length} turfs)');
+        _loadedTabs.add(index);
+      }
+      return;
+    }
+
+    // ✅ Logged-in user
+    switch (index) {
+      case 0: // Home Tab
+        print('🏠 Home tab selected - Ensuring data is loaded...');
+        if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
+          print('📡 Home data empty - Loading now...');
+          await homeVm.loadHomeData();
+        } else if (homeVm.isLoading.value) {
+          print('⏳ Home data is loading, waiting...');
+          await Future.delayed(const Duration(milliseconds: 800));
+          if (homeVm.allTurfs.isEmpty) {
+            print('⚠️ Home data still empty, retrying...');
+            await homeVm.loadHomeData();
+          }
+        }
+        if (homeVm.allTurfs.isNotEmpty) {
+          print('✅ Home data available (${homeVm.allTurfs.length} turfs)');
+          _loadedTabs.add(index);
+        }
+        break;
+
+      case 1: // Bookings Tab
+        if (_loadedTabs.contains(index)) {
+          print('✅ Bookings already loaded, skipping');
+          return;
+        }
+        print('📅 Loading Bookings data...');
+        final bookingVm = Get.find<BookingViewModel>();
+        if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
+          await bookingVm.loadBookings();
+        }
+        _loadedTabs.add(index);
+        break;
+
+      case 2: // Profile Tab
+        if (_loadedTabs.contains(index)) {
+          print('✅ Profile already loaded, skipping');
+          return;
+        }
+        print('👤 Loading Profile data...');
+        final profileVm = Get.find<ProfileViewModel>();
+        if (profileVm.name.value.isEmpty && !profileVm.isLoading.value) {
+          await profileVm.fetchUser();
+        }
+        _loadedTabs.add(index);
+        break;
     }
   }
 

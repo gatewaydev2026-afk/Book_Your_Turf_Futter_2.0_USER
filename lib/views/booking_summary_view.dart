@@ -7,6 +7,7 @@
 // ✅ Shows "No discounts available" when no discounts exist at all
 // ✅ NO requirements text in coupon card
 // ✅ FIXED: UI locked during payment processing - No back button until navigation completes
+// ✅ Fee Breakup - Click to show Platform Fee & Convenience Fee
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -45,6 +46,9 @@ class _DashedLinePainter extends CustomPainter {
 
 class BookingSummaryView extends StatelessWidget {
   BookingSummaryView({super.key});
+
+  // ✅ Controller for fee breakup expansion
+  final RxBool _showFeeBreakup = false.obs;
 
   bool _isDiscountValid(DiscountModel discount) {
     if (discount.discountType == 'percentage') {
@@ -133,7 +137,7 @@ class BookingSummaryView extends StatelessWidget {
                 : 'Your payment is being processed...',
             backgroundColor: Colors.orange,
             colorText: Colors.white,
-            duration: const Duration(seconds: 2),
+            duration: const Duration(seconds: 1),
           );
         }
       },
@@ -1036,11 +1040,15 @@ class BookingSummaryView extends StatelessWidget {
   }
 
   // ============================================================
-  // ✅ PAYMENT SUMMARY
+  // ✅ PAYMENT SUMMARY - With Advance percentage next to label
+  // ✅ Shows App Discount & Venue Discount separately
+  // ✅ Fee Breakup - Click to expand and show Platform Fee & Convenience Fee
   // ============================================================
 // ============================================================
 // ✅ PAYMENT SUMMARY - With Advance percentage next to label
 // ✅ Shows App Discount & Venue Discount separately
+// ✅ Fee Breakup - Click to expand and show Platform Fee & Convenience Fee
+// ✅ FIXED: RenderFlex overflow issue
 // ============================================================
   Widget _buildPaymentSummaryCard(BookingSummaryViewModel vm) {
     // Calculate advance WITHOUT discount
@@ -1078,6 +1086,10 @@ class BookingSummaryView extends StatelessWidget {
       venueDiscountAmount = vm.discountVm.selectedPartnerDiscount!.calculatedDiscount ?? 0.0;
     }
 
+    // ✅ Platform Fee & Convenience Fee (hardcoded to 0 for now)
+    final double platformFee = 0.0;
+    final double convenienceFee = 0.0;
+
     return Card(
       elevation: 2,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
@@ -1085,6 +1097,7 @@ class BookingSummaryView extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
+          mainAxisSize: MainAxisSize.min, // ✅ FIX: Use min to prevent overflow
           children: [
             const Text('Payment Summary',
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.green)),
@@ -1141,10 +1154,80 @@ class BookingSummaryView extends StatelessWidget {
               ),
               const SizedBox(height: 4),
             ],
+
+            // ✅ 5. Fee Breakup - Clickable text (FIXED: No overflow)
+            Obx(() => Column(
+              mainAxisSize: MainAxisSize.min, // ✅ FIX: Use min
+              children: [
+                GestureDetector(
+                  onTap: () {
+                    _showFeeBreakup.toggle();
+                  },
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 6),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.receipt_long,
+                          size: 18,
+                          color: Colors.grey.shade600,
+                        ),
+                        const SizedBox(width: 8),
+                        Text(
+                          ' Breakup',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.blue.shade700,
+                          ),
+                        ),
+                        const Spacer(),
+                        Icon(
+                          _showFeeBreakup.value
+                              ? Icons.keyboard_arrow_up
+                              : Icons.keyboard_arrow_down,
+                          size: 20,
+                          color: Colors.grey.shade600,
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                // ✅ Expanded fee details - FIXED with SizeTransition or simple visibility
+                if (_showFeeBreakup.value) ...[
+                  const Divider(height: 1),
+                  const SizedBox(height: 8),
+                  // Platform Fee
+                  _buildStyledInfoRow(
+                    Icons.account_balance,
+                    'Platform Fee',
+                    platformFee,
+                    iconColor: Colors.grey.shade600,
+                    rupeeColor: Colors.grey.shade600,
+                    bold: false,
+                    fontSize: 13,
+                    rupeeSize: 13,
+                  ),
+                  const SizedBox(height: 4),
+                  // Convenience Fee
+                  _buildStyledInfoRow(
+                    Icons.handshake,
+                    'Convenience Fee',
+                    convenienceFee,
+                    iconColor: Colors.grey.shade600,
+                    rupeeColor: Colors.grey.shade600,
+                    bold: false,
+                    fontSize: 13,
+                    rupeeSize: 13,
+                  ),
+                  const SizedBox(height: 8),
+                ],
+              ],
+            )),
+
             const Divider(),
 
-            // ✅ 5. Total Discount (if any discount applied)
-
+            // ✅ 6. Total Discount (if any discount applied)
             if (vm.selectedPaymentType == 'advance') ...[
               _buildAdvanceRowWithPercentage(
                 Icons.forward,
@@ -1166,7 +1249,7 @@ class BookingSummaryView extends StatelessWidget {
                 ),
                 const SizedBox(height: 8),
               ],
-              // ✅ 6. Advance to Pay (Advance - Discount)
+              // ✅ 7. Advance to Pay (Advance - Discount)
               _buildStyledInfoRow(
                 Icons.account_balance,
                 'Advance to Pay',
@@ -1180,7 +1263,7 @@ class BookingSummaryView extends StatelessWidget {
               const SizedBox(height: 8),
               const Divider(),
 
-              // ✅ 7. Balance to Pay (Total - Advance)
+              // ✅ 8. Balance to Pay (Total - Advance)
               _buildStyledInfoRow(
                 Icons.balance,
                 'Balance to Pay',
@@ -1192,7 +1275,7 @@ class BookingSummaryView extends StatelessWidget {
               const SizedBox(height: 8),
             ],
 
-            // ✅ 8. Payable Now (Final amount)
+            // ✅ 9. Payable Now (Final amount)
             const Divider(),
             _buildStyledInfoRow(
               Icons.account_balance_wallet,
@@ -1204,13 +1287,13 @@ class BookingSummaryView extends StatelessWidget {
               fontSize: 16,
               rupeeSize: 18,
             ),
+            const SizedBox(height: 4), // ✅ Small bottom padding
           ],
         ),
       ),
     );
   }
-
-// ✅ Advance Row - Shows AMOUNT only (percentage in label)
+  // ✅ Advance Row - Shows AMOUNT only (percentage in label)
   Widget _buildAdvanceRowWithPercentage(
       IconData icon,
       String label,  // Now includes percentage like "Advance (50%)"
@@ -1459,7 +1542,7 @@ class BookingSummaryView extends StatelessWidget {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              const Text('Wallet Balance:', style: TextStyle(fontSize: 14)),
+              const Text('BYT Wallet Balance:', style: TextStyle(fontSize: 14)),
               Obx(() => RichText(
                 text: TextSpan(
                   children: [
@@ -1625,7 +1708,7 @@ class BookingSummaryView extends StatelessWidget {
                     ),
                   ),
                   TextSpan(
-                    text: ' via Razorpay',
+                    text: ' via Online',
                     style: TextStyle(
                       fontSize: 16,
                       fontWeight: FontWeight.bold,
@@ -1783,7 +1866,7 @@ class BookingSummaryView extends StatelessWidget {
                 text: TextSpan(
                   children: [
                     TextSpan(
-                      text: 'Wallet Balance: ',
+                      text: 'BYT Wallet Balance: ',
                       style: TextStyle(fontSize: 14, color: Colors.black87),
                     ),
                     TextSpan(
@@ -1917,7 +2000,7 @@ class BookingSummaryView extends StatelessWidget {
               ),
             ),
             const SizedBox(height: 16),
-            const Text('Please recharge your wallet to continue.'),
+            const Text('Please recharge your BYT wallet to continue.'),
           ],
         ),
         actions: [

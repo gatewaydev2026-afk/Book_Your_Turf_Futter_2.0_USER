@@ -1,4 +1,8 @@
-// home_view_model.dart - Updated to support guest mode (no token required for listing)
+// home_view_model.dart - Complete Updated Version
+// ✅ Search shows ALL matching turfs from any state
+// ✅ No location filter for search
+// ✅ Guest mode supported
+// ✅ Small snackbar with 1-second duration at TOP
 
 import 'dart:async';
 import 'dart:convert';
@@ -29,7 +33,6 @@ class HomeViewModel extends GetxController {
   final homeError = ''.obs;
   final isSearching = false.obs;
 
-  // ✅ Track if user is in guest mode
   final isGuestMode = false.obs;
 
   final currentLocation = Rx<Position?>(null);
@@ -58,7 +61,6 @@ class HomeViewModel extends GetxController {
   bool _hasMoreData = true;
   static const int _pageSize = AppConfig.defaultPageSize;
 
-  // ✅ DUPLICATE API CALL PREVENTION
   DateTime? _lastTurfsFetchTime;
   static const _minFetchInterval = Duration(seconds: 5);
   Timer? _locationDebounceTimer;
@@ -70,12 +72,41 @@ class HomeViewModel extends GetxController {
   bool get hasMoreData => _hasMoreData;
   int get pageSize => _pageSize;
 
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.black,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
+  }
+
   @override
   void onInit() {
     super.onInit();
     print('🏠 HomeViewModel initialized');
 
-    // ✅ Check if user is in guest mode (no token)
     final token = SharedPrefsHelper.getToken();
     isGuestMode.value = (token == null || token.isEmpty);
     print('👤 Guest Mode: ${isGuestMode.value}');
@@ -132,13 +163,11 @@ class HomeViewModel extends GetxController {
 
   // ========== LOAD HOME DATA ==========
   Future<void> loadHomeData({bool forceRefresh = false}) async {
-    // ✅ For guest mode: no token check, just fetch turfs
     if (!isGuestMode.value) {
       final token = SharedPrefsHelper.getToken();
       if (token == null || token.isEmpty) {
         print('🚫 User not logged in, switching to guest mode');
         isGuestMode.value = true;
-        // Continue with guest mode fetch
       } else if (!SharedPrefsHelper.isTokenValid()) {
         print('⚠️ Token expired, switching to guest mode');
         await SharedPrefsHelper.clearToken();
@@ -146,7 +175,6 @@ class HomeViewModel extends GetxController {
       }
     }
 
-    // ✅ Prevent duplicate calls within 5 seconds
     if (!forceRefresh && _lastTurfsFetchTime != null) {
       final elapsed = DateTime.now().difference(_lastTurfsFetchTime!);
       if (elapsed < _minFetchInterval) {
@@ -352,29 +380,26 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ========== FETCH TURFS WITH PAGINATION & LOCATION ==========
-  // ✅ UPDATED: Works with AND without token (guest mode)
+  // ============================================================
+  // ✅ FETCH TURFS - UPDATED FOR SEARCH
+  // ✅ Search: NO location parameters - shows ALL matching turfs
+  // ============================================================
   Future<void> fetchTurfs({
     bool forceRefresh = false,
     bool loadMore = false,
   }) async {
-    // ✅ Check if token exists - if yes, use it; if no, still allow guest access
     final token = SharedPrefsHelper.getToken();
     final bool hasToken = token != null && token.isNotEmpty;
 
-    // ✅ Update guest mode status
     isGuestMode.value = !hasToken;
     print('👤 Fetching turfs - Guest Mode: ${isGuestMode.value}');
 
-    // ✅ If token exists but expired, clear it and continue as guest
     if (hasToken && !SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired, clearing and continuing as guest');
       await SharedPrefsHelper.clearToken();
       isGuestMode.value = true;
-      // Continue with guest mode - don't return
     }
 
-    // ✅ Prevent duplicate calls within 5 seconds
     if (!forceRefresh && !loadMore && _lastTurfsFetchTime != null) {
       final elapsed = DateTime.now().difference(_lastTurfsFetchTime!);
       if (elapsed < _minFetchInterval) {
@@ -388,7 +413,8 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    if (currentLocation.value == null && !loadMore) {
+    // ✅ For search mode - NO location check needed
+    if (currentLocation.value == null && !loadMore && searchQuery.value.isEmpty) {
       print('📍 No location, fetching location first...');
       await getUserLocation();
       if (currentLocation.value == null) {
@@ -422,29 +448,27 @@ class HomeViewModel extends GetxController {
     print('║  🏟️ FETCH TURFS API CALL #$_apiCallCount                     ║');
     print('║  📄 Page: $_currentPage, Page Size: $_pageSize                ║');
     print('║  👤 Guest Mode: ${isGuestMode.value}                          ║');
-    print('║  📍 Location: ${currentLocation.value != null ? "Available" : "None"}');
     if (searchQuery.value.isNotEmpty) {
-      print('║  🔍 SEARCH: "${searchQuery.value}" (ANY DISTANCE)            ║');
+      print('║  🔍 SEARCH: "${searchQuery.value}" (NO LOCATION FILTER)     ║');
+      print('║  📍 ALL TURFS FROM ANY STATE WILL SHOW                     ║');
+    } else {
+      print('║  📍 Location: ${currentLocation.value != null ? "Available" : "None"}');
     }
     print('╚════════════════════════════════════════════════════════════╝');
 
     try {
-      // ✅ Create Dio instance with or without token
       final dio = Get.find<Dio>();
 
-      // ✅ Build headers - include token only if available
       Map<String, String> headers = {
         'Content-Type': 'application/json',
       };
 
-      // ✅ Add token ONLY if user is logged in
       if (!isGuestMode.value) {
         final currentToken = SharedPrefsHelper.getToken();
         if (currentToken != null && currentToken.isNotEmpty) {
           headers['Authorization'] = 'Bearer $currentToken';
           print('🔑 Using token for authenticated request');
         } else {
-          // Token not available, switch to guest mode
           isGuestMode.value = true;
           print('👤 No token available, switching to guest mode');
         }
@@ -457,29 +481,29 @@ class HomeViewModel extends GetxController {
         'page_size': _pageSize,
       };
 
-      if (currentLocation.value != null) {
-        queryParams['lat'] = currentLocation.value!.latitude.toString();
-        queryParams['lng'] = currentLocation.value!.longitude.toString();
-        if (searchQuery.value.isNotEmpty) {
-          queryParams['radius'] = '1000';
-          print('🔍 SEARCH MODE: Using radius 1000km to find all matching turfs');
-        } else {
-          queryParams['radius'] = AppConfig.maxDistanceKm.toString();
-        }
-        print('📍 Location params: lat=${queryParams['lat']}, lng=${queryParams['lng']}, radius=${queryParams['radius']}');
-      } else {
-        print('⚠️ No location available - API will return all turfs without distance');
-      }
-
+      // ============================================================
+      // ✅ CRITICAL FIX: SEARCH MODE - NO LOCATION PARAMETERS
+      // ============================================================
       if (searchQuery.value.isNotEmpty) {
+        // ✅ ONLY send search parameter - NO lat, lng, radius
         queryParams['search'] = searchQuery.value;
-        print('🔍 Search query: "${searchQuery.value}"');
+        print('🔍 SEARCH: "${searchQuery.value}" - NO location filter applied');
+        print('📍 Results will include turfs from ALL STATES');
+      } else {
+        // ✅ Normal mode - use location filter
+        if (currentLocation.value != null) {
+          queryParams['lat'] = currentLocation.value!.latitude.toString();
+          queryParams['lng'] = currentLocation.value!.longitude.toString();
+          queryParams['radius'] = AppConfig.maxDistanceKm.toString();
+          print('📍 Location params: lat=${queryParams['lat']}, lng=${queryParams['lng']}, radius=${queryParams['radius']}');
+        } else {
+          print('⚠️ No location available - API will return all turfs without distance');
+        }
       }
 
       print('📡 API GET /user/turfs/ with params: $queryParams');
-      print('🔑 Auth: ${isGuestMode.value ? "No token (Guest)" : "With token"}}');
+      print('🔑 Auth: ${isGuestMode.value ? "No token (Guest)" : "With token"}');
 
-      // ✅ Make API call - works with OR without token
       final response = await dio.get(
         AppConfig.turfs,
         queryParameters: queryParams,
@@ -517,8 +541,9 @@ class HomeViewModel extends GetxController {
 
         _initialFetchDone = true;
 
+        // ✅ If search query exists, show API search results
         if (searchQuery.value.isNotEmpty) {
-          _applySearchResults(turfsWithFavorites);
+          _applyApiSearchResults(turfsWithFavorites);
         } else {
           _applyLocationFilter();
         }
@@ -547,12 +572,10 @@ class HomeViewModel extends GetxController {
       print('❌ Error: $e');
       homeError.value = 'Failed to load turfs';
 
-      // ✅ On error, try without token if it was an auth error
       if (e is DioException && e.response?.statusCode == 401) {
         print('🔑 Auth error - switching to guest mode and retrying...');
         isGuestMode.value = true;
         await SharedPrefsHelper.clearToken();
-        // Retry without token
         await fetchTurfs(forceRefresh: true);
         return;
       }
@@ -563,35 +586,13 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ✅ LOAD MORE TURFS (Pagination)
-  Future<void> loadMoreTurfs() async {
-    if (_isFetching) {
-      print('⏳ Already fetching, skipping load more');
-      return;
-    }
-
-    if (isLoadingMore.value) {
-      print('⏳ Already loading more, skipping');
-      return;
-    }
-
-    if (!_hasMoreData) {
-      print('⏭️ No more data to load');
-      return;
-    }
-
-    if (searchQuery.value.isNotEmpty) {
-      print('🔍 Loading more search results for: "${searchQuery.value}"');
-    } else {
-      print('📄 Loading more turfs... (Page $_currentPage)');
-    }
-
-    await fetchTurfs(loadMore: true);
-  }
-
-  void _applySearchResults(List<TurfModel> fetchedTurfs) {
-    print('🔍 Applying search results for: "${searchQuery.value}"');
-    print('🔍 Total matching turfs: ${fetchedTurfs.length}');
+  // ============================================================
+  // ✅ APPLY API SEARCH RESULTS - ALL MATCHING TURFS
+  // ============================================================
+  void _applyApiSearchResults(List<TurfModel> fetchedTurfs) {
+    print('🔍 Applying API search results for: "${searchQuery.value}"');
+    print('🔍 Total matching turfs from API: ${fetchedTurfs.length}');
+    print('📍 These include turfs from ALL STATES');
 
     searchResults.assignAll(fetchedTurfs);
 
@@ -618,6 +619,9 @@ class HomeViewModel extends GetxController {
     }
   }
 
+  // ============================================================
+  // ✅ APPLY LOCATION FILTER - For normal view
+  // ============================================================
   void _applyLocationFilter() {
     if (currentLocation.value == null) {
       locationError.value = 'Location unavailable - showing all turfs';
@@ -638,8 +642,7 @@ class HomeViewModel extends GetxController {
 
       if (turf.distanceKm != null) {
         distance = turf.distanceKm;
-      }
-      else if (turf.latitude != null && turf.longitude != null) {
+      } else if (turf.latitude != null && turf.longitude != null) {
         distance = LocationService.calculateDistance(
           userPos.latitude,
           userPos.longitude,
@@ -667,18 +670,15 @@ class HomeViewModel extends GetxController {
     _sortWithFavoritesFirst(nearbyTurfsList);
 
     nearbyTurfs.assignAll(nearbyTurfsList);
-
     turfs.assignAll(nearbyTurfsList);
 
     print('✅ Found ${nearbyTurfsList.length} turfs within ${AppConfig.maxDistanceKm}km');
 
     if (nearbyTurfsList.isEmpty && allTurfs.isNotEmpty) {
-      Get.snackbar(
+      _showSmallSnackbar(
         'No nearby turfs',
         'No turfs found within ${AppConfig.maxDistanceKm}km of your location',
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 2),
+        Colors.orange,
       );
     }
   }
@@ -694,6 +694,32 @@ class HomeViewModel extends GetxController {
       final bDist = b.distanceKm ?? double.infinity;
       return aDist.compareTo(bDist);
     });
+  }
+
+  // ✅ LOAD MORE TURFS (Pagination)
+  Future<void> loadMoreTurfs() async {
+    if (_isFetching) {
+      print('⏳ Already fetching, skipping load more');
+      return;
+    }
+
+    if (isLoadingMore.value) {
+      print('⏳ Already loading more, skipping');
+      return;
+    }
+
+    if (!_hasMoreData) {
+      print('⏭️ No more data to load');
+      return;
+    }
+
+    if (searchQuery.value.isNotEmpty) {
+      print('🔍 Loading more search results for: "${searchQuery.value}"');
+    } else {
+      print('📄 Loading more turfs... (Page $_currentPage)');
+    }
+
+    await fetchTurfs(loadMore: true);
   }
 
   // ========== FAVORITES ==========
@@ -755,28 +781,19 @@ class HomeViewModel extends GetxController {
   bool isFavorite(int turfId) => _favoriteIds.contains(turfId);
 
   Future<void> toggleFavorite(int turfId) async {
-    // ✅ Guest cannot add favorites
     if (isGuestMode.value) {
-      Get.snackbar(
-        'Login Required',
-        'Please login to add favorites',
-        backgroundColor: Colors.orange,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 2),
-      );
+      _showSmallSnackbar('Login Required', 'Please login to save favorites', Colors.orange);
       return;
     }
 
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to add favorites',
-          backgroundColor: Colors.orange, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to save favorites', Colors.orange);
       return;
     }
 
     if (_isRefreshingLock) {
-      Get.snackbar('Please wait', 'Another operation in progress',
-          backgroundColor: Colors.orange, colorText: Colors.white, duration: const Duration(seconds: 1));
+      _showSmallSnackbar('Please wait', 'Another operation in progress', Colors.orange);
       return;
     }
 
@@ -793,15 +810,6 @@ class HomeViewModel extends GetxController {
       await _saveFavoritesToStorage();
       _updateSingleTurfFavoriteStatus(turfId, newFavoriteState);
 
-      Get.snackbar(
-        newFavoriteState ? 'Added to Favorites' : 'Removed from Favorites',
-        newFavoriteState ? 'Turf saved to favorites' : 'Turf removed from favorites',
-        backgroundColor: newFavoriteState ? Colors.green : Colors.orange,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 1),
-        snackPosition: SnackPosition.BOTTOM,
-      );
-
       final dio = Get.find<Dio>();
       await dio.post(AppConfig.toggleFavorite, data: {'turf_id': turfId});
 
@@ -814,8 +822,7 @@ class HomeViewModel extends GetxController {
       }
       await _saveFavoritesToStorage();
       _updateSingleTurfFavoriteStatus(turfId, !newFavoriteState);
-      Get.snackbar('Error', 'Failed to update favorite',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Failed to update favorite', Colors.red);
     } finally {
       _isRefreshingLock = false;
     }
@@ -849,8 +856,9 @@ class HomeViewModel extends GetxController {
     }
   }
 
-  // ========== SEARCH ==========
-
+  // ============================================================
+  // ✅ SEARCH - TYPING (Local suggestions only)
+  // ============================================================
   void onSearchTextChanged(String query) {
     searchQuery.value = query;
     showSuggestions.value = query.isNotEmpty;
@@ -863,21 +871,25 @@ class HomeViewModel extends GetxController {
       return;
     }
 
-    _applyLocalFilter(query.trim());
+    _showLocalSuggestions(query.trim());
   }
 
-  void _applyLocalFilter(String query) {
+  void _showLocalSuggestions(String query) {
     final lowerQuery = query.toLowerCase();
-    final filtered = nearbyTurfs.where((turf) {
+    final suggestions = nearbyTurfs.where((turf) {
       return turf.name.toLowerCase().contains(lowerQuery) ||
           turf.gameType.toLowerCase().contains(lowerQuery) ||
           turf.address.toLowerCase().contains(lowerQuery);
     }).toList();
-    turfs.assignAll(filtered);
-    print('🔎 Local filter "$query": ${filtered.length} match(es) (no API call)');
+
+    searchResults.assignAll(suggestions);
+    print('🔎 Local suggestions "$query": ${suggestions.length} matches (typing only)');
   }
 
-  Future<void> performSearch(String query) async {
+  // ============================================================
+  // ✅ SEARCH - Button/Enter (API call - NO LOCATION FILTER)
+  // ============================================================
+  Future<void> performApiSearch(String query) async {
     final trimmed = query.trim();
     _searchDebounceTimer?.cancel();
 
@@ -890,16 +902,21 @@ class HomeViewModel extends GetxController {
     showSuggestions.value = false;
     isSearching.value = true;
 
-    print('🔍 Performing search for: "$trimmed" (ANY DISTANCE - ALL LOCATIONS)');
+    print('🔍 Performing API SEARCH for: "$trimmed"');
+    print('📍 Search will show turfs from ALL STATES (no location filter)');
 
     _currentPage = 1;
     _hasMoreData = true;
+    searchResults.clear();
 
     await fetchTurfs(forceRefresh: true);
 
     isSearching.value = false;
   }
 
+  // ============================================================
+  // ✅ FILTER BY CATEGORY
+  // ============================================================
   void filterByCategory(String category) {
     if (selectedCategory.value == category) return;
     selectedCategory.value = category;
@@ -917,6 +934,9 @@ class HomeViewModel extends GetxController {
     }
   }
 
+  // ============================================================
+  // ✅ CLEAR SEARCH
+  // ============================================================
   void clearSearch() {
     searchQuery.value = '';
     showSuggestions.value = false;
@@ -936,7 +956,6 @@ class HomeViewModel extends GetxController {
   // ========== REFRESH ==========
 
   Future<void> refreshTurfs({bool showLoading = true}) async {
-    // ✅ Check token status - if expired, switch to guest mode
     final token = SharedPrefsHelper.getToken();
     if (token != null && token.isNotEmpty && !SharedPrefsHelper.isTokenValid()) {
       print('⚠️ Token expired during refresh, switching to guest mode');
@@ -960,11 +979,7 @@ class HomeViewModel extends GetxController {
       _currentPage = 1;
       _hasMoreData = true;
 
-      if (searchQuery.value.isNotEmpty) {
-        await fetchTurfs(forceRefresh: true);
-      } else {
-        await fetchTurfs(forceRefresh: true);
-      }
+      await fetchTurfs(forceRefresh: true);
 
       _lastRefreshTime = DateTime.now();
       _lastFetchTime = DateTime.now();
@@ -972,18 +987,10 @@ class HomeViewModel extends GetxController {
       homeError.value = '';
       print('✅ Refresh completed');
 
-      Get.snackbar(
-        '✓ Updated!',
-        'Latest turf information loaded',
-        backgroundColor: Colors.green,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 2),
-        snackPosition: SnackPosition.TOP,
-      );
+      _showSmallSnackbar('✓ Updated Successfully', '', Colors.white,);
     } catch (e) {
       print('❌ Refresh error: $e');
-      Get.snackbar('✗ Failed', 'Please check your connection',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('✗ Failed', 'Please check your connection', Colors.red);
     } finally {
       if (showLoading) isRefreshing.value = false;
       _isRefreshingLock = false;

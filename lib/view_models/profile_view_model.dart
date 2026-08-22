@@ -1,6 +1,8 @@
-// view_models/profile_view_model.dart - With Cache Management
+// view_models/profile_view_model.dart - Complete with Phone OTP Support
+// ✅ Added isNumberVerified, isNewUser, isPhoneAuthUser, profileComplete
 // ✅ Duplicate API call prevention
-// ✅ Fixed: Static access issues
+// ✅ Cache management
+// ✅ Small snackbar with 1-second duration at TOP
 
 import 'dart:io';
 import 'dart:async';
@@ -19,6 +21,9 @@ import 'home_view_model.dart';
 import 'booking_view_model.dart';
 
 class ProfileViewModel extends GetxController {
+  // ============================================================
+  // 📊 USER DATA OBSERVABLES
+  // ============================================================
   final name = ''.obs;
   final email = ''.obs;
   final phone = ''.obs;
@@ -26,24 +31,39 @@ class ProfileViewModel extends GetxController {
   final walletBalance = 0.0.obs;
   final gameCoins = 0.obs;
   final referralCode = ''.obs;
+
+  // ✅ Phone Auth specific observables
+  final isNumberVerified = false.obs;
+  final isNewUser = true.obs;
+  final isPhoneAuthUser = false.obs;
+  final profileComplete = false.obs;
+
+  // ============================================================
+  // 📊 UI STATE OBSERVABLES
+  // ============================================================
   final isLoading = false.obs;
   final isUpdating = false.obs;
   final isRefreshingWallet = false.obs;
   final imageVersion = 0.obs;
 
+  // ============================================================
+  // 🔒 STATIC CACHE & DUPLICATE PREVENTION
+  // ============================================================
   static bool _initialFetchDone = false;
   static DateTime? _lastFetchTime;
   static const _cacheDuration = AppConfig.profileCacheDuration;
   static Map<String, dynamic>? _cachedUserData;
 
-  // ✅ DUPLICATE API CALL PREVENTION - ALL STATIC
+  // ✅ DUPLICATE API CALL PREVENTION
   static bool _isFetchingProfile = false;
-  static DateTime? _lastFetchCallTime;  // ✅ Made static
+  static DateTime? _lastFetchCallTime;
   static const _minFetchInterval = Duration(seconds: 3);
-  // ✅ Timer cannot be static - kept as instance variable
   Timer? _refreshDebounceTimer;
   static const _refreshDebounceDuration = Duration(milliseconds: 500);
 
+  // ============================================================
+  // 🏗️ LIFECYCLE
+  // ============================================================
   @override
   void onInit() {
     super.onInit();
@@ -51,6 +71,45 @@ class ProfileViewModel extends GetxController {
     _loadFromCache();
   }
 
+  @override
+  void onClose() {
+    _refreshDebounceTimer?.cancel();
+    super.onClose();
+  }
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
+  }
+
+  // ============================================================
+  // 📡 FETCH USER PROFILE
+  // ============================================================
   Future<void> fetchUser({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -64,7 +123,7 @@ class ProfileViewModel extends GetxController {
       return;
     }
 
-    // ✅ FIX: Prevent duplicate calls within 3 seconds
+    // ✅ Prevent duplicate calls within 3 seconds
     if (!forceRefresh && _lastFetchCallTime != null) {
       final elapsed = DateTime.now().difference(_lastFetchCallTime!);
       if (elapsed < _minFetchInterval) {
@@ -73,15 +132,13 @@ class ProfileViewModel extends GetxController {
       }
     }
 
-    // ✅ FIX: Prevent concurrent fetches. Lock applies EVEN when
-    // forceRefresh=true — same reasoning as BookingViewModel.loadBookings():
-    // forceRefresh should only skip the freshness/cache checks below, not
-    // let two overlapping forceRefresh callers both bypass the in-flight lock.
+    // ✅ Prevent concurrent fetches
     if (_isFetchingProfile) {
-      print('⏭️ Profile fetch already in progress - skipping duplicate (forceRefresh: $forceRefresh)');
+      print('⏭️ Profile fetch already in progress - skipping duplicate');
       return;
     }
 
+    // ✅ Cache check
     if (!forceRefresh && _initialFetchDone && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
       if (age < _cacheDuration) {
@@ -113,10 +170,23 @@ class ProfileViewModel extends GetxController {
         _lastFetchCallTime = DateTime.now();
         await SharedPrefsHelper.setLastProfileFetch(DateTime.now());
 
+        // ✅ Update cache manager
+        if (Get.isRegistered<CacheManager>()) {
+          Get.find<CacheManager>().setCachedProfile(user);
+        }
+
         print('✅ Profile fetched successfully');
         print('   Name: ${name.value}');
+        print('   Email: ${email.value}');
+        print('   Phone: ${phone.value}');
+        print('   Verified: ${isNumberVerified.value}');
+        print('   New User: ${isNewUser.value}');
+        print('   Profile Complete: ${profileComplete.value}');
         print('   Wallet: ₹${walletBalance.value}');
         print('   Coins: ${gameCoins.value}');
+      } else {
+        print('❌ API returned error: ${response.data['message']}');
+        _loadFromCache();
       }
     } catch (e) {
       print('❌ Error fetching profile: $e');
@@ -127,7 +197,11 @@ class ProfileViewModel extends GetxController {
     }
   }
 
+  // ============================================================
+  // 📦 UPDATE PROFILE DATA
+  // ============================================================
   void _updateProfileData(Map<String, dynamic> user) {
+    // ✅ Basic user data
     name.value = user['name'] ?? '';
     email.value = user['email'] ?? '';
     phone.value = user['number'] ?? '';
@@ -136,38 +210,152 @@ class ProfileViewModel extends GetxController {
     gameCoins.value = user['game_coins'] ?? 0;
     referralCode.value = user['referral_code'] ?? '';
 
+    // ✅ Phone Auth specific fields
+    isNumberVerified.value = user['is_number_verified'] ?? false;
+    isNewUser.value = user['is_new_user'] ?? false;
+    isPhoneAuthUser.value = SharedPrefsHelper.getIsPhoneAuthUser();
+    profileComplete.value = user['name']?.isNotEmpty == true && user['email']?.isNotEmpty == true;
+
+    // ✅ Save to SharedPreferences
     if (name.value.isNotEmpty) {
       SharedPrefsHelper.setUserName(name.value);
+    }
+    if (email.value.isNotEmpty) {
+      SharedPrefsHelper.setUserEmail(email.value);
+    }
+    if (phone.value.isNotEmpty) {
+      SharedPrefsHelper.setUserPhone(phone.value);
     }
     SharedPrefsHelper.setWalletBalance(walletBalance.value);
     SharedPrefsHelper.setGameCoins(gameCoins.value);
     SharedPrefsHelper.setReferralCode(referralCode.value);
+
+    // ✅ Save phone auth flags
+    SharedPrefsHelper.setIsNumberVerified(isNumberVerified.value);
+    SharedPrefsHelper.setIsNewUser(isNewUser.value);
+    SharedPrefsHelper.setProfileComplete(profileComplete.value);
   }
 
+  // ============================================================
+  // 📦 LOAD FROM CACHE
+  // ============================================================
   void _loadFromCache() {
     final cachedName = SharedPrefsHelper.getUserName();
     final cachedWallet = SharedPrefsHelper.getWalletBalance();
     final cachedCoins = SharedPrefsHelper.getGameCoins();
     final cachedReferral = SharedPrefsHelper.getReferralCode();
+    final cachedEmail = SharedPrefsHelper.getUserEmail();
+    final cachedPhone = SharedPrefsHelper.getUserPhone();
+
+    // ✅ Load phone auth flags from cache
+    isNumberVerified.value = SharedPrefsHelper.getIsNumberVerified();
+    isNewUser.value = SharedPrefsHelper.getIsNewUser();
+    isPhoneAuthUser.value = SharedPrefsHelper.getIsPhoneAuthUser();
+    profileComplete.value = SharedPrefsHelper.getProfileComplete();
 
     if (cachedName != null && cachedName.isNotEmpty) {
       name.value = cachedName;
       walletBalance.value = cachedWallet;
       gameCoins.value = cachedCoins;
       referralCode.value = cachedReferral ?? '';
-
-      final cachedEmail = SharedPrefsHelper.getUserEmail();
-      final cachedPhone = SharedPrefsHelper.getUserPhone();
       if (cachedEmail != null) email.value = cachedEmail;
       if (cachedPhone != null) phone.value = cachedPhone;
 
       print('📦 Loaded profile from SharedPreferences cache');
+      print('   Name: ${name.value}');
+      print('   Email: ${email.value}');
+      print('   Phone: ${phone.value}');
+      print('   Verified: ${isNumberVerified.value}');
+      print('   Profile Complete: ${profileComplete.value}');
+    } else {
+      print('📭 No cached profile data found');
     }
   }
 
+  // ============================================================
+  // ✅ PROFILE COMPLETENESS CHECK (For Booking Block)
+  // ============================================================
+  bool get isProfileCompleteForBooking {
+    return name.value.isNotEmpty && email.value.isNotEmpty;
+  }
+
+  List<String> getMissingFields() {
+    final missing = <String>[];
+    if (name.value.isEmpty) missing.add('name');
+    if (email.value.isEmpty) missing.add('email');
+    return missing;
+  }
+
+  // ============================================================
+  // ✅ UPDATE PROFILE FOR BOOKING (Name + Email only)
+  // ============================================================
+  Future<bool> updateProfileForBooking({
+    required String name,
+    required String email,
+  }) async {
+    final token = SharedPrefsHelper.getToken();
+    if (token == null || token.isEmpty) {
+      return false;
+    }
+
+    if (name.isEmpty || email.isEmpty) {
+      return false;
+    }
+
+    // ✅ Prevent duplicate calls
+    if (isUpdating.value) {
+      print('⏭️ Profile update already in progress');
+      return false;
+    }
+
+    isUpdating.value = true;
+
+    try {
+      final dio = Get.find<Dio>();
+      final response = await dio.patch(
+        AppConfig.profileUpdate,
+        data: {
+          'name': name.trim(),
+          'email': email.trim(),
+        },
+      );
+
+      if (response.data['result'] == 'success') {
+        // ✅ Update local values directly without extra API call
+        this.name.value = name.trim();
+        this.email.value = email.trim();
+        profileComplete.value = true;
+
+        // ✅ Save to SharedPreferences
+        await SharedPrefsHelper.setUserName(name.trim());
+        await SharedPrefsHelper.setUserEmail(email.trim());
+        await SharedPrefsHelper.setProfileComplete(true);
+
+        print('✅ Profile updated successfully for booking');
+        return true;
+      } else {
+        print('❌ Profile update failed: ${response.data['message']}');
+        return false;
+      }
+    } catch (e) {
+      print('❌ Error updating profile: $e');
+      return false;
+    } finally {
+      isUpdating.value = false;
+    }
+  }
+
+  // ============================================================
+  // 💰 WALLET BALANCE REFRESH
+  // ============================================================
   Future<double> refreshWalletBalance() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
+      return walletBalance.value;
+    }
+
+    if (isRefreshingWallet.value) {
+      print('⏭️ Wallet refresh already in progress');
       return walletBalance.value;
     }
 
@@ -185,16 +373,20 @@ class ProfileViewModel extends GetxController {
         await SharedPrefsHelper.setWalletBalance(newBalance);
         await SharedPrefsHelper.setGameCoins(gameCoins.value);
 
+        print('✅ Wallet balance refreshed: ₹${walletBalance.value}');
         return newBalance;
       }
     } catch (e) {
-      print('Error refreshing wallet: $e');
+      print('❌ Error refreshing wallet: $e');
     } finally {
       isRefreshingWallet.value = false;
     }
     return walletBalance.value;
   }
 
+  // ============================================================
+  // 🖼️ IMAGE COMPRESSION
+  // ============================================================
   Future<File?> compressImage(File imageFile) async {
     try {
       final bytes = await imageFile.readAsBytes();
@@ -222,19 +414,21 @@ class ProfileViewModel extends GetxController {
       }
       return imageFile;
     } catch (e) {
-      print('Error compressing image: $e');
+      print('❌ Error compressing image: $e');
       return imageFile;
     }
   }
 
+  // ============================================================
+  // 📤 UPDATE FULL PROFILE (Name + Image)
+  // ============================================================
   Future<bool> updateProfile({
     String? name,
     File? profileImageFile,
   }) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to update profile',
-          backgroundColor: Colors.orange, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to update profile', Colors.orange);
       return false;
     }
 
@@ -244,10 +438,12 @@ class ProfileViewModel extends GetxController {
       final dio = Get.find<Dio>();
       final formData = FormData();
 
+      // ✅ Add name if provided and different
       if (name != null && name.isNotEmpty && name != this.name.value) {
         formData.fields.add(MapEntry('name', name));
       }
 
+      // ✅ Add profile image if provided
       if (profileImageFile != null) {
         final compressedImage = await compressImage(profileImageFile);
         if (compressedImage != null) {
@@ -260,9 +456,9 @@ class ProfileViewModel extends GetxController {
         }
       }
 
+      // ✅ Check if there's anything to update
       if (formData.fields.isEmpty && formData.files.isEmpty) {
-        Get.snackbar('Info', 'No changes to update',
-            backgroundColor: Colors.orange, colorText: Colors.white);
+        _showSmallSnackbar('Info', 'No changes to update', Colors.orange);
         isUpdating.value = false;
         return false;
       }
@@ -281,26 +477,29 @@ class ProfileViewModel extends GetxController {
         await _handleUpdateSuccess();
         return true;
       } else {
-        _showError(response.data['message'] ?? 'Update failed');
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Update failed', Colors.red);
         return false;
       }
 
     } on DioException catch (e) {
-      print('DioException: ${e.message}');
+      print('❌ DioException: ${e.message}');
       if (e.response?.statusCode == 405) {
         return await _updateWithPostOverride();
       }
-      _showError(e.response?.data['message'] ?? 'Failed to update profile');
+      _showSmallSnackbar('Error', e.response?.data['message'] ?? 'Failed to update profile', Colors.red);
       return false;
     } catch (e) {
-      print('Error updating profile: $e');
-      _showError('Failed to update profile');
+      print('❌ Error updating profile: $e');
+      _showSmallSnackbar('Error', 'Failed to update profile', Colors.red);
       return false;
     } finally {
       isUpdating.value = false;
     }
   }
 
+  // ============================================================
+  // 🔄 POST OVERRIDE (For PATCH not supported)
+  // ============================================================
   Future<bool> _updateWithPostOverride() async {
     try {
       final dio = Get.find<Dio>();
@@ -325,40 +524,43 @@ class ProfileViewModel extends GetxController {
         await _handleUpdateSuccess();
         return true;
       } else {
-        _showError(response.data['message'] ?? 'Update failed');
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Update failed', Colors.red);
         return false;
       }
     } catch (e) {
-      print('Error with POST override: $e');
-      _showError('Failed to update profile');
+      print('❌ Error with POST override: $e');
+      _showSmallSnackbar('Error', 'Failed to update profile', Colors.red);
       return false;
     }
   }
 
+  // ============================================================
+  // ✅ HANDLE UPDATE SUCCESS
+  // ============================================================
   Future<void> _handleUpdateSuccess() async {
+    // ✅ Clear cache
     if (Get.isRegistered<CacheManager>()) {
       Get.find<CacheManager>().clearAllCaches();
     }
+
+    // ✅ Refresh profile data
     await fetchUser(forceRefresh: true);
     imageVersion.value++;
 
+    // ✅ Save name to SharedPreferences
     if (name.value.isNotEmpty) {
       await SharedPrefsHelper.setUserName(name.value);
     }
 
+    // ✅ Refresh dashboard data
     await _refreshDashboard();
 
-    Get.snackbar('Success', 'Profile updated successfully',
-        backgroundColor: Colors.green, colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM, duration: const Duration(seconds: 2));
+    _showSmallSnackbar('Success', 'Profile updated successfully', Colors.black);
   }
 
-  void _showError(String message) {
-    Get.snackbar('Error', message,
-        backgroundColor: Colors.red, colorText: Colors.white,
-        snackPosition: SnackPosition.BOTTOM);
-  }
-
+  // ============================================================
+  // 🔄 REFRESH DASHBOARD
+  // ============================================================
   Future<void> _refreshDashboard() async {
     if (Get.isRegistered<HomeViewModel>()) {
       await Get.find<HomeViewModel>().refreshTurfs(showLoading: true);
@@ -368,20 +570,30 @@ class ProfileViewModel extends GetxController {
     }
   }
 
+  // ============================================================
+  // 🪙 CONVERT COINS
+  // ============================================================
   Future<bool> convertCoins(int coinsToConvert) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to convert coins',
-          backgroundColor: Colors.orange, colorText: Colors.white);
+      _showSmallSnackbar('Login Required', 'Please login to convert coins', Colors.orange);
+      return false;
+    }
+
+    if (coinsToConvert < 200) {
+      _showSmallSnackbar('Error', 'Minimum 200 coins required', Colors.red);
       return false;
     }
 
     isLoading.value = true;
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post(AppConfig.convertCoins, data: {
-        'coins_to_convert': coinsToConvert,
-      });
+      final response = await dio.post(
+        AppConfig.convertCoins,
+        data: {
+          'coins_to_convert': coinsToConvert,
+        },
+      );
 
       if (response.data['result'] == 'success') {
         final data = response.data['data'];
@@ -391,29 +603,24 @@ class ProfileViewModel extends GetxController {
         await SharedPrefsHelper.setGameCoins(gameCoins.value);
         await SharedPrefsHelper.setWalletBalance(walletBalance.value);
 
-        Get.snackbar(
-          'Success',
-          '${response.data['message']}\nCoins: $coinsToConvert → ₹${(coinsToConvert / 10).toStringAsFixed(2)}',
-          backgroundColor: Colors.green,
-          colorText: Colors.white,
-          duration: const Duration(seconds: 3),
-        );
+        _showSmallSnackbar('Success', 'Coins: $coinsToConvert → ₹${(coinsToConvert / 10).toStringAsFixed(2)}', Colors.black);
         return true;
       } else {
-        Get.snackbar('Error', response.data['message'] ?? 'Conversion failed',
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Error', response.data['message'] ?? 'Conversion failed', Colors.red);
         return false;
       }
     } catch (e) {
-      print('Error converting coins: $e');
-      Get.snackbar('Error', 'Failed to convert coins',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      print('❌ Error converting coins: $e');
+      _showSmallSnackbar('Error', 'Failed to convert coins', Colors.red);
       return false;
     } finally {
       isLoading.value = false;
     }
   }
 
+  // ============================================================
+  // 🔄 REFRESH PROFILE
+  // ============================================================
   Future<void> refresh() async {
     _refreshDebounceTimer?.cancel();
     _refreshDebounceTimer = Timer(_refreshDebounceDuration, () async {
@@ -426,17 +633,23 @@ class ProfileViewModel extends GetxController {
     });
   }
 
+  // ============================================================
+  // 🔄 RESET CACHE
+  // ============================================================
   static void resetCache() {
     _initialFetchDone = false;
     _lastFetchTime = null;
     _cachedUserData = null;
     _isFetchingProfile = false;
     _lastFetchCallTime = null;
+    print('🔄 Profile cache reset');
   }
 
-  @override
-  void onClose() {
-    _refreshDebounceTimer?.cancel();
-    super.onClose();
-  }
+  // ============================================================
+  // 📊 GETTERS
+  // ============================================================
+  bool get hasProfileData => name.value.isNotEmpty || email.value.isNotEmpty;
+  String get displayName => name.value.isNotEmpty ? name.value : 'User';
+  String get displayPhone => phone.value.isNotEmpty ? phone.value : 'Not set';
+  String get displayEmail => email.value.isNotEmpty ? email.value : 'Not set';
 }

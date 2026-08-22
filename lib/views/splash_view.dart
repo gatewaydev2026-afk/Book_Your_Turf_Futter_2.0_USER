@@ -1,10 +1,12 @@
-// splash_view.dart - FIXED for first launch with duplicate navigation prevention
+// splash_view.dart - With phone permission request during splash
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:lottie/lottie.dart';
+import 'package:permission_handler/permission_handler.dart';
 import '../routes/app_routes.dart';
 import '../services/shared_prefs_helper.dart';
+import '../services/phone_auto_detect_service.dart';
 import '../themes/app_colors.dart';
 
 class SplashView extends StatefulWidget {
@@ -26,6 +28,10 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
   bool _isNavigating = false;
   bool _isInitialized = false;
 
+  // ✅ Permission status
+  bool _permissionGranted = false;
+  bool _permissionChecked = false;
+
   @override
   void initState() {
     super.initState();
@@ -40,11 +46,11 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
     _fadeController.forward();
     _typeText();
 
-    // ✅ Only call navigation once
+    // ✅ Request phone permission and detect number during splash
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_isInitialized) {
         _isInitialized = true;
-        _checkAndNavigate();
+        _requestPhonePermissionAndNavigate();
       }
     });
   }
@@ -56,31 +62,63 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
     }
   }
 
-  Future<void> _checkAndNavigate() async {
+  // ✅ Request phone permission and detect number during splash
+  Future<void> _requestPhonePermissionAndNavigate() async {
     // ✅ Prevent duplicate navigation
     if (_isNavigating) {
       print('⏭️ Navigation already in progress - skipping');
       return;
     }
 
-    await Future.delayed(const Duration(milliseconds: 3000));
+    print('\n========== SPLASH: REQUESTING PHONE PERMISSION ==========');
+
+    try {
+      // ✅ Request phone permission
+      final status = await Permission.phone.request();
+      _permissionGranted = status.isGranted;
+      _permissionChecked = true;
+
+      print('📱 Phone permission status: ${status.isGranted ? "GRANTED ✅" : "DENIED ❌"}');
+
+      if (status.isGranted) {
+        // ✅ Detect phone number immediately
+        print('📱 Detecting phone number during splash...');
+        final numbers = await PhoneAutoDetectService.getSimPhoneNumbers();
+        if (numbers.isNotEmpty) {
+          print('✅ Phone number detected during splash: ${numbers.first}');
+          // Store it for later use
+          await PhoneAutoDetectService.setDetectedNumber(numbers.first);
+        } else {
+          print('ℹ️ No phone number detected during splash');
+        }
+      } else if (status.isPermanentlyDenied) {
+        print('❌ Phone permission permanently denied');
+        // Show dialog to guide user to settings
+        if (mounted) {
+          _showPermissionDeniedDialog();
+          return;
+        }
+      } else {
+        print('❌ Phone permission denied');
+      }
+    } catch (e) {
+      print('❌ Error requesting phone permission: $e');
+    }
+
+    // ✅ Wait for splash animation to complete
+    await Future.delayed(const Duration(milliseconds: 2000));
 
     if (!mounted) return;
-
     _isNavigating = true;
 
-    // Get first launch status
+    // Navigate based on first launch and token
     final isFirstLaunch = SharedPrefsHelper.isFirstLaunch();
-
-    // Get token
     final token = SharedPrefsHelper.getToken();
 
     print('\n========== SPLASH NAVIGATION ==========');
     print('Is First Launch: $isFirstLaunch');
     print('Token exists: ${token != null}');
-    if (token != null && token.isNotEmpty) {
-      print('Token preview: ${token.substring(0, token.length > 20 ? 20 : token.length)}...');
-    }
+    print('Phone permission: ${_permissionGranted ? "GRANTED ✅" : "DENIED ❌"}');
 
     if (!mounted) return;
 
@@ -109,6 +147,70 @@ class _SplashViewState extends State<SplashView> with TickerProviderStateMixin {
     }
 
     print('========================================\n');
+  }
+
+  // ✅ Show dialog if permission is permanently denied
+  void _showPermissionDeniedDialog() {
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        title: const Text('Phone Permission Required'),
+        content: const Text(
+          'Phone permission is required to automatically detect your SIM number for quick login. '
+              'Please enable it in settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () {
+              Navigator.pop(context);
+              _isNavigating = false;
+              _checkAndNavigateWithoutPermission();
+            },
+            child: const Text('Skip'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.pop(context);
+              openAppSettings();
+            },
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.green,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Open Settings'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ✅ Fallback navigation if permission denied
+  Future<void> _checkAndNavigateWithoutPermission() async {
+    if (_isNavigating) return;
+    _isNavigating = true;
+
+    await Future.delayed(const Duration(milliseconds: 500));
+    if (!mounted) return;
+
+    final isFirstLaunch = SharedPrefsHelper.isFirstLaunch();
+    final token = SharedPrefsHelper.getToken();
+
+    if (isFirstLaunch) {
+      await SharedPrefsHelper.clearAll();
+      await SharedPrefsHelper.setFirstLaunch(false);
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.guestOrLogin);
+      }
+    } else if (token != null && token.isNotEmpty) {
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.mainPage);
+      }
+    } else {
+      if (mounted) {
+        Get.offAllNamed(AppRoutes.guestOrLogin);
+      }
+    }
   }
 
   @override

@@ -498,19 +498,21 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
                                 color: Colors.green,
                                 borderRadius: BorderRadius.circular(20),
                               ),
-                              child: const Row(
-                                mainAxisSize: MainAxisSize.min,
+                              child: Row(
                                 children: [
-                                  Icon(Icons.verified, size: 14, color: Colors.white),
-                                  SizedBox(width: 4),
-                                  Text(
-                                    'Verified',
-                                    style: TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 12,
-                                      fontWeight: FontWeight.w500,
+                                  Image.asset(
+                                    // 🔁 Replace this URL with your actual image URL
+                                    'assets/images/blue.jpeg',
+                                    height: 20,
+                                    fit: BoxFit.fill,
+                                    errorBuilder: (_, __, ___) => Icon(
+                                      Icons.image,
+                                      size: 16,
+                                      color: Colors.grey.shade400,
                                     ),
                                   ),
+                                  SizedBox(width: 10,),
+                                  Text("Verified",style: TextStyle(color: Colors.white),)
                                 ],
                               ),
                             ),
@@ -532,11 +534,11 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
                                         vertical: 4,
                                       ),
                                       decoration: BoxDecoration(
-                                        color: const Color(0xFFFFEB3B), // ✅ Pure Lemon Yellow
+                                        color: Colors.orange.shade900, // ✅ Pure Lemon Yellow
                                         borderRadius: BorderRadius.circular(20),
                                         boxShadow: [
                                           BoxShadow(
-                                            color: const Color(0xFFFFEB3B).withOpacity(0.5),
+                                            color:  Colors.orange.shade900,
                                             blurRadius: 10,
                                             offset: const Offset(0, 2),
                                           ),
@@ -547,7 +549,7 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
                                           ),
                                         ],
                                         border: Border.all(
-                                          color: const Color(0xFFFFD600),
+                                          color:  Colors.orange.shade900,
                                           width: 1.2,
                                         ),
                                       ),
@@ -555,9 +557,9 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
                                         mainAxisSize: MainAxisSize.min,
                                         children: [
                                           Container(
-                                            padding: const EdgeInsets.all(2),
-                                            decoration: const BoxDecoration(
-                                              color: Colors.red,
+                                            padding:  EdgeInsets.all(2),
+                                            decoration:  BoxDecoration(
+                                              color: Colors.orange.shade900,
                                               shape: BoxShape.circle,
                                             ),
                                             child: const Icon(
@@ -570,7 +572,7 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
                                           Text(
                                             discountLabel,
                                             style: const TextStyle(
-                                              color: Colors.black87,
+                                              color: Colors.white,
                                               fontSize: 11,
                                               fontWeight: FontWeight.bold,
                                               letterSpacing: 0.3,

@@ -293,7 +293,7 @@ class UpdateService {
           'Please update the app from Play Store / App Store',
           backgroundColor: Colors.orange,
           colorText: Colors.white,
-          duration: const Duration(seconds: 4),
+          duration: const Duration(seconds: 1),
         );
       }
     }

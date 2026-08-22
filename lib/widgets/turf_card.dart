@@ -15,42 +15,7 @@ class TurfCard extends StatefulWidget {
   State<TurfCard> createState() => _TurfCardState();
 }
 
-class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin {
-  late AnimationController _blinkController;
-  late Animation<double> _blinkAnimation;
-  late Animation<double> _scaleAnimation;
-
-  @override
-  void initState() {
-    super.initState();
-    _blinkController = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 700),
-    );
-
-    _blinkAnimation = Tween<double>(begin: 0.4, end: 1.0).animate(
-      CurvedAnimation(
-        parent: _blinkController,
-        curve: Curves.easeInOut,
-      ),
-    );
-
-    _scaleAnimation = Tween<double>(begin: 0.95, end: 1.05).animate(
-      CurvedAnimation(
-        parent: _blinkController,
-        curve: Curves.easeInOut,
-      ),
-    );
-
-    _blinkController.repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _blinkController.dispose();
-    super.dispose();
-  }
-
+class _TurfCardState extends State<TurfCard> {
   void _handleTap() {
     Get.toNamed(AppRoutes.turfDetail, arguments: widget.turf);
   }
@@ -87,9 +52,6 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
 
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 360;
-
-    final ribbonWidth = (screenWidth / 2.6).clamp(110.0, 175.0);
-    final ribbonHeight = isSmallScreen ? 20.0 : 22.0;
 
     // ✅ Check if this is a search result
     final isSearchResult = homeVm.searchQuery.value.isNotEmpty;
@@ -204,30 +166,58 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                       child: const Icon(Icons.sports_soccer, size: 30),
                     ),
 
-                    // Verified badge
-                    if (latestTurf.showVerifiedBadge)
+                    // Subtle bottom scrim for badge legibility
+                    if (mainLabel.isNotEmpty)
                       Positioned(
-                        top: 6,
-                        right: 6,
-                        child: Container(
+                        left: 0,
+                        right: 0,
+                        bottom: 0,
+                        height: 46,
+                        child: DecoratedBox(
                           decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.9),
-                            shape: BoxShape.circle,
-                            boxShadow: [
-                              BoxShadow(
-                                color: Colors.black.withOpacity(0.1),
-                                blurRadius: 4,
-                                offset: const Offset(0, 2),
-                              ),
-                            ],
-                          ),
-                          child: const Icon(
-                            Icons.verified,
-                            size: 14,
-                            color: Colors.green,
+                            gradient: LinearGradient(
+                              begin: Alignment.topCenter,
+                              end: Alignment.bottomCenter,
+                              colors: [
+                                Colors.black.withOpacity(0.0),
+                                Colors.black.withOpacity(0.28),
+                              ],
+                            ),
                           ),
                         ),
                       ),
+
+                    // ✅ CHANGED: Verified badge replaced with image overlay
+                    // Now shows an image icon in the top-right position
+                    Positioned(
+                      top: 6,
+                      right: 6,
+                      child: Container(
+                        width: 24,
+                        height: 24,
+                        decoration: BoxDecoration(
+
+                          boxShadow: [
+                            BoxShadow(
+                              color: Colors.black.withOpacity(0.1),
+                              blurRadius: 4,
+                              offset: const Offset(0, 2),
+                            ),
+                          ],
+                        ),
+                      child:  Image.asset(
+                            // 🔁 Replace this URL with your actual image URL
+                            'assets/images/blue.jpeg',
+                            fit: BoxFit.fill,
+                            errorBuilder: (_, __, ___) => Icon(
+                              Icons.image,
+                              size: 16,
+                              color: Colors.grey.shade400,
+                            ),
+                          ),
+
+                      ),
+                    ),
 
                     // Favourite button
                     if (latestTurf.isBookable)
@@ -263,42 +253,13 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
                     // Discount badge
                     if (mainLabel.isNotEmpty)
                       Positioned(
-                        bottom: 6,
-                        left: 0,
-                        right: 0,
-                        child: Center(
-                          child: AnimatedBuilder(
-                            animation: _blinkAnimation,
-                            builder: (context, child) {
-                              return Transform.scale(
-                                scale: _scaleAnimation.value,
-                                child: Opacity(
-                                  opacity: _blinkAnimation.value,
-                                  child: Column(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      _RibbonBanner(
-                                        text: mainLabel,
-                                        width: ribbonWidth,
-                                        height: ribbonHeight,
-                                        fontSize: isSmallScreen ? 8 : 9.5,
-                                      ),
-                                      if (extraLabel.isNotEmpty)
-                                        Transform.translate(
-                                          offset: const Offset(0, -4),
-                                          child: _RibbonBanner(
-                                            text: extraLabel,
-                                            width: ribbonWidth * 0.82,
-                                            height: ribbonHeight * 0.82,
-                                            fontSize: isSmallScreen ? 7 : 8,
-                                          ),
-                                        ),
-                                    ],
-                                  ),
-                                ),
-                              );
-                            },
-                          ),
+                        left: 8,
+                        bottom: 8,
+                        right: 8,
+                        child: _DiscountBadge(
+                          mainLabel: mainLabel,
+                          extraLabel: extraLabel,
+                          isSmallScreen: isSmallScreen,
                         ),
                       ),
 
@@ -496,140 +457,100 @@ class _TurfCardState extends State<TurfCard> with SingleTickerProviderStateMixin
   }
 }
 
-// ── Ribbon Banner Widget ───────────────────────────────────────────────
-class _RibbonBanner extends StatelessWidget {
-  final String text;
-  final double width;
-  final double height;
-  final double fontSize;
+// ── Discount Badge Widget ──────────────────────────────────────────────
+// A compact, professional offer tag — replaces the old animated gold
+// ribbon. Sits as a translucent gradient strip along the bottom of the
+// image so it never overpowers the photo, with an optional secondary
+// chip for a second offer (e.g. "10% OFF" + "First booking").
+class _DiscountBadge extends StatelessWidget {
+  final String mainLabel;
+  final String extraLabel;
+  final bool isSmallScreen;
 
-  const _RibbonBanner({
-    required this.text,
-    required this.width,
-    required this.height,
-    required this.fontSize,
+  const _DiscountBadge({
+    required this.mainLabel,
+    required this.extraLabel,
+    required this.isSmallScreen,
   });
 
   @override
   Widget build(BuildContext context) {
-    final notch = height * 0.5;
-    return SizedBox(
-      width: width,
-      height: height + 7,
-      child: CustomPaint(
-        painter: _RibbonBannerPainter(bandHeight: height, notch: notch),
-        child: Padding(
-          padding: EdgeInsets.only(
-            left: notch + 6,
-            right: notch + 6,
-            bottom: 7,
-          ),
-          child: SizedBox(
-            height: height,
-            child: Center(
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  text,
-                  maxLines: 1,
-                  softWrap: false,
-                  style: TextStyle(
-                    color: Colors.black87,
-                    fontSize: fontSize,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3,
-                    shadows: const [
-                      Shadow(
-                        color: Colors.white70,
-                        blurRadius: 2,
-                        offset: Offset(0, 1),
-                      ),
-                    ],
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Flexible(
+          child: Container(
+            padding: EdgeInsets.symmetric(
+              horizontal: isSmallScreen ? 8 : 9,
+              vertical: isSmallScreen ? 4 : 5,
+            ),
+            decoration: BoxDecoration(
+              gradient: const LinearGradient(
+                colors: [Color(0xFFE65100), Color(0xFFEF6C00)],
+                begin: Alignment.centerLeft,
+                end: Alignment.centerRight,
+              ),
+              borderRadius: BorderRadius.circular(7),
+              boxShadow: [
+                BoxShadow(
+                  color: Colors.black.withOpacity(0.18),
+                  blurRadius: 4,
+                  offset: const Offset(0, 2),
+                ),
+              ],
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(
+                  Icons.sell_rounded,
+                  size: isSmallScreen ? 10 : 11,
+                  color: Colors.white,
+                ),
+                const SizedBox(width: 4),
+                Flexible(
+                  child: Text(
+                    mainLabel,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: isSmallScreen ? 9.5 : 10.5,
+                      fontWeight: FontWeight.w700,
+                      letterSpacing: 0.1,
+                    ),
                   ),
+                ),
+              ],
+            ),
+          ),
+        ),
+        if (extraLabel.isNotEmpty) ...[
+          const SizedBox(width: 4),
+          Flexible(
+            child: Container(
+              padding: EdgeInsets.symmetric(
+                horizontal: isSmallScreen ? 6 : 7,
+                vertical: isSmallScreen ? 3.5 : 4.5,
+              ),
+              decoration: BoxDecoration(
+                color: Colors.black.withOpacity(0.55),
+                borderRadius: BorderRadius.circular(7),
+              ),
+              child: Text(
+                extraLabel,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(
+                  color: Colors.white,
+                  fontSize: isSmallScreen ? 8 : 8.5,
+                  fontWeight: FontWeight.w600,
                 ),
               ),
             ),
           ),
-        ),
-      ),
-    );
-  }
-}
-
-class _RibbonBannerPainter extends CustomPainter {
-  final double bandHeight;
-  final double notch;
-
-  _RibbonBannerPainter({required this.bandHeight, required this.notch});
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    final w = size.width;
-    final h = bandHeight;
-
-    final goldGradient = const LinearGradient(
-      colors: [
-        Color(0xFFFFF3B0),
-        Color(0xFFFFD700),
-        Color(0xFFFFB300),
+        ],
       ],
-      begin: Alignment.topLeft,
-      end: Alignment.bottomRight,
-    );
-
-    final bandRect = Rect.fromLTWH(0, 0, w, h);
-    final bandPaint = Paint()..shader = goldGradient.createShader(bandRect);
-
-    final borderPaint = Paint()
-      ..color = Colors.green.shade700
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1.2;
-
-    final foldPaint = Paint()..color = const Color(0xFFB8860B);
-    final foldBorderPaint = Paint()
-      ..color = Colors.green.shade800
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = 1;
-
-    final leftFold = Path()
-      ..moveTo(0, h - 2)
-      ..lineTo(notch * 0.85, h - 2)
-      ..lineTo(0, h + 6)
-      ..close();
-    final rightFold = Path()
-      ..moveTo(w, h - 2)
-      ..lineTo(w - notch * 0.85, h - 2)
-      ..lineTo(w, h + 6)
-      ..close();
-
-    canvas.drawPath(leftFold, foldPaint);
-    canvas.drawPath(leftFold, foldBorderPaint);
-    canvas.drawPath(rightFold, foldPaint);
-    canvas.drawPath(rightFold, foldBorderPaint);
-
-    final bandPath = Path()
-      ..moveTo(0, 0)
-      ..lineTo(w, 0)
-      ..lineTo(w - notch, h / 2)
-      ..lineTo(w, h)
-      ..lineTo(0, h)
-      ..lineTo(notch, h / 2)
-      ..close();
-
-    canvas.drawPath(bandPath, bandPaint);
-    canvas.drawPath(bandPath, borderPaint);
-
-    final highlightPaint = Paint()
-      ..color = Colors.white.withOpacity(0.35)
-      ..strokeWidth = 1;
-    canvas.drawLine(
-      Offset(notch + 2, h * 0.28),
-      Offset(w - notch - 2, h * 0.28),
-      highlightPaint,
     );
   }
-
-  @override
-  bool shouldRepaint(covariant _RibbonBannerPainter oldDelegate) =>
-      oldDelegate.bandHeight != bandHeight || oldDelegate.notch != notch;
 }

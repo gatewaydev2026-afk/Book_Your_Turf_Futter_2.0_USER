@@ -557,19 +557,13 @@ class ProfileView extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Lottie.asset(
-                "assets/lottie/Logout.json",
-                height: 90,
-                repeat: true,
-              ),
-              const SizedBox(height: 6),
               const Text(
                 "Logout?",
                 style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 4),
               Text(
-                "You sure want to logout?",
+                "Are you sure want to logout?",
                 textAlign: TextAlign.center,
                 style: TextStyle(color: Colors.grey, fontSize: 12),
               ),
@@ -1483,7 +1477,7 @@ Widget referEarnCard({
 👉 Click here to download the app:
 $playStoreLink
 
-📱 If you already have the app, click this link:
+📱 If you already have the app, 
 $customSchemeLink
 
 ✨ Get ₹100 bonus on your first booking!

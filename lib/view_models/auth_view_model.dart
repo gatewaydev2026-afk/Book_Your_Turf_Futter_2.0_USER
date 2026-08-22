@@ -1,6 +1,10 @@
-// auth_view_model.dart - Complete with device registration after login
-// ✅ SINGLE DOMAIN CONFIGURATION
-// ✅ Duplicate login prevention
+// view_models/auth_view_model.dart - COMPLETE PHONE OTP IMPLEMENTATION
+// ✅ Phone OTP login/register (2 APIs only)
+// ✅ No name/email/password on auth screens
+// ✅ JWT stored locally, never expires
+// ✅ Verified badge support
+// ✅ FCM device registration after login
+// ✅ Small snackbar with 1-second duration at TOP
 
 import 'dart:async';
 import 'dart:convert';
@@ -31,13 +35,15 @@ import 'favorites_view_model.dart';
 class AuthViewModel extends GetxController {
   final isLoading = false.obs;
   final otpResendCooldown = 60.obs;
-  String? _tempEmail;
-  String? _tempPhone;
-  String? _tempName;
-  String? _tempPassword;
-  String? _tempReferralCode;
-  String? _tempVerificationMethod;
-  String? _tempIdentifier;
+
+  // Phone OTP state
+  final phoneNumber = ''.obs;
+  final isRegistered = false.obs;
+  final isNumberVerified = false.obs;
+  final otpSent = false.obs;
+  final isNewUser = true.obs;
+  final profileComplete = false.obs;
+
   Timer? _timer;
   Timer? _expiryTimer;
 
@@ -47,45 +53,47 @@ class AuthViewModel extends GetxController {
   bool _deviceRegistrationStarted = false;
 
   // ✅ DUPLICATE API CALL PREVENTION
-  bool _isLoggingIn = false;
+  bool _isSendingOtp = false;
+  bool _isVerifyingOtp = false;
 
-  // ✅ FIX: These auth calls (sendRegistrationOtp/verifyOtp/login) can run
-  // while ANOTHER dialog (GuestBookingAuthDialog) is already open on top of
-  // SlotView. Get.dialog() just pushes another route, so we'd end up with
-  // TWO dialogs stacked: [GuestBookingAuthDialog, this loading spinner].
-  //
-  // The old code used `if (Get.isDialogOpen ?? false) Get.back();` to close
-  // the spinner once the API call finished — but Get.isDialogOpen only
-  // checks "is ANY dialog open", not "is MY spinner still open". If the
-  // user pressed the hardware back button while the spinner was showing,
-  // Android/GetX would pop the spinner route immediately (nothing here
-  // stopped it), leaving GuestBookingAuthDialog as the new topmost dialog.
-  // When the in-flight API call finally resolved, `Get.back()` would then
-  // pop THAT dialog instead — closing the booking flow early while the
-  // rest of the function (e.g. login() opening its own spinner afterwards)
-  // kept running against a disposed widget. Net effect: an orphaned
-  // loading dialog with nothing left to close it = stuck on a loading
-  // screen forever.
-  //
-  // Fix: wrap the spinner in a PopScope(canPop: false) so the hardware
-  // back button can never pop it directly. Now there is exactly one way
-  // to close it — the explicit Get.back() below — so the two dialogs can
-  // never get out of sync.
-  void _showBlockingLoader() {
-    Get.dialog(
-      PopScope(
-        canPop: false,
-        child: const Center(child: CircularProgressIndicator()),
-      ),
-      barrierDismissible: false,
-    );
-  }
+  // ✅ Store user data from verify response
+  Map<String, dynamic>? _verifiedUserData;
 
   @override
   void onClose() {
     _timer?.cancel();
     _expiryTimer?.cancel();
     super.onClose();
+  }
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.black,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
   }
 
   void startResendTimer() {
@@ -123,330 +131,149 @@ class AuthViewModel extends GetxController {
     _timer?.cancel();
     _expiryTimer?.cancel();
     otpResendCooldown.value = AppConfig.otpResendCooldown;
+    otpSent.value = false;
   }
 
-  // ==================== REGISTRATION - SEND OTP ====================
+  void resetPhoneAuth() {
+    phoneNumber.value = '';
+    isRegistered.value = false;
+    isNumberVerified.value = false;
+    otpSent.value = false;
+    _verifiedUserData = null;
+    clearOtpTime();
+  }
 
-  Future<bool> sendRegistrationOtp({
-    required String name,
-    required String email,
-    required String phone,
-    required String password,
+  // ============================================================
+  // ✅ 1) SEND OTP - Phone Auth
+  // POST /api/user/phone/send-otp/
+  // ============================================================
+  Future<bool> sendPhoneOtp({
+    required String number,
     String? referralCode,
-    required String verificationMethod,
-    // ✅ FIX: GuestBookingAuthDialog is itself a Get.dialog() and already
-    // shows its own inline spinner in the "Send OTP" button. If we also
-    // open AuthViewModel's full-screen spinner here, we end up with TWO
-    // dialogs stacked. Get.isDialogOpen is a single bool (not a per-dialog
-    // or stack-depth tracker), so once nested dialogs are involved it can
-    // report the wrong thing and a spinner can be left open with nothing
-    // left to close it — the "stuck on loading, back does nothing" bug.
-    // Callers that already have their own dialog + busy indicator should
-    // pass showLoadingOverlay: false.
-    bool showLoadingOverlay = true,
   }) async {
-    if (verificationMethod == 'email' && (email.isEmpty || !email.contains('@'))) {
-      _showError('Please enter a valid email address');
-      return false;
+    // Clean phone number (remove +91, 91, spaces, special chars)
+    String cleanNumber = number.replaceAll(RegExp(r'[\s\+\-\(\)]'), '');
+    if (cleanNumber.startsWith('91')) {
+      cleanNumber = cleanNumber.substring(2);
     }
-    if (verificationMethod == 'phone' && (phone.isEmpty || phone.length < 10)) {
-      _showError('Please enter a valid phone number');
+    if (cleanNumber.length != 10) {
+      _showSmallSnackbar('Error', 'Please enter a valid 10-digit mobile number', Colors.red);
       return false;
     }
 
+    // ✅ Prevent duplicate calls
+    if (_isSendingOtp) {
+      print('⏭️ OTP send already in progress - skipping duplicate');
+      return false;
+    }
+
+    _isSendingOtp = true;
     isLoading.value = true;
-    if (showLoadingOverlay) _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
 
-      _tempName = name;
-      _tempEmail = email;
-      _tempPhone = phone;
-      _tempPassword = password;
-      _tempReferralCode = referralCode;
-      _tempVerificationMethod = verificationMethod;
-      _tempIdentifier = verificationMethod == 'email' ? email : phone;
-
-      Map<String, dynamic> requestData = {
-        'name': name,
-        'email': email,
-        'number': phone,
-        'password': password,
-        'verification_method': verificationMethod,
-      };
+      Map<String, dynamic> requestData = {'number': cleanNumber};
       if (referralCode != null && referralCode.isNotEmpty) {
         requestData['referral_code'] = referralCode;
       }
 
       print('📤 SEND OTP Request: $requestData');
 
-      final response = await dio.post(AppConfig.authSendOtp, data: requestData);
+      final response = await dio.post(AppConfig.phoneSendOtp, data: requestData);
 
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
+      _isSendingOtp = false;
 
       print('📥 SEND OTP Response: ${response.data}');
 
       if (response.data['result'] == 'success') {
+        final data = response.data['data'];
+        phoneNumber.value = data['number'] ?? cleanNumber;
+        isRegistered.value = data['is_registered'] ?? false;
+        isNumberVerified.value = data['is_number_verified'] ?? false;
+        otpSent.value = true;
+
         _otpSentTime = DateTime.now();
         _startTimer();
-        _showSuccess('OTP sent to ${verificationMethod == 'email' ? email : phone}');
+
+        _showSmallSnackbar('Success', 'OTP sent to $cleanNumber', Colors.white);
         return true;
       } else {
         String msg = response.data['message'] ?? 'Failed to send OTP';
-        _showError(msg);
+        _showSmallSnackbar('Error', msg, Colors.red);
         return false;
       }
     } on DioException catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
-      _showError(_getApiErrorMessage(e));
+      _isSendingOtp = false;
+      _showSmallSnackbar('Error', _getApiErrorMessage(e), Colors.red);
       return false;
     } catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
-      _showError('Something went wrong. Please try again.');
+      _isSendingOtp = false;
+      _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
       return false;
     }
   }
 
-  // ==================== RESEND OTP ====================
-
-  Future<bool> resendOtp(String identifier, {bool showLoadingOverlay = true}) async {
-    isLoading.value = true;
-    if (showLoadingOverlay) _showBlockingLoader();
-
-    try {
-      final dio = Get.find<Dio>();
-      final response = await dio.post(AppConfig.authResendOtp, data: {'identifier': identifier});
-
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
-      isLoading.value = false;
-
-      if (response.data['result'] == 'success') {
-        _otpSentTime = DateTime.now();
-        _startTimer();
-        _showSuccess('OTP resent successfully');
-        return true;
-      } else {
-        String msg = response.data['message'] ?? 'Failed to resend OTP';
-        _showError(msg);
-        return false;
-      }
-    } on DioException catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
-      isLoading.value = false;
-      _showError(_getApiErrorMessage(e));
-      return false;
-    }
-  }
-
-  // ==================== VERIFY OTP & CREATE ACCOUNT ====================
-
-  Future<bool> verifyOtp(String otp, String identifier, {bool showLoadingOverlay = true}) async {
-    if (isOtpTimeExpired()) {
-      _showError('OTP has expired. Please request a new one.');
-      return false;
-    }
-
-    isLoading.value = true;
-    if (showLoadingOverlay) _showBlockingLoader();
-
-    try {
-      final dio = Get.find<Dio>();
-      final response = await dio.post(AppConfig.authVerifyOtp, data: {'identifier': identifier, 'otp': otp});
-
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
-      isLoading.value = false;
-
-      if (response.statusCode == 201 && response.data['result'] == 'success') {
-        try {
-          await facebookAppEvents.logEvent(
-            name: 'fb_mobile_complete_registration',
-            parameters: {
-              'registration_method': 'otp_${_tempVerificationMethod ?? 'email'}',
-              'email': _tempEmail ?? '',
-              'phone': _tempPhone ?? '',
-              'name': _tempName ?? '',
-            },
-          );
-          print('✅ Facebook registration event logged');
-        } catch (e) {
-          print('❌ Facebook registration event error: $e');
-        }
-
-        _showSuccess('Account created successfully! Please login');
-
-        _tempIdentifier = null;
-        clearOtpTime();
-        return true;
-      } else {
-        String msg = response.data['message'] ?? 'Verification failed';
-        _showError(msg);
-        return false;
-      }
-    } on DioException catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
-      isLoading.value = false;
-      _showError(_getApiErrorMessage(e));
-      return false;
-    }
-  }
-
-  // ==================== FORGOT PASSWORD - SEND OTP ====================
-
-  Future<bool> sendPasswordResetOtp({
-    required String verificationMethod,
-    String? email,
-    String? phone,
+  // ============================================================
+  // ✅ 2) VERIFY OTP - Phone Auth
+  // POST /api/user/phone/verify-otp/
+  // ============================================================
+  Future<bool> verifyPhoneOtp({
+    required String number,
+    required String otp,
   }) async {
-    isLoading.value = true;
-    _showBlockingLoader();
-
-    try {
-      final dio = Get.find<Dio>();
-      Map<String, dynamic> requestData = {'verification_method': verificationMethod};
-
-      if (verificationMethod == 'email' && email != null) {
-        requestData['email'] = email;
-      } else if (verificationMethod == 'phone' && phone != null) {
-        requestData['number'] = phone;
-      }
-
-      final response = await dio.post(AppConfig.authForgotPasswordOtp, data: requestData);
-
-      if (Get.isDialogOpen ?? false) Get.back();
-      isLoading.value = false;
-
-      if (response.data['result'] == 'success') {
-        _otpSentTime = DateTime.now();
-        _startTimer();
-        _showSuccess('OTP sent successfully');
-        return true;
-      } else {
-        String msg = response.data['message'] ?? 'Failed to send OTP';
-        _showError(msg);
-        return false;
-      }
-    } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
-      isLoading.value = false;
-      _showError(_getApiErrorMessage(e));
-      return false;
+    // Clean phone number
+    String cleanNumber = number.replaceAll(RegExp(r'[\s\+\-\(\)]'), '');
+    if (cleanNumber.startsWith('91')) {
+      cleanNumber = cleanNumber.substring(2);
     }
-  }
 
-  // ==================== RESET PASSWORD ====================
-
-  Future<bool> resetPassword(String otp, String newPassword, {required String identifier}) async {
     if (isOtpTimeExpired()) {
-      _showError('OTP has expired. Please request a new one.');
+      _showSmallSnackbar('Error', 'OTP has expired. Please request a new one.', Colors.red);
       return false;
     }
 
+    // ✅ Prevent duplicate calls
+    if (_isVerifyingOtp) {
+      print('⏭️ OTP verify already in progress - skipping duplicate');
+      return false;
+    }
+
+    _isVerifyingOtp = true;
     isLoading.value = true;
-    _showBlockingLoader();
 
     try {
       final dio = Get.find<Dio>();
-      final response = await dio.post(AppConfig.authResetPassword, data: {
-        'identifier': identifier,
+
+      final requestData = {
+        'number': cleanNumber,
         'otp': otp,
-        'new_password': newPassword
-      });
-
-      if (Get.isDialogOpen ?? false) Get.back();
-      isLoading.value = false;
-
-      if (response.statusCode == 200 && response.data['result'] == 'success') {
-        _showSuccess('Password reset successful! Please login with your new password.');
-        clearOtpTime();
-        return true;
-      } else {
-        String msg = response.data['message'] ?? 'Password reset failed';
-        _showError(msg);
-        return false;
-      }
-    } on DioException catch (e) {
-      if (Get.isDialogOpen ?? false) Get.back();
-      isLoading.value = false;
-      _showError(_getApiErrorMessage(e));
-      return false;
-    }
-  }
-
-  // ============================================================
-  // ✅ LOGIN - With immediate device registration
-  // ✅ Duplicate prevention
-  // ============================================================
-
-  // ✅ NEW: navigateOnSuccess lets callers suppress the automatic redirect to
-  // MainPage. The guest-registration-with-booking flow (OTP verification
-  // screen) needs this: it wants to auto-login and then return the user to
-  // their in-progress SlotView, not get yanked to MainPage first. Defaults
-  // to true so every other existing call site (plain login screen etc.)
-  // behaves exactly as before.
-  Future<bool> login(String loginId, String password, {bool navigateOnSuccess = true, bool showLoadingOverlay = true}) async {
-    // ✅ FIX: Prevent concurrent login attempts
-    if (_isLoggingIn) {
-      print('⏭️ Login already in progress - skipping duplicate');
-      return false;
-    }
-
-    if (loginId.isEmpty || password.isEmpty) {
-      _showError('Please enter both email/phone and password');
-      return false;
-    }
-
-    _isLoggingIn = true;
-    isLoading.value = true;
-    if (showLoadingOverlay) _showBlockingLoader();
-
-    try {
-      final dio = Get.find<Dio>();
-
-      Map<String, dynamic> requestData = {
-        'password': password,
       };
 
-      if (loginId.contains('@')) {
-        print('📤 Login with Email: $loginId');
-        requestData['email'] = loginId;
-        requestData['username'] = loginId;
-        requestData['login_id'] = loginId;
+      print('📤 VERIFY OTP Request: $requestData');
 
-        if (loginId.replaceAll(RegExp(r'\D'), '').length >= 10) {
-          requestData['number'] = loginId.replaceAll(RegExp(r'\D'), '');
-          requestData['phone'] = loginId.replaceAll(RegExp(r'\D'), '');
-          requestData['mobile'] = loginId.replaceAll(RegExp(r'\D'), '');
-        }
-      } else {
-        String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
-        print('📤 Login with Phone: $cleanPhone');
-        requestData['number'] = cleanPhone;
-        requestData['phone'] = cleanPhone;
-        requestData['mobile'] = cleanPhone;
-        requestData['phone_number'] = cleanPhone;
-        requestData['username'] = cleanPhone;
-        requestData['login_id'] = cleanPhone;
-      }
+      final response = await dio.post(AppConfig.phoneVerifyOtp, data: requestData);
 
-      print('📡 API POST /user/login/');
-      print('📤 Request Fields: ${requestData.keys.join(", ")}');
-
-      final response = await dio.post(AppConfig.authLogin, data: requestData);
-
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
-      _isLoggingIn = false;
+      _isVerifyingOtp = false;
 
-      print('📥 Login Response Status: ${response.statusCode}');
-      print('📥 Login Response Result: ${response.data['result']}');
+      print('📥 VERIFY OTP Response: ${response.data}');
 
       if (response.data['result'] == 'success') {
-        final token = response.data['data']['access'];
-        final user = response.data['data']['user'];
+        final data = response.data['data'];
+        _verifiedUserData = data;
+
+        // ✅ Save JWT token (lifelong - never expires)
+        final token = data['access'];
+        final user = data['user'];
+
+        if (token == null || token.isEmpty) {
+          _showSmallSnackbar('Error', 'Authentication failed. Please try again.', Colors.red);
+          return false;
+        }
 
         int userId = 0;
         final idValue = user['id'];
@@ -458,33 +285,46 @@ class AuthViewModel extends GetxController {
           userId = idValue.toInt();
         }
 
+        // ✅ Save user data
         await SharedPrefsHelper.setToken(token);
         await SharedPrefsHelper.setUserId(userId);
         await SharedPrefsHelper.setUserName(user['name'] ?? '');
         await SharedPrefsHelper.setUserEmail(user['email'] ?? '');
-        await SharedPrefsHelper.setUserPhone(user['number'] ?? '');
+        await SharedPrefsHelper.setUserPhone(user['number'] ?? cleanNumber);
         await SharedPrefsHelper.setWalletBalance(
             double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0
         );
         await SharedPrefsHelper.setGameCoins(user['game_coins'] ?? 0);
         await SharedPrefsHelper.setReferralCode(user['referral_code'] ?? '');
-
         await SharedPrefsHelper.setAppInitialized(true);
+
+        // ✅ Save phone auth specific flags
+        await SharedPrefsHelper.setIsPhoneAuthUser(true);
+        await SharedPrefsHelper.setIsNumberVerified(user['is_number_verified'] ?? false);
+        await SharedPrefsHelper.setIsNewUser(data['is_new_user'] ?? true);
+        await SharedPrefsHelper.setProfileComplete(data['profile_complete'] ?? false);
+
+        isNewUser.value = data['is_new_user'] ?? true;
+        profileComplete.value = data['profile_complete'] ?? false;
 
         print('✅ User data saved:');
         print('   ID: $userId');
         print('   Name: ${user['name']}');
         print('   Email: ${user['email']}');
         print('   Phone: ${user['number']}');
+        print('   Is New User: ${data['is_new_user']}');
+        print('   Is Number Verified: ${user['is_number_verified']}');
+        print('   Profile Complete: ${data['profile_complete']}');
 
+        // ✅ Log Facebook event
         try {
           await facebookAppEvents.logEvent(
             name: 'fb_mobile_login',
             parameters: {
-              'registration_method': 'email_password',
+              'registration_method': 'phone_otp',
               'user_id': user['id'].toString(),
-              'user_email': user['email'] ?? '',
-              'user_name': user['name'] ?? '',
+              'user_phone': user['number'] ?? '',
+              'is_new_user': data['is_new_user'].toString(),
             },
           );
           print('✅ Facebook login event logged');
@@ -492,171 +332,156 @@ class AuthViewModel extends GetxController {
           print('❌ Facebook login event error: $e');
         }
 
+        // ✅ Register device with FCM token
         print('\n╔════════════════════════════════════════════════════════════╗');
-        print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
+        print('║  📱 PHONE OTP LOGIN SUCCESS - REGISTERING DEVICE          ║');
         print('╚════════════════════════════════════════════════════════════╝');
 
-        final deviceRegistered = await _registerDeviceToken(token);
+        await _registerDeviceToken(token);
 
-        if (deviceRegistered) {
-          print('✅ Device registered successfully after login');
-        } else {
-          print('⚠️ Device registration failed after login - will retry on next launch');
-        }
-
+        // ✅ Initialize app services
         await AppInitializer.initializeApp();
 
-        _showSuccess('Welcome ${user['name']}!');
-        if (navigateOnSuccess) {
-          Get.offAllNamed(AppRoutes.mainPage);
-        } else {
-          print('⏭️ Skipping auto-redirect to MainPage (navigateOnSuccess: false)');
-        }
-        _isLoggingIn = false;
+        // ✅ Navigate to home
+        Get.offAllNamed(AppRoutes.mainPage);
+
+        _showSmallSnackbar('Welcome!', '${user['name']?.isNotEmpty == true ? user['name'] : ''}', Colors.white);
         return true;
       } else {
-        print('⚠️ Login failed with all fields, trying individual fields...');
-        final result = await _tryLoginWithIndividualFields(loginId, password, dio, navigateOnSuccess: navigateOnSuccess);
-        _isLoggingIn = false;
-        return result;
+        String msg = response.data['message'] ?? 'Verification failed. Please try again.';
+        _showSmallSnackbar('Error', msg, Colors.red);
+        return false;
       }
     } on DioException catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
       isLoading.value = false;
-      _isLoggingIn = false;
+      _isVerifyingOtp = false;
 
-      print('⚠️ DioException, trying individual fields...');
+      if (e.response?.statusCode == 400) {
+        _showSmallSnackbar('Error', 'Invalid OTP. Please try again.', Colors.red);
+      } else {
+        _showSmallSnackbar('Error', _getApiErrorMessage(e), Colors.red);
+      }
+      return false;
+    } catch (e) {
+      isLoading.value = false;
+      _isVerifyingOtp = false;
+      _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
+      return false;
+    }
+  }
+
+  // ============================================================
+  // ✅ RESEND OTP - Just call send-otp again
+  // ============================================================
+  Future<bool> resendPhoneOtp() async {
+    if (phoneNumber.value.isEmpty) {
+      _showSmallSnackbar('Error', 'No phone number found. Please try again.', Colors.red);
+      return false;
+    }
+
+    // Reset OTP time first
+    clearOtpTime();
+
+    // Call send-otp again
+    return await sendPhoneOtp(number: phoneNumber.value);
+  }
+
+  // ============================================================
+  // ✅ FORCE DEVICE REGISTRATION
+  // ============================================================
+  Future<bool> forceRegisterDevice() async {
+    final token = SharedPrefsHelper.getToken();
+    if (token == null || token.isEmpty) {
+      print('❌ No token available for device registration');
+      return false;
+    }
+
+    print('🔄 Force registering device...');
+    _deviceRegistrationStarted = false;
+    return await _registerDeviceToken(token);
+  }
+
+  // ============================================================
+  // ✅ DEVICE TOKEN REGISTRATION - WITH FCM & LOCATION
+  // ============================================================
+  Future<bool> _registerDeviceToken(String jwtToken) async {
+    if (_deviceRegistrationStarted) {
+      print('⏭️ Device registration already started, skipping duplicate...');
+      return false;
+    }
+
+    _deviceRegistrationStarted = true;
+
+    try {
+      final persistentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+      print('📱 Persistent Device ID for registration: $persistentDeviceId');
+
+      // ✅ Get FCM token
+      String? fcmToken;
       try {
-        final dio = Get.find<Dio>();
-        return await _tryLoginWithIndividualFields(loginId, password, dio, navigateOnSuccess: navigateOnSuccess);
-      } catch (e2) {
-        if (e.response?.statusCode == 400) {
-          _showError('Invalid email/phone or password. Please try again.');
-        } else if (e.response?.statusCode == 401) {
-          _showError('Invalid credentials. Please check your email/phone and password.');
-        } else {
-          _showError(_getApiErrorMessage(e));
+        fcmToken = await FirebaseMessaging.instance.getToken();
+        print('📱 FCM Token: ${fcmToken?.substring(0, fcmToken!.length > 20 ? 20 : fcmToken.length)}...');
+      } catch (e) {
+        print('⚠️ Could not get FCM token: $e');
+      }
+
+      // ✅ Get location
+      String? currentLocation;
+      if (Get.isRegistered<HomeViewModel>()) {
+        final homeVm = Get.find<HomeViewModel>();
+        int attempts = 0;
+        while (homeVm.currentLocationName.value.isEmpty && attempts < 20) {
+          await Future.delayed(const Duration(milliseconds: 100));
+          attempts++;
         }
+        currentLocation = homeVm.currentLocationName.value;
+        if (currentLocation!.isNotEmpty) {
+          print('📍 Got location from HomeViewModel: "$currentLocation"');
+        }
+      }
+
+      if (currentLocation == null || currentLocation.isEmpty) {
+        print('⚠️ No location from HomeViewModel, fetching directly...');
+        currentLocation = await _fetchCurrentLocationDirectly();
+      }
+
+      if (!Get.isRegistered<DeviceManager>()) {
+        Get.put(DeviceManager(), permanent: true);
+      }
+
+      final deviceManager = Get.find<DeviceManager>();
+
+      print('\n📱 Registering device with PERSISTENT ID...');
+      print('   🆔 Device ID: $persistentDeviceId');
+      print('   👤 User: ${SharedPrefsHelper.getUserPhone() ?? 'Unknown'}');
+      print('   📍 Location: "${currentLocation ?? "none"}"');
+      print('   📱 FCM Token: ${fcmToken != null ? "Available" : "Not available"}');
+
+      final result = await deviceManager.registerDevice(
+        jwtToken: jwtToken,
+        location: currentLocation,
+      );
+
+      if (result.success) {
+        print('✅ Device registered successfully');
+        await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
+        _deviceRegistrationStarted = false;
+        return true;
+      } else {
+        print('❌ Device registration failed: ${result.error}');
+        _deviceRegistrationStarted = false;
         return false;
       }
     } catch (e) {
-      if (showLoadingOverlay && (Get.isDialogOpen ?? false)) Get.back();
-      isLoading.value = false;
-      _isLoggingIn = false;
-      print('❌ Login error: $e');
-      _showError('Something went wrong. Please try again.');
+      print('❌ Device registration error: $e');
+      _deviceRegistrationStarted = false;
       return false;
     }
   }
 
-  // ✅ FIXED: Try individual fields with a limit, not infinite loop
-  Future<bool> _tryLoginWithIndividualFields(String loginId, String password, Dio dio, {bool navigateOnSuccess = true}) async {
-    List<String> fieldNames = [];
-    String cleanPhone = loginId.replaceAll(RegExp(r'\D'), '');
-
-    if (loginId.contains('@')) {
-      fieldNames = ['email', 'username', 'login_id'];
-    } else {
-      fieldNames = ['number', 'phone', 'mobile', 'phone_number', 'username', 'login_id'];
-    }
-
-    // ✅ Try each field once, stop on success
-    for (String field in fieldNames) {
-      try {
-        Map<String, dynamic> requestData = {
-          'password': password,
-        };
-
-        if (loginId.contains('@')) {
-          requestData[field] = loginId;
-        } else {
-          requestData[field] = cleanPhone;
-        }
-
-        print('📤 Trying login with field: $field = ${requestData[field]}');
-
-        final response = await dio.post(AppConfig.authLogin, data: requestData);
-
-        if (response.data['result'] == 'success') {
-          final token = response.data['data']['access'];
-          final user = response.data['data']['user'];
-
-          int userId = 0;
-          final idValue = user['id'];
-          if (idValue is int) {
-            userId = idValue;
-          } else if (idValue is String) {
-            userId = int.tryParse(idValue) ?? 0;
-          }
-
-          await SharedPrefsHelper.setToken(token);
-          await SharedPrefsHelper.setUserId(userId);
-          await SharedPrefsHelper.setUserName(user['name'] ?? '');
-          await SharedPrefsHelper.setUserEmail(user['email'] ?? '');
-          await SharedPrefsHelper.setUserPhone(user['number'] ?? '');
-          await SharedPrefsHelper.setWalletBalance(
-              double.tryParse(user['wallet_balance']?.toString() ?? '0') ?? 0
-          );
-          await SharedPrefsHelper.setGameCoins(user['game_coins'] ?? 0);
-          await SharedPrefsHelper.setReferralCode(user['referral_code'] ?? '');
-
-          await SharedPrefsHelper.setAppInitialized(true);
-
-          print('✅ Login successful with field: $field');
-          print('   Name: ${user['name']}');
-
-          print('\n╔════════════════════════════════════════════════════════════╗');
-          print('║  📱 LOGIN SUCCESS - REGISTERING DEVICE                     ║');
-          print('╚════════════════════════════════════════════════════════════╝');
-
-          await _registerDeviceToken(token);
-
-          await AppInitializer.initializeApp();
-
-          _showSuccess('Welcome ${user['name']}!');
-          if (navigateOnSuccess) {
-            Get.offAllNamed(AppRoutes.mainPage);
-          } else {
-            print('⏭️ Skipping auto-redirect to MainPage (navigateOnSuccess: false)');
-          }
-          return true;
-        }
-      } catch (e) {
-        print('⚠️ Field "$field" failed: $e');
-        continue;
-      }
-    }
-
-    _showError('Invalid credentials. Please check your email/phone and password.');
-    return false;
-  }
-
   // ============================================================
-  // ✅ AUTO-LOGIN AFTER REGISTRATION
+  // ✅ FETCH LOCATION DIRECTLY
   // ============================================================
-
-  Future<bool> autoLoginAfterRegistration({
-    required String email,
-    required String phone,
-    required String password,
-    required String name,
-    bool navigateOnSuccess = true,
-  }) async {
-    print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║  📱 AUTO-LOGIN AFTER REGISTRATION                          ║');
-    print('╚════════════════════════════════════════════════════════════╝');
-
-    try {
-      String loginId = phone.isNotEmpty ? phone : email;
-      return await login(loginId, password, navigateOnSuccess: navigateOnSuccess);
-    } catch (e) {
-      print('❌ Auto-login error: $e');
-      return false;
-    }
-  }
-
-  // ==================== FETCH LOCATION DIRECTLY ====================
-
   Future<String?> _fetchCurrentLocationDirectly() async {
     print('\n📍 Fetching location directly for device registration...');
 
@@ -744,120 +569,87 @@ class AuthViewModel extends GetxController {
   }
 
   // ============================================================
-  // ✅ DEVICE TOKEN REGISTRATION - IMMEDIATE
+  // ✅ CHECK IF PROFILE IS COMPLETE (name + email)
   // ============================================================
+  Future<bool> isProfileComplete() async {
+    final name = SharedPrefsHelper.getUserName();
+    final email = SharedPrefsHelper.getUserEmail();
 
-  Future<bool> _registerDeviceToken(String jwtToken) async {
-    if (_deviceRegistrationStarted) {
-      print('⏭️ Device registration already started, skipping duplicate...');
-      return false;
-    }
-
-    final isValid = await SharedPrefsHelper.isTokenRegistrationValid();
-    if (isValid) {
-      print('✅ Device already registered recently, updating token...');
-    }
-
-    if (Get.isRegistered<DeviceManager>()) {
-      final deviceManager = Get.find<DeviceManager>();
-      if (deviceManager.isRegistered.value) {
-        print('✅ Device already registered in this session, updating token...');
-      }
-    }
-
-    _deviceRegistrationStarted = true;
-
-    try {
-      final persistentDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
-      print('📱 Persistent Device ID for registration: $persistentDeviceId');
-
-      String? currentLocation;
-      if (Get.isRegistered<HomeViewModel>()) {
-        final homeVm = Get.find<HomeViewModel>();
-        int attempts = 0;
-        while (homeVm.currentLocationName.value.isEmpty && attempts < 20) {
-          await Future.delayed(const Duration(milliseconds: 100));
-          attempts++;
-        }
-        currentLocation = homeVm.currentLocationName.value;
-        if (currentLocation!.isNotEmpty) {
-          print('📍 Got location from HomeViewModel: "$currentLocation"');
-        }
-      }
-
-      if (currentLocation == null || currentLocation.isEmpty) {
-        print('⚠️ No location from HomeViewModel, fetching directly...');
-        currentLocation = await _fetchCurrentLocationDirectly();
-      }
-
-      if (!Get.isRegistered<DeviceManager>()) {
-        Get.put(DeviceManager(), permanent: true);
-      }
-
-      final deviceManager = Get.find<DeviceManager>();
-
-      print('\n📱 Registering device with PERSISTENT ID...');
-      print('   🆔 Device ID: $persistentDeviceId');
-      print('   👤 User: ${SharedPrefsHelper.getUserEmail() ?? 'Unknown'}');
-      print('   📍 Location: "${currentLocation ?? "none"}"');
-
-      final result = await deviceManager.registerDevice(
-        jwtToken: jwtToken,
-        location: currentLocation,
-      );
-
-      if (result.success) {
-        print('✅ Device registered successfully');
-        await SharedPrefsHelper.setLastTokenRegistration(DateTime.now());
-        _deviceRegistrationStarted = false;
-        return true;
-      } else {
-        print('❌ Device registration failed: ${result.error}');
-        _deviceRegistrationStarted = false;
-        return false;
-      }
-    } catch (e) {
-      print('❌ Device registration error: $e');
-      _deviceRegistrationStarted = false;
-      return false;
-    }
+    return name != null && name.isNotEmpty && email != null && email.isNotEmpty;
   }
 
-  Future<bool> forceRegisterDevice() async {
+  // ============================================================
+  // ✅ GET PROFILE COMPLETENESS STATUS (for booking block)
+  // ============================================================
+  Future<Map<String, dynamic>> getProfileStatus() async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
-      print('❌ No token available for device registration');
-      return false;
+      return {
+        'isComplete': false,
+        'missing': ['name', 'email'],
+        'isNumberVerified': false,
+      };
     }
 
-    print('🔄 Force registering device...');
-    _deviceRegistrationStarted = false;
-    return await _registerDeviceToken(token);
+    try {
+      final dio = Get.find<Dio>();
+      final response = await dio.get(AppConfig.profile);
+
+      if (response.data['result'] == 'success') {
+        final user = response.data['data'];
+        final name = user['name'] ?? '';
+        final email = user['email'] ?? '';
+        final isNumberVerified = user['is_number_verified'] ?? false;
+
+        final missing = <String>[];
+        if (name.isEmpty) missing.add('name');
+        if (email.isEmpty) missing.add('email');
+
+        return {
+          'isComplete': missing.isEmpty,
+          'missing': missing,
+          'isNumberVerified': isNumberVerified,
+          'name': name,
+          'email': email,
+        };
+      }
+    } catch (e) {
+      print('❌ Error getting profile status: $e');
+    }
+
+    return {
+      'isComplete': false,
+      'missing': ['name', 'email'],
+      'isNumberVerified': false,
+    };
   }
 
   // ============================================================
-  // ✅ LOGOUT - COMPLETE CLEANUP
+  // ✅ LOGOUT - COMPLETE CLEANUP (Token only, not device ID)
   // ============================================================
-
   Future<void> logout() async {
     print('\n╔════════════════════════════════════════════════════════════╗');
     print('║  🚪 LOGGING OUT - COMPLETE CLEANUP                        ║');
     print('╚════════════════════════════════════════════════════════════╝');
 
+    // ✅ Stop auto refresh service
     if (Get.isRegistered<AutoRefreshService>()) {
       Get.find<AutoRefreshService>().stop();
       print('✅ AutoRefreshService stopped');
     }
 
+    // ✅ Clear device registration
     if (Get.isRegistered<DeviceManager>()) {
       final deviceManager = Get.find<DeviceManager>();
       await deviceManager.clearRegistration();
       print('✅ Device registration cleared');
     }
 
+    // ✅ Reset AppInitializer
     AppInitializer.reset();
     print('✅ AppInitializer reset');
 
+    // ✅ Clear caches
     if (Get.isRegistered<CacheManager>()) {
       Get.find<CacheManager>().clearAllCaches();
       print('✅ CacheManager cleared');
@@ -867,9 +659,11 @@ class AuthViewModel extends GetxController {
       print('✅ CacheManager cleared (standalone)');
     }
 
+    // ✅ Clear SharedPreferences (except permanent device ID)
     await SharedPrefsHelper.clearAll();
     print('✅ SharedPreferences cleared (Device ID preserved)');
 
+    // ✅ Clear view models
     if (Get.isRegistered<HomeViewModel>()) {
       final homeVm = Get.find<HomeViewModel>();
       homeVm.turfs.clear();
@@ -923,6 +717,7 @@ class AuthViewModel extends GetxController {
       print('✅ FavoritesViewModel cache reset');
     }
 
+    // ✅ Unsubscribe from FCM topics
     try {
       await FirebaseMessaging.instance.unsubscribeFromTopic('all_users');
       await FirebaseMessaging.instance.unsubscribeFromTopic('offers');
@@ -931,6 +726,7 @@ class AuthViewModel extends GetxController {
       print('⚠️ Could not unsubscribe from topics: $e');
     }
 
+    // ✅ Delete FCM token (optional)
     try {
       await FirebaseMessaging.instance.deleteToken();
       print('✅ FCM token deleted');
@@ -944,14 +740,12 @@ class AuthViewModel extends GetxController {
     print('═══════════════════════════════════════════════════════════════\n');
 
     Get.offAllNamed(AppRoutes.login);
-    _showSuccess('Successfully logged out');
+    _showSmallSnackbar('Success', 'Successfully logged out', Colors.white);
   }
 
-  String? getRegistrationIdentifier() {
-    return _tempIdentifier;
-  }
-
-  // ==================== HELPER METHODS ====================
+  // ============================================================
+  // ✅ HELPER METHODS
+  // ============================================================
 
   String _getApiErrorMessage(DioException e) {
     if (e.response != null && e.response?.data != null) {
@@ -981,39 +775,5 @@ class AuthViewModel extends GetxController {
       return e.message!;
     }
     return 'An unexpected error occurred. Please try again.';
-  }
-
-  void _showSuccess(String message) {
-    Get.snackbar(
-      'Success',
-      message,
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.TOP,
-      duration: const Duration(seconds: 3),
-      margin: const EdgeInsets.all(10),
-      borderRadius: 10,
-      icon: const Icon(Icons.check_circle, color: Colors.white),
-    );
-  }
-
-  void _showError(String message) {
-    print('❌ Error: $message');
-
-    Get.snackbar(
-      'Error',
-      message,
-      backgroundColor: Colors.red.shade700,
-      colorText: Colors.white,
-      snackPosition: SnackPosition.TOP,
-      duration: const Duration(seconds: 4),
-      margin: const EdgeInsets.all(10),
-      borderRadius: 10,
-      icon: const Icon(Icons.error_outline, color: Colors.white),
-      mainButton: TextButton(
-        onPressed: () => Get.back(),
-        child: const Text('OK', style: TextStyle(color: Colors.white)),
-      ),
-    );
   }
 }

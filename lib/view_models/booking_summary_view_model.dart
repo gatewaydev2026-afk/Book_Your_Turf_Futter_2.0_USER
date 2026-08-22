@@ -1,6 +1,7 @@
-// booking_summary_view_model.dart - Complete with Duplicate Prevention
-// ✅ FIXED: UI remains locked until navigation completes
-// ✅ Success dialog cannot be dismissed by back button or tap outside
+// booking_summary_view_model.dart - Complete with Profile Check & Duplicate Prevention
+// ✅ FIXED: Profile dialog auto-closes and proceeds with payment
+// ✅ FIXED: After save & continue, app stays on summary page and proceeds with payment
+// ✅ FIXED: Small snackbar with 1-second duration
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -72,6 +73,10 @@ class BookingSummaryViewModel extends GetxController {
   bool _isSuccessDialogShown = false;
   bool _isPostPaymentProcessing = false;
   bool _isNavigating = false;
+  bool _isCheckingProfile = false;
+
+  // ✅ Store the booking action to call after profile update
+  Future<void> Function()? _pendingBookingAction;
 
   @override
   void onInit() {
@@ -282,153 +287,394 @@ class BookingSummaryViewModel extends GetxController {
     return sorted;
   }
 
-  // ✅ FIXED: Wallet Payment with duplicate prevention
-  Future<void> initiateWalletPayment() async {
-    // ✅ Prevent duplicate wallet payment calls
-    if (_isWalletPaymentInProgress) {
-      print('⏭️ Wallet payment already in progress - skipping duplicate');
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.white,
+      duration: const Duration(seconds: 2),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 400),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
+  }
+
+  // ============================================================
+  // ✅ PROFILE CHECK BEFORE BOOKING - FIXED
+  // ============================================================
+  Future<void> _checkProfileAndProceed(Future<void> Function() bookingAction) async {
+    // ✅ Prevent duplicate profile checks
+    if (_isCheckingProfile) {
+      print('⏭️ Profile check already in progress - skipping duplicate');
       return;
     }
 
-    final token = SharedPrefsHelper.getToken();
-    if (token == null || token.isEmpty) {
-      Get.snackbar('Login Required', 'Please login to complete booking',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      return;
-    }
-
-    if (!SharedPrefsHelper.isTokenValid()) {
-      Get.snackbar('Session Expired', 'Please login again',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      await SharedPrefsHelper.clearToken();
-      Get.offAllNamed(AppRoutes.login);
-      return;
-    }
-
-    _isWalletPaymentInProgress = true;
-
-    final profileVm = Get.find<ProfileViewModel>();
-    await profileVm.fetchUser();
-
-    final amountToPay = _getAmountToPay();
-
-    if (amountToPay <= 0) {
-      _isWalletPaymentInProgress = false;
-      Get.snackbar(
-        'Invalid Amount',
-        'Amount cannot be zero or negative. Please adjust.',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 3),
-      );
-      return;
-    }
-
-    if (profileVm.walletBalance.value < amountToPay) {
-      _isWalletPaymentInProgress = false;
-      Get.snackbar(
-        'Insufficient Balance',
-        'Please recharge your wallet\nBalance: ₹${_formatPrice(profileVm.walletBalance.value)}\nRequired: ₹${_formatPrice(amountToPay)}',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 4),
-      );
-      return;
-    }
-
-    if (isLoading.value) return;
-
-    isLoading.value = true;
-    isUILocked.value = true;
-
-    final double initialBalance = profileVm.walletBalance.value;
+    _isCheckingProfile = true;
 
     try {
-      final dio = Get.find<Dio>();
-      final dateStr = formattedDate;
+      final profileVm = Get.find<ProfileViewModel>();
 
-      final slotsData = selectedSlots.map((slot) => ({
-        'start_time': slot.startTime,
-        'end_time': slot.endTime,
-        'price': slot.priceAsDouble.toStringAsFixed(2),
-      })).toList();
+      // ✅ First, fetch latest profile data
+      await profileVm.fetchUser(forceRefresh: true);
 
-      final requestBody = {
-        'turf_id': turf.id,
-        'court_number': selectedCourt,
-        'date': dateStr,
-        'slots': slotsData,
-        'total_amount': totalAmount.toStringAsFixed(2),
-        'amount_to_pay': _getFormattedAmount(amountToPay),
-      };
-
-      if (discountVm.selectedAdminDiscountId.value != null) {
-        requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value!;
-      }
-      if (discountVm.selectedPartnerDiscountId.value != null) {
-        requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value!;
+      // ✅ Check if profile is complete (name + email)
+      if (!profileVm.isProfileCompleteForBooking) {
+        final missing = profileVm.getMissingFields();
+        // ✅ Store the booking action for later use
+        _pendingBookingAction = bookingAction;
+        print('📝 Profile incomplete - showing dialog. Pending action stored.');
+        await _showProfileRequiredDialog(missing);
+        return;
       }
 
-      print('📤 Wallet Booking Request: $requestBody');
-      print('   Payment Type: $selectedPaymentType');
-      print('   Amount to Pay: $amountToPay');
+      // ✅ Profile is complete, proceed with booking
+      print('✅ Profile complete - proceeding with booking');
+      await bookingAction();
 
-      final response = await dio.post(
-        AppConfig.walletBook,
-        data: requestBody,
+    } catch (e) {
+      print('❌ Profile check error: $e');
+      _showSmallSnackbar(
+        'Error',
+        'Unable to verify profile. Please try again.',
+        Colors.red,
       );
+    } finally {
+      _isCheckingProfile = false;
+    }
+  }
 
-      print('📥 Wallet Booking Response: ${response.data}');
+  Future<void> _showProfileRequiredDialog(List<String> missing) async {
+    final profileVm = Get.find<ProfileViewModel>();
+    final nameController = TextEditingController(text: profileVm.name.value);
+    final emailController = TextEditingController(text: profileVm.email.value);
 
-      final data = response.data;
-      final result = data is Map ? data['result'] : null;
+    // ✅ Track if dialog is already closed
+    bool isDialogClosed = false;
 
-      if (result == 'success') {
-        _handleWalletSuccess();
+    // ✅ Show dialog and wait for result
+    final result = await Get.dialog<bool>(
+      PopScope(
+        canPop: true,
+        child: AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Row(
+            children: [
+
+
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'Please provide the following details to continue with your booking:',
+                style: TextStyle(fontSize: 13, color: Colors.grey.shade700),
+              ),
+              const SizedBox(height: 16),
+              if (missing.contains('name'))
+                TextField(
+                  controller: nameController,
+                  decoration: InputDecoration(
+                    labelText: 'Name *',
+                    prefixIcon: const Icon(Icons.person_outline, color: Colors.green),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                ),
+              if (missing.contains('email')) ...[
+                if (missing.contains('name')) const SizedBox(height: 12),
+                TextField(
+                  controller: emailController,
+                  keyboardType: TextInputType.emailAddress,
+                  decoration: InputDecoration(
+                    labelText: 'Email *',
+                    prefixIcon: const Icon(Icons.email_outlined, color: Colors.green),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 14),
+                  ),
+                ),
+              ],
+              const SizedBox(height: 8),
+              Text(
+                'This information is required to confirm your booking',
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade500),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () {
+                if (!isDialogClosed) {
+                  isDialogClosed = true;
+                  Get.back(result: false);
+                }
+              },
+              child: const Text('Cancel'),
+            ),
+            Obx(() {
+              final profileVm2 = Get.find<ProfileViewModel>();
+              return ElevatedButton(
+                onPressed: profileVm2.isUpdating.value
+                    ? null
+                    : () async {
+                  final name = nameController.text.trim();
+                  final email = emailController.text.trim();
+
+                  if (name.isEmpty || email.isEmpty) {
+                    _showSmallSnackbar(
+                      'Error',
+                      'Please fill all required fields',
+                      Colors.red,
+                    );
+                    return;
+                  }
+
+                  if (!email.contains('@')) {
+                    _showSmallSnackbar(
+                      'Error',
+                      'Please enter a valid email address',
+                      Colors.red,
+                    );
+                    return;
+                  }
+
+                  // ✅ Update profile
+                  print('📤 Updating profile: name=$name, email=$email');
+                  final success = await profileVm2.updateProfileForBooking(
+                    name: name,
+                    email: email,
+                  );
+
+                  if (success) {
+                    print('✅ Profile updated successfully - closing dialog');
+                    // ✅ Close dialog immediately after success
+                    if (!isDialogClosed) {
+                      isDialogClosed = true;
+                      // ✅ Force close the dialog
+                      if (Get.isDialogOpen ?? false) {
+                        Get.back(result: true);
+                      }
+                    }
+                  } else {
+                    _showSmallSnackbar(
+                      'Error',
+                      'Failed to update profile. Please try again.',
+                      Colors.red,
+                    );
+                  }
+                },
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                ),
+                child: profileVm2.isUpdating.value
+                    ? const SizedBox(
+                  width: 20,
+                  height: 20,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
+                )
+                    : const Text('Save & Continue'),
+              );
+            }),
+          ],
+        ),
+      ),
+      barrierDismissible: false,
+    );
+
+    print('📝 Dialog closed with result: $result');
+
+    // ✅ If profile was updated successfully, proceed with booking
+    if (result == true) {
+      final action = _pendingBookingAction;
+      _pendingBookingAction = null;
+      if (action != null) {
+        print('✅ Executing pending booking action...');
+        await action();
       } else {
+        print('⚠️ No pending booking action found!');
+      }
+    } else {
+      print('⚠️ Dialog result was false or null - booking cancelled');
+      _pendingBookingAction = null;
+    }
+  }
+
+  // ============================================================
+  // ✅ WALLET PAYMENT WITH PROFILE CHECK
+  // ============================================================
+  Future<void> initiateWalletPayment() async {
+    // ✅ Check profile before proceeding
+    await _checkProfileAndProceed(() async {
+      // ✅ Prevent duplicate wallet payment calls
+      if (_isWalletPaymentInProgress) {
+        print('⏭️ Wallet payment already in progress - skipping duplicate');
+        return;
+      }
+
+      final token = SharedPrefsHelper.getToken();
+      if (token == null || token.isEmpty) {
+        _showSmallSnackbar(
+          'Login Required',
+          'Please login to complete booking',
+          Colors.red,
+        );
+        return;
+      }
+
+      if (!SharedPrefsHelper.isTokenValid()) {
+        _showSmallSnackbar(
+          'Session Expired',
+          'Please login again',
+          Colors.red,
+        );
+        await SharedPrefsHelper.clearToken();
+        Get.offAllNamed(AppRoutes.login);
+        return;
+      }
+
+      _isWalletPaymentInProgress = true;
+
+      final profileVm = Get.find<ProfileViewModel>();
+      await profileVm.fetchUser();
+
+      final amountToPay = _getAmountToPay();
+
+      if (amountToPay <= 0) {
+        _isWalletPaymentInProgress = false;
+        _showSmallSnackbar(
+          'Invalid Amount',
+          'Amount cannot be zero or negative',
+          Colors.red,
+        );
+        return;
+      }
+
+      if (profileVm.walletBalance.value < amountToPay) {
+        _isWalletPaymentInProgress = false;
+        _showSmallSnackbar(
+          'Insufficient Balance',
+          'Balance: ₹${_formatPrice(profileVm.walletBalance.value)}',
+          Colors.red,
+        );
+        return;
+      }
+
+      if (isLoading.value) return;
+
+      isLoading.value = true;
+      isUILocked.value = true;
+
+      final double initialBalance = profileVm.walletBalance.value;
+
+      try {
+        final dio = Get.find<Dio>();
+        final dateStr = formattedDate;
+
+        final slotsData = selectedSlots.map((slot) => ({
+          'start_time': slot.startTime,
+          'end_time': slot.endTime,
+          'price': slot.priceAsDouble.toStringAsFixed(2),
+        })).toList();
+
+        final requestBody = {
+          'turf_id': turf.id,
+          'court_number': selectedCourt,
+          'date': dateStr,
+          'slots': slotsData,
+          'total_amount': totalAmount.toStringAsFixed(2),
+          'amount_to_pay': _getFormattedAmount(amountToPay),
+        };
+
+        if (discountVm.selectedAdminDiscountId.value != null) {
+          requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value!;
+        }
+        if (discountVm.selectedPartnerDiscountId.value != null) {
+          requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value!;
+        }
+
+        print('📤 Wallet Booking Request: $requestBody');
+        print('   Payment Type: $selectedPaymentType');
+        print('   Amount to Pay: $amountToPay');
+
+        final response = await dio.post(
+          AppConfig.walletBook,
+          data: requestBody,
+        );
+
+        print('📥 Wallet Booking Response: ${response.data}');
+
+        final data = response.data;
+        final result = data is Map ? data['result'] : null;
+
+        if (result == 'success') {
+          _handleWalletSuccess();
+        } else {
+          await Future.delayed(const Duration(milliseconds: 500));
+          await profileVm.fetchUser(forceRefresh: true);
+
+          if (profileVm.walletBalance.value < initialBalance) {
+            print('✅ Wallet payment successful - balance decreased');
+            _handleWalletSuccess();
+          } else {
+            String errorMsg = data['message'] ?? 'Please try again.';
+            _showWalletError(errorMsg);
+          }
+        }
+      } on DioException catch (e) {
+        print('❌ Wallet Booking Error: ${e.response?.data}');
+        String errorMsg = 'Something went wrong. Please try again.';
+        if (e.response?.data != null) {
+          final data = e.response?.data;
+          if (data is Map && data['message'] != null) {
+            errorMsg = data['message'];
+          }
+        }
         await Future.delayed(const Duration(milliseconds: 500));
         await profileVm.fetchUser(forceRefresh: true);
 
         if (profileVm.walletBalance.value < initialBalance) {
-          print('✅ Wallet payment successful - balance decreased');
+          print('✅ Wallet payment successful despite error');
           _handleWalletSuccess();
         } else {
-          String errorMsg = data['message'] ?? 'Payment failed. Please try again.';
           _showWalletError(errorMsg);
         }
-      }
-    } on DioException catch (e) {
-      print('❌ Wallet Booking Error: ${e.response?.data}');
-      String errorMsg = 'Something went wrong. Please try again.';
-      if (e.response?.data != null) {
-        final data = e.response?.data;
-        if (data is Map && data['message'] != null) {
-          errorMsg = data['message'];
+      } catch (e) {
+        print('❌ Wallet Booking Error: $e');
+        await Future.delayed(const Duration(milliseconds: 500));
+        await profileVm.fetchUser(forceRefresh: true);
+
+        if (profileVm.walletBalance.value < initialBalance) {
+          print('✅ Wallet payment successful despite error');
+          _handleWalletSuccess();
+        } else {
+          _showWalletError('Please try again.');
         }
+      } finally {
+        _isWalletPaymentInProgress = false;
       }
-      await Future.delayed(const Duration(milliseconds: 500));
-      await profileVm.fetchUser(forceRefresh: true);
-
-      if (profileVm.walletBalance.value < initialBalance) {
-        print('✅ Wallet payment successful despite error');
-        _handleWalletSuccess();
-      } else {
-        _showWalletError(errorMsg);
-      }
-    } catch (e) {
-      print('❌ Wallet Booking Error: $e');
-      await Future.delayed(const Duration(milliseconds: 500));
-      await profileVm.fetchUser(forceRefresh: true);
-
-      if (profileVm.walletBalance.value < initialBalance) {
-        print('✅ Wallet payment successful despite error');
-        _handleWalletSuccess();
-      } else {
-        _showWalletError('Payment failed. Please try again.');
-      }
-    } finally {
-      _isWalletPaymentInProgress = false;
-    }
+    });
   }
 
   double _getAmountToPay() {
@@ -497,12 +743,10 @@ class BookingSummaryViewModel extends GetxController {
     isLoading.value = false;
     _isWalletPaymentInProgress = false;
     _isPostPaymentProcessing = false;
-    Get.snackbar(
+    _showSmallSnackbar(
       'Payment Failed',
       message,
-      backgroundColor: Colors.red,
-      colorText: Colors.white,
-      duration: const Duration(seconds: 4),
+      Colors.red,
     );
   }
 
@@ -657,114 +901,113 @@ class BookingSummaryViewModel extends GetxController {
     });
   }
 
-  // ✅ FIXED: Initiate Payment with duplicate prevention
+  // ============================================================
+  // ✅ RAZORPAY PAYMENT WITH PROFILE CHECK
+  // ============================================================
   Future<void> initiatePayment() async {
-    if (_isProcessing) return;
+    // ✅ Check profile before proceeding
+    await _checkProfileAndProceed(() async {
+      if (_isProcessing) return;
 
-    final amountToPay = _getAmountToPay();
+      final amountToPay = _getAmountToPay();
 
-    if (amountToPay <= 0) {
-      Get.snackbar(
-        'Invalid Amount',
-        'Amount cannot be zero or negative. Please adjust.',
-        backgroundColor: Colors.red,
-        colorText: Colors.white,
-        duration: const Duration(seconds: 3),
-      );
-      return;
-    }
-
-    _isProcessing = true;
-    isLoading.value = true;
-    isUILocked.value = true;
-
-    try {
-      final dio = Get.find<Dio>();
-      final dateStr = formattedDate;
-
-      final slotsData = selectedSlots.map((slot) => ({
-        'start_time': slot.startTime,
-        'end_time': slot.endTime,
-        'price': slot.priceAsDouble.toStringAsFixed(2),
-      })).toList();
-
-      Map<String, dynamic> requestBody = {
-        'turf_id': turf.id,
-        'court_number': selectedCourt,
-        'date': dateStr,
-        'slots': slotsData,
-        'total_amount': totalAmount.toStringAsFixed(2),
-        'advance_amount': _getFormattedAmount(amountToPay),
-      };
-
-      if (discountVm.selectedAdminDiscountId.value != null) {
-        requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value;
-      }
-      if (discountVm.selectedPartnerDiscountId.value != null) {
-        requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value;
+      if (amountToPay <= 0) {
+        _showSmallSnackbar(
+          'Invalid Amount',
+          'Amount cannot be zero or negative',
+          Colors.red,
+        );
+        return;
       }
 
-      print('📤 Initiate Booking Request: $requestBody');
+      _isProcessing = true;
+      isLoading.value = true;
+      isUILocked.value = true;
 
-      final response = await dio.post(
-        AppConfig.initiateBooking,
-        data: requestBody,
-      );
+      try {
+        final dio = Get.find<Dio>();
+        final dateStr = formattedDate;
 
-      print('📥 Initiate Response: ${response.data}');
+        final slotsData = selectedSlots.map((slot) => ({
+          'start_time': slot.startTime,
+          'end_time': slot.endTime,
+          'price': slot.priceAsDouble.toStringAsFixed(2),
+        })).toList();
 
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        if (response.data['result'] == 'success') {
-          final orderData = response.data['data'];
-          _currentOrderId = orderData['razorpay_order_id'];
-          _currentSlotsData = slotsData;
-          _currentTotalAmount = totalAmount;
-          _currentPayableAmount = amountToPay;
-          _currentTurfId = turf.id;
-          _currentCourtNumber = selectedCourt;
-          _currentDate = dateStr;
-          _currentPaymentType = selectedPaymentType;
+        Map<String, dynamic> requestBody = {
+          'turf_id': turf.id,
+          'court_number': selectedCourt,
+          'date': dateStr,
+          'slots': slotsData,
+          'total_amount': totalAmount.toStringAsFixed(2),
+          'advance_amount': _getFormattedAmount(amountToPay),
+        };
 
-          isLoading.value = false;
-          _openRazorpayCheckout(orderData, amountToPay);
+        if (discountVm.selectedAdminDiscountId.value != null) {
+          requestBody['admin_discount_id'] = discountVm.selectedAdminDiscountId.value;
+        }
+        if (discountVm.selectedPartnerDiscountId.value != null) {
+          requestBody['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value;
+        }
+
+        print('📤 Initiate Booking Request: $requestBody');
+
+        final response = await dio.post(
+          AppConfig.initiateBooking,
+          data: requestBody,
+        );
+
+        print('📥 Initiate Response: ${response.data}');
+
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          if (response.data['result'] == 'success') {
+            final orderData = response.data['data'];
+            _currentOrderId = orderData['razorpay_order_id'];
+            _currentSlotsData = slotsData;
+            _currentTotalAmount = totalAmount;
+            _currentPayableAmount = amountToPay;
+            _currentTurfId = turf.id;
+            _currentCourtNumber = selectedCourt;
+            _currentDate = dateStr;
+            _currentPaymentType = selectedPaymentType;
+
+            isLoading.value = false;
+            _openRazorpayCheckout(orderData, amountToPay);
+          } else {
+            String errorMsg = response.data['message'] ?? 'Failed to initiate payment';
+            _showSmallSnackbar('Error', errorMsg, Colors.red);
+            isLoading.value = false;
+            isUILocked.value = false;
+            _isProcessing = false;
+          }
         } else {
-          String errorMsg = response.data['message'] ?? 'Failed to initiate payment';
-          Get.snackbar('Error', errorMsg,
-              backgroundColor: Colors.red, colorText: Colors.white);
+          String errorMsg = 'Payment initiation failed';
+          if (response.data != null && response.data['message'] != null) {
+            errorMsg = response.data['message'];
+          }
+          _showSmallSnackbar('Payment Error', errorMsg, Colors.red);
           isLoading.value = false;
           isUILocked.value = false;
           _isProcessing = false;
         }
-      } else {
-        String errorMsg = 'Payment initiation failed';
-        if (response.data != null && response.data['message'] != null) {
-          errorMsg = response.data['message'];
+      } on DioException catch (e) {
+        print('❌ Dio Exception: ${e.response?.data}');
+        String errorMsg = 'Something went wrong. Please try again.';
+        if (e.response?.data != null) {
+          errorMsg = e.response?.data['message'] ?? errorMsg;
         }
-        Get.snackbar('Payment Error', errorMsg,
-            backgroundColor: Colors.red, colorText: Colors.white);
+        _showSmallSnackbar('Payment Error', errorMsg, Colors.red);
+        isLoading.value = false;
+        isUILocked.value = false;
+        _isProcessing = false;
+      } catch (e) {
+        print('❌ Initiate Payment Error: $e');
+        _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
         isLoading.value = false;
         isUILocked.value = false;
         _isProcessing = false;
       }
-    } on DioException catch (e) {
-      print('❌ Dio Exception: ${e.response?.data}');
-      String errorMsg = 'Something went wrong. Please try again.';
-      if (e.response?.data != null) {
-        errorMsg = e.response?.data['message'] ?? errorMsg;
-      }
-      Get.snackbar('Payment Error', errorMsg,
-          backgroundColor: Colors.red, colorText: Colors.white);
-      isLoading.value = false;
-      isUILocked.value = false;
-      _isProcessing = false;
-    } catch (e) {
-      print('❌ Initiate Payment Error: $e');
-      Get.snackbar('Error', 'Something went wrong. Please try again.',
-          backgroundColor: Colors.red, colorText: Colors.white);
-      isLoading.value = false;
-      isUILocked.value = false;
-      _isProcessing = false;
-    }
+    });
   }
 
   void _openRazorpayCheckout(Map<String, dynamic> orderData, double amount) {
@@ -806,8 +1049,7 @@ class BookingSummaryViewModel extends GetxController {
       _razorpay.open(options);
     } catch (e) {
       print('❌ Razorpay open error: $e');
-      Get.snackbar('Error', 'Could not open payment gateway',
-          backgroundColor: Colors.red, colorText: Colors.white);
+      _showSmallSnackbar('Error', 'Could not open payment gateway', Colors.red);
       isLoading.value = false;
       isPaymentInitiated.value = false;
       isUILocked.value = false;
@@ -897,12 +1139,11 @@ class BookingSummaryViewModel extends GetxController {
 
     if (response.code != 0) {
       // ✅ Show error after a small delay
-      Future.delayed(const Duration(milliseconds: 100), () {
-        Get.snackbar(
+      Future.delayed(const Duration(seconds: 2), () {
+        _showSmallSnackbar(
           'Payment Failed',
-          response.message ?? 'Payment failed. Please try again.',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
+          response.message ?? 'Please try again.',
+          Colors.red,
         );
       });
     }

@@ -1,4 +1,5 @@
 // slot_view_model.dart - Updated with updateTurf method
+// ✅ Small snackbar with 1-second duration at TOP
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -23,6 +24,36 @@ class SlotViewModel extends GetxController {
 
   final Map<String, List<SlotModel>> _slotsCache = {};
   bool _isFetching = false;
+
+  // ============================================================
+  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
+  // ============================================================
+  void _showSmallSnackbar(String title, String message, Color color) {
+    Get.snackbar(
+      title,
+      message,
+      backgroundColor: color,
+      colorText: Colors.black,
+      duration: const Duration(seconds: 1),
+      snackPosition: SnackPosition.TOP,
+      margin: const EdgeInsets.all(8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      borderRadius: 8,
+      maxWidth: 300,
+      barBlur: 0,
+      overlayBlur: 0,
+      isDismissible: true,
+      dismissDirection: DismissDirection.horizontal,
+      forwardAnimationCurve: Curves.easeOut,
+      reverseAnimationCurve: Curves.easeIn,
+      animationDuration: const Duration(milliseconds: 300),
+      icon: Icon(
+        color == Colors.red ? Icons.error_outline : Icons.check_circle,
+        color: Colors.white,
+        size: 18,
+      ),
+    );
+  }
 
   @override
   void onInit() {
@@ -247,12 +278,7 @@ class SlotViewModel extends GetxController {
           );
 
           if (now.isAfter(slotEndDateTime)) {
-            Get.snackbar(
-              'Not Available',
-              'This slot time has already passed',
-              backgroundColor: Colors.grey,
-              colorText: Colors.white,
-            );
+            _showSmallSnackbar('Not Available', 'This slot time has already passed', Colors.grey);
             return;
           }
         } else {
@@ -263,12 +289,7 @@ class SlotViewModel extends GetxController {
           int currentTimeMinutes = now.hour * 60 + now.minute;
 
           if (currentTimeMinutes > slotEndMinutes) {
-            Get.snackbar(
-              'Not Available',
-              'This slot time has already passed',
-              backgroundColor: Colors.grey,
-              colorText: Colors.white,
-            );
+            _showSmallSnackbar('Not Available', 'This slot time has already passed', Colors.grey);
             return;
           }
         }
@@ -283,12 +304,7 @@ class SlotViewModel extends GetxController {
           : slot.isReserved
           ? 'This slot is reserved'
           : 'This slot is not available';
-      Get.snackbar(
-        'Not Available',
-        message,
-        backgroundColor: slot.isReserved ? Colors.orange : Colors.grey,
-        colorText: Colors.white,
-      );
+      _showSmallSnackbar('Not Available', message, slot.isReserved ? Colors.orange : Colors.grey);
       return;
     }
 
@@ -357,13 +373,7 @@ class SlotViewModel extends GetxController {
     _slotsCache.clear();
     selectedSlots.clear();
     fetchSlotsForCurrentDate();
-    Get.snackbar(
-      'Refreshed',
-      'Showing slots from yesterday onwards',
-      backgroundColor: Colors.green,
-      colorText: Colors.white,
-      duration: Duration(seconds: 2),
-    );
+    _showSmallSnackbar('Refreshed', 'Currently Available Slots', Colors.white);
   }
 
   List<SlotModel> get allSlots => availableSlots.toList();
