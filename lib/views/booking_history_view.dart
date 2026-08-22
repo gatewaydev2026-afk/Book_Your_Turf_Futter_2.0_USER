@@ -1789,7 +1789,7 @@ class BookingHistoryView extends StatelessWidget {
   String _getGameTypeDisplay(String gameType) {
     if (gameType.isEmpty) return "Sports";
     final type = gameType.toLowerCase();
-    if (type.contains('football') && type.contains('cricket')) return "Football & Cricket";
+    if (type.contains('football') && type.contains('cricket')) return "Cricket & Football";
     if (type.contains('football')) return "Football";
     if (type.contains('cricket')) return "Cricket";
     if (type.contains('badminton')) return "Badminton";

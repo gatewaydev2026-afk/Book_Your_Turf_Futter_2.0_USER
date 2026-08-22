@@ -34,7 +34,7 @@ class RouteGenerator {
     GetPage(name: AppRoutes.bookingSummary, page: () => BookingSummaryView()),
 
     // ✅ Phone Auth Routes (NEW)
-    GetPage(name: AppRoutes.phoneLogin, page: () => const PhoneLoginView(), transition: Transition.rightToLeft),
+    GetPage(name: AppRoutes.phoneLogin, page: () => const GuestOrLoginView(), transition: Transition.rightToLeft),
     GetPage(name: AppRoutes.phoneOtpVerification, page: () => const PhoneOtpVerificationView(), transition: Transition.rightToLeft),
 
     // Legacy auth routes (keep for backward compatibility)

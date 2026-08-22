@@ -1139,10 +1139,10 @@ class BookingSummaryViewModel extends GetxController {
 
     if (response.code != 0) {
       // ✅ Show error after a small delay
-      Future.delayed(const Duration(seconds: 2), () {
+      Future.delayed(const Duration(seconds: 3), () {
         _showSmallSnackbar(
           'Payment Failed',
-          response.message ?? 'Please try again.',
+           'Please try again.',
           Colors.red,
         );
       });
