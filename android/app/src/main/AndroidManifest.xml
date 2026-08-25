@@ -10,8 +10,7 @@
     <uses-permission android:name="android.permission.READ_PHONE_NUMBERS" />
 
     <!-- Optional: For auto-reading OTP from SMS -->
-    <uses-permission android:name="android.permission.RECEIVE_SMS" />
-    <uses-permission android:name="android.permission.READ_SMS" />
+
     <!-- Camera and Media Permissions -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />

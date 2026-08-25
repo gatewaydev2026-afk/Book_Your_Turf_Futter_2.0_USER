@@ -1142,7 +1142,7 @@ class BookingSummaryViewModel extends GetxController {
       Future.delayed(const Duration(seconds: 3), () {
         _showSmallSnackbar(
           'Payment Failed',
-           'Please try again.',
+           'Please try again. The slot will be unlocked after 120 seconds.',
           Colors.red,
         );
       });

@@ -5,7 +5,7 @@ class AppConfig {
   // ============================================================
   // 🔥 BACKEND DOMAIN - CHANGE THIS ONE PLACE FOR ALL APIS
   // ============================================================
-  static const String baseUrl = 'https://test.backend.arcmedialabs.in';
+  static const String baseUrl = 'https://backend.arcmedialabs.in';
   static const String apiBaseUrl = '$baseUrl/api';
 
   // ============================================================
