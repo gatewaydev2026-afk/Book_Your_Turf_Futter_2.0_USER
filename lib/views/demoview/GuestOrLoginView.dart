@@ -140,14 +140,11 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     _phoneFocusNode.requestFocus();
   }
 
+  // ✅ FIXED: Format phone without spaces - just continuous 10 digits
   String _formatPhone(String text) {
     String cleaned = text.replaceAll(RegExp(r'\D'), '');
     if (cleaned.length > 10) cleaned = cleaned.substring(0, 10);
-    if (cleaned.length <= 3) return cleaned;
-    if (cleaned.length <= 6) {
-      return '${cleaned.substring(0, 3)} ${cleaned.substring(3)}';
-    }
-    return '${cleaned.substring(0, 3)} ${cleaned.substring(3, 6)} ${cleaned.substring(6)}';
+    return cleaned; // Return as continuous 10 digits without spaces
   }
 
   void _autoOpenNumberDialog() {
@@ -435,7 +432,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '+91 ${_formatPhone(selected)}',
+                      '+91 ${_formatPhone(selected)}', // ✅ Shows continuous 10 digits
                       style: const TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
@@ -515,7 +512,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Text(
-                          '+91 ${_formatPhone(selected)}',
+                          '+91 ${_formatPhone(selected)}', // ✅ Shows continuous 10 digits
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 15,
@@ -553,7 +550,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                                   child: Row(
                                     children: [
                                       Text(
-                                        '+91 ${_formatPhone(number)}',
+                                        '+91 ${_formatPhone(number)}', // ✅ Shows continuous 10 digits
                                         style: TextStyle(
                                           fontSize: 14.5,
                                           fontWeight: FontWeight.w700,
@@ -675,14 +672,10 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                 )
                     : null,
               ),
+              // ✅ Remove the onChanged formatting that was adding spaces
               onChanged: (value) {
-                final formatted = _formatPhone(value);
-                if (formatted != _phoneController.text) {
-                  _phoneController.value = TextEditingValue(
-                    text: formatted,
-                    selection: TextSelection.collapsed(offset: formatted.length),
-                  );
-                }
+                // No formatting - just allow digits only
+                // The inputFormatters already handle digits only
               },
             ),
           ),
