@@ -1,5 +1,7 @@
 // views/demoview/GuestOrLoginView.dart
-// ✅ Same design with Auto Detect button
+// ✅ Auto Detect runs automatically when page loads (one-time)
+// ✅ Shows loading state while detecting
+// ✅ Auto-clicks the detect button
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,6 +45,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   bool _isLoading = true;
   bool _showManualEntry = false;
   bool _isDetecting = false;
+  bool _autoDetectTriggered = false; // ✅ Track if auto-detect already triggered
   String? _detectionError;
 
   List<String> _detectedNumbers = [];
@@ -54,6 +57,11 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     _phoneController.addListener(_validatePhone);
     authVm.resetPhoneAuth();
     _loadStoredNumber();
+
+    // ✅ Auto-trigger detection after page loads
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      _triggerAutoDetect();
+    });
   }
 
   @override
@@ -105,6 +113,108 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     }
   }
 
+  // ---------------------------------------------------------------------
+  // ✅ Auto Trigger Detection - Runs automatically on page load
+  // ---------------------------------------------------------------------
+
+  Future<void> _triggerAutoDetect() async {
+    // ✅ Prevent multiple triggers
+    if (_autoDetectTriggered) {
+      print('⏭️ Auto-detect already triggered - skipping');
+      return;
+    }
+
+    // ✅ If number already detected, skip
+    if (_detectedNumbers.isNotEmpty) {
+      print('✅ Number already detected - skipping auto-detect');
+      _autoDetectTriggered = true;
+      return;
+    }
+
+    // ✅ Wait a moment for UI to load
+    await Future.delayed(const Duration(milliseconds: 500));
+
+    if (!mounted) return;
+
+    _autoDetectTriggered = true;
+
+    // ✅ Call the auto-detect function
+    await _autoDetectNumber();
+  }
+
+  // ---------------------------------------------------------------------
+  // Auto Detect Phone Number
+  // ---------------------------------------------------------------------
+
+  Future<void> _autoDetectNumber() async {
+    if (_isDetecting) return;
+    if (_detectedNumbers.isNotEmpty) {
+      print('✅ Number already detected - skipping');
+      return;
+    }
+
+    setState(() {
+      _isDetecting = true;
+      _detectionError = null;
+    });
+
+    try {
+      print('🔍 Auto-detecting phone number...');
+      final number = await PhoneAutoDetectService.autoDetectOnce();
+
+      if (number != null && number.isNotEmpty && mounted) {
+        setState(() {
+          _detectedNumbers = [number];
+          _selectedNumber = number;
+          _showManualEntry = false;
+          _phoneController.clear();
+          _detectionError = null;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('✅ Phone number detected successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+
+        print('📱 Auto-detected number: $number');
+      } else if (mounted) {
+        setState(() {
+          _showManualEntry = true;
+          _detectionError = 'No number selected. Please enter manually.';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ℹ️ No number selected. Please enter manually.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Auto-detect error: $e');
+      if (mounted) {
+        setState(() {
+          _showManualEntry = true;
+          _detectionError = 'Failed to detect number. Please enter manually.';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to detect: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDetecting = false);
+    }
+  }
+
   void _validatePhone() {
     final phone = _phoneController.text.replaceAll(RegExp(r'[\s\+\-\(\)]'), '');
     final isValid = phone.length == 10 && RegExp(r'^[0-9]+$').hasMatch(phone);
@@ -149,76 +259,6 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _openNumberDialog();
     });
-  }
-
-  // ---------------------------------------------------------------------
-  // Auto Detect Phone Number (User clicks button)
-  // ---------------------------------------------------------------------
-
-  Future<void> _autoDetectNumber() async {
-    if (_isDetecting) return;
-
-    setState(() {
-      _isDetecting = true;
-      _detectionError = null;
-    });
-
-    try {
-      final number = await PhoneAutoDetectService.getPhoneNumberHint();
-
-      if (number != null && number.isNotEmpty) {
-        setState(() {
-          _detectedNumbers = [number];
-          _selectedNumber = number;
-          _showManualEntry = false;
-          _phoneController.clear();
-          _detectionError = null;
-        });
-
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('✅ Phone number detected successfully!'),
-              backgroundColor: Colors.green,
-              duration: Duration(seconds: 2),
-            ),
-          );
-        }
-
-        print('📱 Auto-detected number: $number');
-      } else if (mounted) {
-        setState(() {
-          _showManualEntry = true;
-          _detectionError = 'No number selected. Please enter manually.';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('ℹ️ No number selected. Please enter manually.'),
-            backgroundColor: Colors.orange,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } catch (e) {
-      print('❌ Auto-detect error: $e');
-      if (mounted) {
-        setState(() {
-          _showManualEntry = true;
-          _detectionError = 'Failed to detect number. Please enter manually.';
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('❌ Failed to detect: ${e.toString()}'),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 2),
-          ),
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _isDetecting = false);
-    }
   }
 
   // ---------------------------------------------------------------------
@@ -313,22 +353,19 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                     // ✅ Phone number section
                     if (_isLoading)
                       _buildLoadingState()
+                    else if (_isDetecting)
+                      _buildAutoDetectingState()
                     else if (!_showManualEntry && _detectedNumbers.isNotEmpty)
-                      _buildDetectedNumberRow()
-                    else
-                      _buildManualEntryCard(),
+                        _buildDetectedNumberRow()
+                      else
+                        _buildManualEntryCard(),
 
                     if (_detectionError != null && _showManualEntry) ...[
                       const SizedBox(height: 12),
                       _buildErrorBanner(_detectionError!),
                     ],
 
-                    const SizedBox(height: 12),
-
-                    // ✅ AUTO DETECT BUTTON (Only show in manual mode)
-                    _buildAutoDetectButton(),
-
-                    const SizedBox(height: 16),
+                    const SizedBox(height: 20),
 
                     // ✅ Send OTP Button
                     _buildSendOtpButton(),
@@ -424,6 +461,44 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
+  // Auto-detecting state
+  // ---------------------------------------------------------------------
+
+  Widget _buildAutoDetectingState() {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(vertical: 18),
+      decoration: BoxDecoration(
+        color: _GLColors.surface,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _GLColors.border),
+      ),
+      child: const Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          SizedBox(
+            width: 22,
+            height: 22,
+            child: CircularProgressIndicator(
+              strokeWidth: 2.2,
+              color: _GLColors.primary,
+            ),
+          ),
+          SizedBox(height: 10),
+          Text(
+            'Auto-detecting your number…',
+            style: TextStyle(
+              fontSize: 13,
+              color: _GLColors.textSecondary,
+              fontWeight: FontWeight.w500,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
   // Error banner
   // ---------------------------------------------------------------------
 
@@ -495,11 +570,11 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      hasMultiple ? 'SIM number' : 'Detected number',
+                      hasMultiple ? 'SIM number' : '✅ Auto-detected number',
                       style: const TextStyle(
                         fontSize: 10.5,
                         fontWeight: FontWeight.w600,
-                        color: _GLColors.textMuted,
+                        color: Colors.green,
                         letterSpacing: 0.3,
                       ),
                     ),
@@ -753,57 +828,13 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Auto Detect Button
-  // ---------------------------------------------------------------------
-
-  Widget _buildAutoDetectButton() {
-    // Don't show if already detected
-    if (!_showManualEntry && _detectedNumbers.isNotEmpty) {
-      return const SizedBox.shrink();
-    }
-
-    return Center(
-      child: SizedBox(
-        width: double.infinity,
-        height: 48,
-        child: OutlinedButton.icon(
-          onPressed: _isDetecting ? null : _autoDetectNumber,
-          icon: _isDetecting
-              ? const SizedBox(
-            width: 20,
-            height: 20,
-            child: CircularProgressIndicator(
-              strokeWidth: 2,
-              color: _GLColors.primary,
-            ),
-          )
-              : const Icon(Icons.sim_card_rounded, size: 20, color: _GLColors.primary),
-          label: Text(
-            _isDetecting ? 'Detecting...' : '🔍 Auto Detect Number',
-            style: TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w600,
-              color: _isDetecting ? Colors.grey : _GLColors.primary,
-            ),
-          ),
-          style: OutlinedButton.styleFrom(
-            side: BorderSide(color: _GLColors.primary, width: 1.5),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------------
   // Send OTP button
   // ---------------------------------------------------------------------
 
   Widget _buildSendOtpButton() {
     final bool disabled = authVm.isLoading.value ||
         authVm.otpSent.value ||
+        _isDetecting ||
         (_showManualEntry && !_isValid) ||
         (!_showManualEntry && _selectedNumber == null);
 

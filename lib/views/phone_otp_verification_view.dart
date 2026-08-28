@@ -105,24 +105,85 @@ class _PhoneOtpVerificationViewState
         final smsData = res.requireData;
 
         debugPrint('==========================================');
-        debugPrint('SMS RECEIVED');
+        debugPrint('✅ SMS RECEIVED');
         debugPrint('REQUEST ID: $currentRequestId');
         debugPrint('SMS: ${smsData.sms}');
         debugPrint('SMART AUTH CODE: ${smsData.code}');
         debugPrint('==========================================');
 
-        String? otp = smsData.code;
+        String? otp;
 
+        // ✅ FIRST: Get the SMS text
+        final smsText = smsData.sms ?? '';
+        debugPrint('📝 RAW SMS TEXT: "$smsText"');
+
+        // ✅ SECOND: Try SmartAuth's code
+        if (smsData.code != null && smsData.code!.length == 6) {
+          otp = smsData.code;
+          debugPrint('✅ OTP from SmartAuth: $otp');
+        }
+
+        // ✅ THIRD: Extract from SMS using patterns
         if (otp == null || otp.length != 6) {
-          otp = _extractOtp(smsData.sms ?? '');
+          final patterns = [
+            r'to BookYourTurf is (\d{6})',
+            r'BookYourTurf is (\d{6})',
+            r'is\s+(\d{6})[.\s]?',
+            r'OTP\s*(?:is\s*)?(\d{6})',
+            r'code\s*(?:is\s*)?(\d{6})',
+            r'verification code\s*(?:is\s*)?(\d{6})',
+            r'(?<!\d)(\d{6})(?!\d)',
+          ];
+
+          for (final pattern in patterns) {
+            final regex = RegExp(pattern, caseSensitive: false);
+            final match = regex.firstMatch(smsText);
+            if (match != null) {
+              final extracted = match.group(1) ?? match.group(0);
+              if (extracted?.length == 6 && RegExp(r'^[0-9]+$').hasMatch(extracted!)) {
+                otp = extracted;
+                debugPrint('✅ OTP extracted using pattern: $otp');
+                break;
+              }
+            }
+          }
+        }
+
+        // ✅ FOURTH: Find any 6-digit number
+        if (otp == null || otp.length != 6) {
+          final matches = RegExp(r'(?<!\d)\d{6}(?!\d)').allMatches(smsText);
+          if (matches.isNotEmpty) {
+            otp = matches.last.group(0);
+            debugPrint('✅ OTP found as standalone number: $otp');
+          }
+        }
+
+        // ✅ FIFTH: Any 6 digits
+        if (otp == null || otp.length != 6) {
+          final regex = RegExp(r'\d{6}');
+          final match = regex.firstMatch(smsText);
+          if (match != null) {
+            otp = match.group(0);
+            debugPrint('✅ OTP found as first 6 digits: $otp');
+          }
         }
 
         if (otp == null || otp.length != 6) {
-          debugPrint('Could not extract 6 digit OTP');
+          debugPrint('❌ Could not extract 6 digit OTP');
           setState(() {
             _isAutoReading = false;
             _autoReadFailed = true;
           });
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text('ℹ️ Please enter OTP manually'),
+                backgroundColor: Colors.orange,
+                duration: Duration(seconds: 2),
+              ),
+            );
+          }
           return;
         }
 
@@ -131,9 +192,11 @@ class _PhoneOtpVerificationViewState
           return;
         }
 
+        // ✅ Fill OTP and verify
         await _setOtpAndVerify(otp, currentRequestId);
+
       } else if (res.isCanceled) {
-        debugPrint('SMS USER CONSENT CANCELLED');
+        debugPrint('⚠️ SMS USER CONSENT CANCELLED');
         if (currentRequestId == _otpRequestId) {
           setState(() {
             _isAutoReading = false;
@@ -141,7 +204,7 @@ class _PhoneOtpVerificationViewState
           });
         }
       } else {
-        debugPrint('SMS USER CONSENT FAILED: $res');
+        debugPrint('❌ SMS USER CONSENT FAILED: $res');
         if (currentRequestId == _otpRequestId) {
           setState(() {
             _isAutoReading = false;
@@ -150,7 +213,7 @@ class _PhoneOtpVerificationViewState
         }
       }
     } catch (e) {
-      debugPrint('SMS AUTO READ ERROR: $e');
+      debugPrint('❌ SMS AUTO READ ERROR: $e');
       _isListening = false;
       if (!mounted) return;
       if (currentRequestId != _otpRequestId) return;
@@ -160,22 +223,6 @@ class _PhoneOtpVerificationViewState
         _autoReadFailed = true;
       });
     }
-  }
-
-  // ============================================================
-  // EXTRACT 6 DIGIT OTP
-  // ============================================================
-
-  String? _extractOtp(String sms) {
-    if (sms.trim().isEmpty) return null;
-
-    final matches = RegExp(r'(?<!\d)\d{6}(?!\d)').allMatches(sms);
-
-    if (matches.isEmpty) return null;
-
-    final otp = matches.last.group(0);
-    debugPrint('EXTRACTED OTP: $otp');
-    return otp;
   }
 
   // ============================================================
@@ -193,30 +240,46 @@ class _PhoneOtpVerificationViewState
     if (otp.length != 6) return;
 
     debugPrint('==========================================');
-    debugPrint('NEW OTP ACCEPTED');
+    debugPrint('✅ NEW OTP ACCEPTED');
     debugPrint('REQUEST ID: $requestId');
     debugPrint('OTP: $otp');
     debugPrint('==========================================');
 
-    _otpController.value = TextEditingValue(
-      text: otp,
-      selection: TextSelection.collapsed(offset: otp.length),
-    );
+    // ✅ FIX: Set OTP in text field
+    _otpController.text = otp;
+    _otpController.selection = TextSelection.collapsed(offset: otp.length);
 
+    debugPrint('✅ OTP set in controller: ${_otpController.text}');
+
+    // ✅ Update UI
     setState(() {
       _isAutoReading = false;
       _autoReadFailed = false;
     });
 
-    await Future.delayed(const Duration(milliseconds: 300));
+    // ✅ Show success message
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('✅ OTP detected automatically!'),
+          backgroundColor: Colors.green,
+          duration: Duration(milliseconds: 800),
+        ),
+      );
+    }
+
+    // ✅ Wait for UI to update
+    await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
+    // ✅ Check if still valid
     if (requestId != _otpRequestId) {
       debugPrint('OTP became OLD before verification');
       return;
     }
 
+    // ✅ Auto-verify
     await _handleVerify(otp);
   }
 
@@ -335,11 +398,30 @@ class _PhoneOtpVerificationViewState
     try {
       await authVm.resendPhoneOtp();
       debugPrint('NEW OTP REQUEST SENT TO BACKEND');
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('📱 New OTP sent successfully!'),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     } catch (e) {
       debugPrint('RESEND ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to resend OTP'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
 
-    await Future.delayed(const Duration(milliseconds: 400));
+    await Future.delayed(const Duration(milliseconds: 500));
 
     if (!mounted) return;
 
@@ -363,7 +445,7 @@ class _PhoneOtpVerificationViewState
     } catch (_) {}
 
     authVm.resetPhoneAuth();
-    Get.offAllNamed(AppRoutes.phoneLogin);
+    Get.offAllNamed(AppRoutes.guestOrLogin);
   }
 
   // ============================================================
@@ -552,11 +634,11 @@ class _PhoneOtpVerificationViewState
                           color: Colors.orange.shade700,
                         ),
                         const SizedBox(width: 8),
-                        Text(
+                        const Text(
                           'Enter OTP manually',
                           style: TextStyle(
                             fontSize: 12,
-                            color: Colors.orange.shade700,
+                            color: Colors.orange,
                             fontWeight: FontWeight.w500,
                           ),
                         ),

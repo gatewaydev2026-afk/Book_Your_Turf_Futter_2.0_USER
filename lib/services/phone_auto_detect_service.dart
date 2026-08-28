@@ -1,6 +1,6 @@
 // services/phone_auto_detect_service.dart
-// ✅ Uses Google Phone Number Hint API - No permissions required!
-// ✅ Manual detection only (user clicks button)
+// ✅ Auto-detect once when page loads - No manual button needed
+// ✅ Also has manual getPhoneNumberHint for fallback
 
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -9,13 +9,53 @@ import 'package:phone_hint_android/phone_hint_android.dart';
 class PhoneAutoDetectService {
   static const String _keyDetectedPhone = 'detected_phone_number';
   static const String _keyUserPhone = 'user_phone_number';
+  static const String _keyAutoDetectDone = 'auto_detect_done';
 
   static final PhoneHintAndroid _phoneHint = PhoneHintAndroid();
-
   static bool _isDetecting = false;
 
-  /// Get phone number using Google Phone Number Hint API (manual trigger)
-  /// Only call this when user clicks the button
+  /// Auto-detect phone number - Only runs once per device
+  static Future<String?> autoDetectOnce() async {
+    // ✅ Check if auto-detect already done
+    final alreadyDone = await _isAutoDetectDone();
+    if (alreadyDone) {
+      print('✅ Auto-detect already done - using stored number');
+      return await getStoredNumber();
+    }
+
+    if (_isDetecting) {
+      print('⏭️ Detection already in progress - skipping');
+      return await getStoredNumber();
+    }
+
+    try {
+      _isDetecting = true;
+      print('🔍 Auto-detecting phone number...');
+
+      final phoneNumber = await _phoneHint.getPhoneNumber();
+
+      if (phoneNumber != null && phoneNumber.isNotEmpty) {
+        final cleaned = _cleanNumber(phoneNumber);
+        if (cleaned.isNotEmpty && cleaned.length == 10) {
+          await _saveDetectedNumber(cleaned);
+          await _setAutoDetectDone(true);
+          print('📱 Phone auto-detected: $cleaned');
+          return cleaned;
+        }
+      }
+      print('ℹ️ No phone number detected');
+      await _setAutoDetectDone(true);
+      return null;
+    } catch (e) {
+      print('⚠️ Auto-detect error: $e');
+      await _setAutoDetectDone(true);
+      return await getStoredNumber();
+    } finally {
+      _isDetecting = false;
+    }
+  }
+
+  /// ✅ MANUAL PHONE NUMBER HINT - For manual button (fallback)
   static Future<String?> getPhoneNumberHint() async {
     if (_isDetecting) {
       print('⏭️ Detection already in progress - skipping');
@@ -26,33 +66,41 @@ class PhoneAutoDetectService {
       _isDetecting = true;
       print('🔍 Manual phone number detection...');
 
-      // ⚠️ Timeout guard: if the native ApiException(16) path gets
-      // swallowed by MainActivity's onActivityResult try/catch, the
-      // plugin's platform-channel result never arrives and this Future
-      // would otherwise hang forever. Timing out lets the UI fall back
-      // (e.g. to manual entry) instead of spinning indefinitely.
-      final phoneNumber = await _phoneHint.getPhoneNumber().timeout(
-        const Duration(seconds: 10),
-        onTimeout: () {
-          print('⏱️ Phone hint request timed out - no result from native side');
-          return null;
-        },
-      );
+      final phoneNumber = await _phoneHint.getPhoneNumber();
 
       if (phoneNumber != null && phoneNumber.isNotEmpty) {
         final cleaned = _cleanNumber(phoneNumber);
         if (cleaned.isNotEmpty && cleaned.length == 10) {
           await _saveDetectedNumber(cleaned);
-          print('📱 Phone detected: $cleaned');
+          await _setAutoDetectDone(true);
+          print('📱 Phone detected manually: $cleaned');
           return cleaned;
         }
       }
       return null;
     } catch (e) {
-      print('⚠️ Phone detection error: $e');
+      print('⚠️ Manual phone detection error: $e');
       return await getStoredNumber();
     } finally {
       _isDetecting = false;
+    }
+  }
+
+  static Future<bool> _isAutoDetectDone() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      return prefs.getBool(_keyAutoDetectDone) ?? false;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  static Future<void> _setAutoDetectDone(bool value) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.setBool(_keyAutoDetectDone, value);
+    } catch (e) {
+      print('⚠️ Error saving auto-detect status: $e');
     }
   }
 
@@ -92,15 +140,27 @@ class PhoneAutoDetectService {
     }
   }
 
-  /// Clear stored phone number
+  /// Clear stored phone number (for testing)
   static Future<void> clearStoredNumber() async {
     try {
       final prefs = await SharedPreferences.getInstance();
       await prefs.remove(_keyDetectedPhone);
       await prefs.remove(_keyUserPhone);
-      print('🗑️ Stored phone number cleared');
+      await prefs.remove(_keyAutoDetectDone);
+      print('🗑️ Stored phone number and auto-detect status cleared');
     } catch (e) {
       print('⚠️ Error clearing stored number: $e');
+    }
+  }
+
+  /// Reset auto-detect status (for testing)
+  static Future<void> resetAutoDetect() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      await prefs.remove(_keyAutoDetectDone);
+      print('🔄 Auto-detect status reset');
+    } catch (e) {
+      print('⚠️ Error resetting auto-detect: $e');
     }
   }
 
