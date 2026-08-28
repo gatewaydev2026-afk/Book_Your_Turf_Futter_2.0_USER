@@ -1,16 +1,18 @@
 import 'dart:io';
 import 'package:book_your_turf/view_models/profile_view_model.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:get/get.dart';
-import 'package:image_picker/image_picker.dart';
-
+import 'package:system_media_picker/system_media_picker.dart';
 
 class EditProfileView extends GetView<ProfileViewModel> {
-   EditProfileView({Key? key}) : super(key: key);
+  EditProfileView({Key? key}) : super(key: key);
 
   final TextEditingController nameController = TextEditingController();
   final Rx<File?> selectedImage = Rx<File?>(null);
-  // final RxString imageError = ''.obs;
+
+  // ✅ SystemMediaPicker - No permissions required
+  final SystemMediaPicker _picker = SystemMediaPicker();
 
   @override
   Widget build(BuildContext context) {
@@ -96,18 +98,6 @@ class EditProfileView extends GetView<ProfileViewModel> {
                     foregroundColor: Colors.green,
                   ),
                 ),
-                Obx(() {
-                  // if (imageError.value.isNotEmpty) {
-                  //   return Padding(
-                  //     padding: const EdgeInsets.only(top: 8),
-                  //     child: Text(
-                  //       imageError.value,
-                  //       style: const TextStyle(color: Colors.red, fontSize: 12),
-                  //     ),
-                  //   );
-                  // }
-                  return const SizedBox.shrink();
-                }),
                 const SizedBox(height: 30),
 
                 // Name Field
@@ -242,20 +232,11 @@ class EditProfileView extends GetView<ProfileViewModel> {
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 20),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-              children: [
-                _buildImagePickerOption(
-                  icon: Icons.camera_alt,
-                  label: 'Camera',
-                  onTap: () => _pickImage(ImageSource.camera),
-                ),
-                _buildImagePickerOption(
-                  icon: Icons.photo_library,
-                  label: 'Gallery',
-                  onTap: () => _pickImage(ImageSource.gallery),
-                ),
-              ],
+            // ✅ Only Gallery option (Camera removed to avoid permissions)
+            _buildImagePickerOption(
+              icon: Icons.photo_library,
+              label: 'Gallery',
+              onTap: _pickImage,
             ),
             const SizedBox(height: 10),
             TextButton(
@@ -292,23 +273,27 @@ class EditProfileView extends GetView<ProfileViewModel> {
     );
   }
 
-  Future<void> _pickImage(ImageSource source) async {
+  Future<void> _pickImage() async {
     Get.back();
     try {
-      final ImagePicker picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: source,
-        maxWidth: 1024,
-        maxHeight: 1024,
-        imageQuality: 80,
-      );
-      
-      if (image != null) {
+      // ✅ Using system_media_picker - No permissions needed
+      final List<PickedMedia> images = await _picker.pickImages(limit: 1);
+
+      if (images.isNotEmpty) {
+        final PickedMedia image = images.first;
         selectedImage.value = File(image.path);
-        // imageError.value = '';
+        print('Image picked: ${image.path}');
+      } else {
+        print('No image selected');
       }
     } catch (e) {
-      // imageError.value = 'Failed to pick image';
+      print('Error picking image: $e');
+      Get.snackbar(
+        'Error',
+        'Failed to pick image',
+        backgroundColor: Colors.red,
+        colorText: Colors.white,
+      );
     }
   }
 

@@ -27,9 +27,9 @@ class _PhoneOtpVerificationViewState
   bool _isAutoReading = false;
   bool _autoReadFailed = false;
 
-  // This changes every time we start listening for a new OTP.
-  // Prevents old async SMS result from filling the new OTP.
   int _otpRequestId = 0;
+  bool _isVerificationComplete = false;
+  bool _isListening = false;
 
   @override
   void initState() {
@@ -44,7 +44,8 @@ class _PhoneOtpVerificationViewState
 
   @override
   void dispose() {
-    _otpRequestId++; // invalidate any pending result
+    _otpRequestId++;
+    _isListening = false;
 
     try {
       smartAuth.removeUserConsentApiListener();
@@ -60,6 +61,11 @@ class _PhoneOtpVerificationViewState
   // ============================================================
 
   Future<void> _startNewOtpListener() async {
+    if (_isListening) {
+      print('⏭️ Already listening for OTP');
+      return;
+    }
+
     final int currentRequestId = _otpRequestId;
 
     debugPrint('==========================================');
@@ -76,6 +82,8 @@ class _PhoneOtpVerificationViewState
 
     if (!mounted) return;
 
+    _isListening = true;
+
     setState(() {
       _isAutoReading = true;
       _autoReadFailed = false;
@@ -84,14 +92,12 @@ class _PhoneOtpVerificationViewState
     try {
       final res = await smartAuth.getSmsWithUserConsentApi();
 
-      // Screen closed?
+      _isListening = false;
+
       if (!mounted) return;
 
-      // This result belongs to OLD request → ignore
       if (currentRequestId != _otpRequestId) {
         debugPrint('OLD OTP RESULT IGNORED');
-        debugPrint('Old Request: $currentRequestId');
-        debugPrint('Current Request: $_otpRequestId');
         return;
       }
 
@@ -107,7 +113,6 @@ class _PhoneOtpVerificationViewState
 
         String? otp = smsData.code;
 
-        // Extract ourselves if SmartAuth didn't extract
         if (otp == null || otp.length != 6) {
           otp = _extractOtp(smsData.sms ?? '');
         }
@@ -121,7 +126,6 @@ class _PhoneOtpVerificationViewState
           return;
         }
 
-        // Double check again
         if (currentRequestId != _otpRequestId) {
           debugPrint('OLD OTP IGNORED BEFORE FILL');
           return;
@@ -147,6 +151,7 @@ class _PhoneOtpVerificationViewState
       }
     } catch (e) {
       debugPrint('SMS AUTO READ ERROR: $e');
+      _isListening = false;
       if (!mounted) return;
       if (currentRequestId != _otpRequestId) return;
 
@@ -168,7 +173,6 @@ class _PhoneOtpVerificationViewState
 
     if (matches.isEmpty) return null;
 
-    // Take the LAST 6 digit number
     final otp = matches.last.group(0);
     debugPrint('EXTRACTED OTP: $otp');
     return otp;
@@ -181,7 +185,6 @@ class _PhoneOtpVerificationViewState
   Future<void> _setOtpAndVerify(String otp, int requestId) async {
     if (!mounted) return;
 
-    // Ignore old listener result
     if (requestId != _otpRequestId) {
       debugPrint('OLD OTP BLOCKED');
       return;
@@ -195,7 +198,6 @@ class _PhoneOtpVerificationViewState
     debugPrint('OTP: $otp');
     debugPrint('==========================================');
 
-    // Fill Pinput
     _otpController.value = TextEditingValue(
       text: otp,
       selection: TextSelection.collapsed(offset: otp.length),
@@ -206,12 +208,10 @@ class _PhoneOtpVerificationViewState
       _autoReadFailed = false;
     });
 
-    // Let Pinput update visually
     await Future.delayed(const Duration(milliseconds: 300));
 
     if (!mounted) return;
 
-    // Check one more time
     if (requestId != _otpRequestId) {
       debugPrint('OTP became OLD before verification');
       return;
@@ -225,6 +225,11 @@ class _PhoneOtpVerificationViewState
   // ============================================================
 
   Future<void> _handleVerify([String? receivedOtp]) async {
+    if (_isVerificationComplete) {
+      debugPrint('⏭️ Verification already complete - skipping');
+      return;
+    }
+
     if (_isVerifying) return;
 
     final String otp = (receivedOtp ?? _otpController.text).trim();
@@ -245,13 +250,47 @@ class _PhoneOtpVerificationViewState
     debugPrint('==========================================');
 
     try {
-      await authVm.verifyPhoneOtp(
+      final success = await authVm.verifyPhoneOtp(
         number: phone,
         otp: otp,
       );
-      debugPrint('OTP VERIFICATION SUCCESS');
+
+      if (success) {
+        debugPrint('✅ OTP VERIFICATION SUCCESS');
+        _isVerificationComplete = true;
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Login successful!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } else {
+        debugPrint('❌ OTP VERIFICATION FAILED');
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('❌ Invalid OTP. Please try again.'),
+              backgroundColor: Colors.red,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      }
     } catch (e) {
-      debugPrint('OTP VERIFICATION ERROR: $e');
+      debugPrint('❌ OTP VERIFICATION ERROR: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Error: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
     }
 
     if (mounted) {
@@ -260,22 +299,22 @@ class _PhoneOtpVerificationViewState
   }
 
   // ============================================================
-  // RESEND OTP  ← FIXED
+  // RESEND OTP
   // ============================================================
 
   Future<void> _handleResend() async {
     if (authVm.isLoading.value) return;
 
+    _isVerificationComplete = false;
+
     debugPrint('==========================================');
     debugPrint('RESEND OTP START');
     debugPrint('==========================================');
 
-    // 1. Make all previous results invalid IMMEDIATELY
     _otpRequestId++;
 
     debugPrint('NEW REQUEST ID: $_otpRequestId');
 
-    // 2. Remove old listener
     try {
       await smartAuth.removeUserConsentApiListener();
     } catch (e) {
@@ -284,16 +323,15 @@ class _PhoneOtpVerificationViewState
 
     if (!mounted) return;
 
-    // 3. Clear old OTP from screen
     _otpController.clear();
 
     setState(() {
       _isAutoReading = true;
       _autoReadFailed = false;
       _isVerifying = false;
+      _isListening = false;
     });
 
-    // 4. Request new OTP from backend FIRST
     try {
       await authVm.resendPhoneOtp();
       debugPrint('NEW OTP REQUEST SENT TO BACKEND');
@@ -301,12 +339,10 @@ class _PhoneOtpVerificationViewState
       debugPrint('RESEND ERROR: $e');
     }
 
-    // 5. Small delay so backend has time to send SMS
     await Future.delayed(const Duration(milliseconds: 400));
 
     if (!mounted) return;
 
-    // 6. Now start fresh listener for the NEW SMS
     await _startNewOtpListener();
 
     debugPrint('==========================================');
@@ -320,6 +356,7 @@ class _PhoneOtpVerificationViewState
 
   void _changePhoneNumber() {
     _otpRequestId++;
+    _isListening = false;
 
     try {
       smartAuth.removeUserConsentApiListener();
@@ -368,7 +405,6 @@ class _PhoneOtpVerificationViewState
             children: [
               const SizedBox(height: 20),
 
-              // BACK
               IconButton(
                 padding: EdgeInsets.zero,
                 icon: const Icon(Icons.arrow_back, size: 28),
@@ -377,7 +413,6 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 16),
 
-              // LOTTIE
               SizedBox(
                 height: 80,
                 child: Lottie.asset(
@@ -404,7 +439,6 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 8),
 
-              // PHONE
               RichText(
                 text: TextSpan(
                   text: 'We sent an OTP to ',
@@ -423,7 +457,6 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 30),
 
-              // PINPUT
               Center(
                 child: Pinput(
                   controller: _otpController,
@@ -445,20 +478,21 @@ class _PhoneOtpVerificationViewState
                     borderColor: Colors.green.shade300,
                   ),
                   onChanged: (value) {
-                    if (value.length == 6) {
+                    if (value.length == 6 && !_isVerificationComplete) {
                       _handleVerify(value);
                     }
                   },
                   onCompleted: (pin) {
                     debugPrint('PINPUT COMPLETED: $pin');
-                    _handleVerify(pin);
+                    if (!_isVerificationComplete) {
+                      _handleVerify(pin);
+                    }
                   },
                 ),
               ),
 
               const SizedBox(height: 14),
 
-              // AUTO READ STATUS
               if (_isAutoReading)
                 Center(
                   child: Container(
@@ -496,7 +530,6 @@ class _PhoneOtpVerificationViewState
                   ),
                 ),
 
-              // AUTO READ FAILED
               if (_autoReadFailed)
                 Center(
                   child: Container(
@@ -534,7 +567,6 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 18),
 
-              // RESEND
               Center(
                 child: Obx(() {
                   final cooldown = authVm.otpResendCooldown.value;
@@ -566,7 +598,6 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 12),
 
-              // EXPIRY
               Obx(() {
                 final isExpired = authVm.isOtpTimeExpired();
                 final isSent = authVm.otpSent.value;
@@ -606,14 +637,13 @@ class _PhoneOtpVerificationViewState
 
               const SizedBox(height: 24),
 
-              // VERIFY BUTTON
               SizedBox(
                 width: double.infinity,
                 height: 52,
                 child: Obx(() {
                   final loading = authVm.isLoading.value;
                   final otpReady = _otpController.text.length == 6;
-                  final disabled = loading || _isVerifying || !otpReady;
+                  final disabled = loading || _isVerifying || !otpReady || _isVerificationComplete;
 
                   return ElevatedButton(
                     onPressed: disabled ? null : () => _handleVerify(),
@@ -645,10 +675,6 @@ class _PhoneOtpVerificationViewState
                   );
                 }),
               ),
-
-              const SizedBox(height: 16),
-
-              // CHANGE PHONE
 
               const SizedBox(height: 20),
             ],

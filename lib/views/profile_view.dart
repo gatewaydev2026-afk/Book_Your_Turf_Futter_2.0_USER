@@ -1,18 +1,18 @@
 // views/profile_view.dart
 // ✅ Complete with Device Management menu item & Lazy Loading
 // ✅ Duplicate API call prevention with flags
+// ✅ Updated to use system_media_picker (No permissions required)
+// ✅ StatefulWidget to fix immutable warnings
 
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_svg/flutter_svg.dart';
 import 'package:get/get.dart';
-import 'package:image_picker/image_picker.dart';
-import 'package:lottie/lottie.dart';
+import 'package:system_media_picker/system_media_picker.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:flutter/services.dart';
 import 'package:path_provider/path_provider.dart';
 import '../services/shared_prefs_helper.dart';
-import '../services/deep_link_service.dart';
 import '../view_models/profile_view_model.dart';
 import '../view_models/auth_view_model.dart';
 import '../view_models/wallet_view_model.dart';
@@ -26,23 +26,36 @@ import '../views/wallet_transactions_view.dart';
 import '../views/coin_transactions_view.dart';
 import '../views/device_management_view.dart';
 
-class ProfileView extends StatelessWidget {
-  ProfileView({super.key}) {
+class ProfileView extends StatefulWidget {
+  const ProfileView({super.key});
+
+  @override
+  State<ProfileView> createState() => _ProfileViewState();
+}
+
+class _ProfileViewState extends State<ProfileView> {
+  // ✅ DUPLICATE API CALL PREVENTION FLAGS
+  bool _isRefreshing = false;
+  bool _isDialogOpen = false;
+  bool _isBottomSheetOpen = false;
+
+  late final ProfileViewModel vm;
+  late final AuthViewModel authVm;
+  late final WalletViewModel walletVm;
+
+  @override
+  void initState() {
+    super.initState();
     if (!Get.isRegistered<ProfileViewModel>()) {
       Get.put(ProfileViewModel(), permanent: true);
     }
     if (!Get.isRegistered<WalletViewModel>()) {
       Get.put(WalletViewModel(), permanent: true);
     }
+    vm = Get.find<ProfileViewModel>();
+    authVm = Get.find<AuthViewModel>();
+    walletVm = Get.find<WalletViewModel>();
   }
-  final ProfileViewModel vm = Get.find<ProfileViewModel>();
-  final AuthViewModel authVm = Get.find<AuthViewModel>();
-  final WalletViewModel walletVm = Get.find<WalletViewModel>();
-
-  // ✅ DUPLICATE API CALL PREVENTION FLAGS
-  bool _isRefreshing = false;
-  bool _isDialogOpen = false;
-  bool _isBottomSheetOpen = false;
 
   @override
   Widget build(BuildContext context) {
@@ -834,28 +847,32 @@ class EditProfileContent extends StatefulWidget {
 }
 
 class _EditProfileContentState extends State<EditProfileContent> {
+  // ✅ SystemMediaPicker - No permissions required on Android & iOS
+  final SystemMediaPicker _picker = SystemMediaPicker();
+
   Future<void> _pickImage() async {
     try {
-      final picker = ImagePicker();
-      final XFile? image = await picker.pickImage(
-        source: ImageSource.gallery,
-        imageQuality: 85,
-      );
+      // ✅ Using system_media_picker - works on both Android & iOS without permissions
+      final List<PickedMedia> images = await _picker.pickImages(limit: 1);
 
-      if (image != null) {
+      if (images.isNotEmpty) {
+        final PickedMedia image = images.first;
         print('Image picked: ${image.path}');
-        final file = File(image.path);
-        final size = await file.length();
+
+        final File file = File(image.path);
+        final int size = await file.length();
         print('Image size: ${(size / 1024).toStringAsFixed(2)} KB');
 
         widget.onImageSelected(file);
+      } else {
+        print('No image selected');
       }
     } catch (e) {
       print('Error picking image: $e');
       if (mounted) {
         Get.snackbar(
           'Error',
-          'Failed to pick image',
+          'Failed to pick image: $e',
           backgroundColor: Colors.red,
           colorText: Colors.white,
         );

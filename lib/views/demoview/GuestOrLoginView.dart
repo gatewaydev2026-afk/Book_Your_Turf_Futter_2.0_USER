@@ -1,6 +1,5 @@
 // views/demoview/GuestOrLoginView.dart
-// ✅ Simplified: Just loads stored number from splash detection
-// ✅ Welcome screen + Phone display + OTP login + Privacy/Terms
+// ✅ Same design with Auto Detect button
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -43,6 +42,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   bool _isValid = false;
   bool _isLoading = true;
   bool _showManualEntry = false;
+  bool _isDetecting = false;
   String? _detectionError;
 
   List<String> _detectedNumbers = [];
@@ -53,7 +53,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     super.initState();
     _phoneController.addListener(_validatePhone);
     authVm.resetPhoneAuth();
-    _loadStoredNumber(); // ✅ Just load stored number (already detected in splash)
+    _loadStoredNumber();
   }
 
   @override
@@ -65,7 +65,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Load stored number (no detection, no permission requests)
+  // Load stored number
   // ---------------------------------------------------------------------
 
   Future<void> _loadStoredNumber() async {
@@ -75,13 +75,13 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     });
 
     try {
-      // ✅ Just get stored number (already detected in splash)
       final stored = await PhoneAutoDetectService.getStoredNumber();
 
-      if (stored != null && stored.isNotEmpty) {
+      if (stored != null && stored.isNotEmpty && stored.length == 10) {
         _detectedNumbers = [stored];
         _selectedNumber = stored;
         _showManualEntry = false;
+        _detectionError = null;
         print('📱 GuestOrLoginView: Loaded stored number: $stored');
       } else {
         _detectedNumbers = [];
@@ -99,7 +99,6 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
 
-      // ✅ Auto-open dialog if number found
       if (mounted && !_showManualEntry && _detectedNumbers.isNotEmpty) {
         _autoOpenNumberDialog();
       }
@@ -125,7 +124,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     }
 
     if (phone.length == 10) {
-      PhoneAutoDetectService.setDetectedNumber(phone);
+      PhoneAutoDetectService.savePhoneNumber(phone);
       authVm.sendPhoneOtp(number: phone);
     }
   }
@@ -140,17 +139,86 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     _phoneFocusNode.requestFocus();
   }
 
-  // ✅ FIXED: Format phone without spaces - just continuous 10 digits
   String _formatPhone(String text) {
     String cleaned = text.replaceAll(RegExp(r'\D'), '');
     if (cleaned.length > 10) cleaned = cleaned.substring(0, 10);
-    return cleaned; // Return as continuous 10 digits without spaces
+    return cleaned;
   }
 
   void _autoOpenNumberDialog() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) _openNumberDialog();
     });
+  }
+
+  // ---------------------------------------------------------------------
+  // Auto Detect Phone Number (User clicks button)
+  // ---------------------------------------------------------------------
+
+  Future<void> _autoDetectNumber() async {
+    if (_isDetecting) return;
+
+    setState(() {
+      _isDetecting = true;
+      _detectionError = null;
+    });
+
+    try {
+      final number = await PhoneAutoDetectService.getPhoneNumberHint();
+
+      if (number != null && number.isNotEmpty) {
+        setState(() {
+          _detectedNumbers = [number];
+          _selectedNumber = number;
+          _showManualEntry = false;
+          _phoneController.clear();
+          _detectionError = null;
+        });
+
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('✅ Phone number detected successfully!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+
+        print('📱 Auto-detected number: $number');
+      } else if (mounted) {
+        setState(() {
+          _showManualEntry = true;
+          _detectionError = 'No number selected. Please enter manually.';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('ℹ️ No number selected. Please enter manually.'),
+            backgroundColor: Colors.orange,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } catch (e) {
+      print('❌ Auto-detect error: $e');
+      if (mounted) {
+        setState(() {
+          _showManualEntry = true;
+          _detectionError = 'Failed to detect number. Please enter manually.';
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('❌ Failed to detect: ${e.toString()}'),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isDetecting = false);
+    }
   }
 
   // ---------------------------------------------------------------------
@@ -255,7 +323,12 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                       _buildErrorBanner(_detectionError!),
                     ],
 
-                    const SizedBox(height: 20),
+                    const SizedBox(height: 12),
+
+                    // ✅ AUTO DETECT BUTTON (Only show in manual mode)
+                    _buildAutoDetectButton(),
+
+                    const SizedBox(height: 16),
 
                     // ✅ Send OTP Button
                     _buildSendOtpButton(),
@@ -385,7 +458,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
   }
 
   // ---------------------------------------------------------------------
-  // Detected number row (tap to open confirmation dialog)
+  // Detected number row
   // ---------------------------------------------------------------------
 
   Widget _buildDetectedNumberRow() {
@@ -432,7 +505,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                     ),
                     const SizedBox(height: 2),
                     Text(
-                      '+91 ${_formatPhone(selected)}', // ✅ Shows continuous 10 digits
+                      '+91 ${_formatPhone(selected)}',
                       style: const TextStyle(
                         fontSize: 15.5,
                         fontWeight: FontWeight.w700,
@@ -512,7 +585,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                           borderRadius: BorderRadius.circular(9),
                         ),
                         child: Text(
-                          '+91 ${_formatPhone(selected)}', // ✅ Shows continuous 10 digits
+                          '+91 ${_formatPhone(selected)}',
                           textAlign: TextAlign.center,
                           style: const TextStyle(
                             fontSize: 15,
@@ -550,7 +623,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                                   child: Row(
                                     children: [
                                       Text(
-                                        '+91 ${_formatPhone(number)}', // ✅ Shows continuous 10 digits
+                                        '+91 ${_formatPhone(number)}',
                                         style: TextStyle(
                                           fontSize: 14.5,
                                           fontWeight: FontWeight.w700,
@@ -672,14 +745,54 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
                 )
                     : null,
               ),
-              // ✅ Remove the onChanged formatting that was adding spaces
-              onChanged: (value) {
-                // No formatting - just allow digits only
-                // The inputFormatters already handle digits only
-              },
             ),
           ),
         ],
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------------
+  // Auto Detect Button
+  // ---------------------------------------------------------------------
+
+  Widget _buildAutoDetectButton() {
+    // Don't show if already detected
+    if (!_showManualEntry && _detectedNumbers.isNotEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return Center(
+      child: SizedBox(
+        width: double.infinity,
+        height: 48,
+        child: OutlinedButton.icon(
+          onPressed: _isDetecting ? null : _autoDetectNumber,
+          icon: _isDetecting
+              ? const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: _GLColors.primary,
+            ),
+          )
+              : const Icon(Icons.sim_card_rounded, size: 20, color: _GLColors.primary),
+          label: Text(
+            _isDetecting ? 'Detecting...' : '🔍 Auto Detect Number',
+            style: TextStyle(
+              fontSize: 14,
+              fontWeight: FontWeight.w600,
+              color: _isDetecting ? Colors.grey : _GLColors.primary,
+            ),
+          ),
+          style: OutlinedButton.styleFrom(
+            side: BorderSide(color: _GLColors.primary, width: 1.5),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -721,7 +834,7 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
             const SizedBox(width: 10),
             Text(
               (!_showManualEntry && _selectedNumber != null)
-                  ? 'Login '
+                  ? 'Login'
                   : 'Login',
               style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
             ),

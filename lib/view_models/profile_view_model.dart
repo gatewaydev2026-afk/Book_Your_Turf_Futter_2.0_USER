@@ -3,6 +3,7 @@
 // ✅ Duplicate API call prevention
 // ✅ Cache management
 // ✅ Small snackbar with 1-second duration at TOP
+// ✅ REMOVED image_picker dependency (no longer needed)
 
 import 'dart:io';
 import 'dart:async';
@@ -11,7 +12,7 @@ import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart' hide MultipartFile, FormData;
 import 'package:dio/dio.dart';
-import 'package:image_picker/image_picker.dart';
+// ❌ import 'package:image_picker/image_picker.dart';  // REMOVED - No longer needed
 import 'package:flutter_image_compress/flutter_image_compress.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:http_parser/http_parser.dart';

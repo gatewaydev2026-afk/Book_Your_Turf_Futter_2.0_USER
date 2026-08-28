@@ -1,5 +1,5 @@
 // view_models/auth_view_model.dart - COMPLETE PHONE OTP IMPLEMENTATION
-// ✅ Phone OTP login/register (2 APIs only)
+// ✅ Phone OTP login/register with Phone Number Hint API support
 // ✅ No name/email/password on auth screens
 // ✅ JWT stored locally, never expires
 // ✅ Verified badge support
@@ -25,6 +25,9 @@ import '../services/device_manager.dart';
 import '../routes/app_routes.dart';
 import 'package:book_your_turf/main.dart' show facebookAppEvents;
 
+// ✅ Import for Phone Number Hint API
+import 'package:phone_hint_android/phone_hint_android.dart';
+
 import 'booking_view_model.dart';
 import 'home_view_model.dart';
 import 'wallet_view_model.dart';
@@ -43,6 +46,9 @@ class AuthViewModel extends GetxController {
   final otpSent = false.obs;
   final isNewUser = true.obs;
   final profileComplete = false.obs;
+
+  // ✅ Error message observable
+  final errorMessage = ''.obs;
 
   Timer? _timer;
   Timer? _expiryTimer;
@@ -139,8 +145,37 @@ class AuthViewModel extends GetxController {
     isRegistered.value = false;
     isNumberVerified.value = false;
     otpSent.value = false;
+    errorMessage.value = ''; // ✅ Clear error message
     _verifiedUserData = null;
     clearOtpTime();
+  }
+
+  // ============================================================
+  // ✅ AUTO-DETECT PHONE NUMBER - Using Phone Number Hint API
+  // ============================================================
+  Future<String?> autoDetectPhoneNumber() async {
+    try {
+      // Using phone_hint_android package
+      final phoneHint = PhoneHintAndroid();
+      final phoneNumber = await phoneHint.getPhoneNumber();
+
+      if (phoneNumber != null && phoneNumber.isNotEmpty) {
+        // Clean the number
+        String cleaned = phoneNumber.replaceAll(RegExp(r'[\s\+\-\(\)]'), '');
+        if (cleaned.startsWith('91') && cleaned.length > 10) {
+          cleaned = cleaned.substring(2);
+        }
+        if (cleaned.length == 10) {
+          errorMessage.value = ''; // Clear error on success
+          return cleaned;
+        }
+      }
+      return null;
+    } catch (e) {
+      print('❌ Auto-detect error: $e');
+      errorMessage.value = 'Failed to detect number. Please enter manually.';
+      return null;
+    }
   }
 
   // ============================================================
@@ -157,6 +192,7 @@ class AuthViewModel extends GetxController {
       cleanNumber = cleanNumber.substring(2);
     }
     if (cleanNumber.length != 10) {
+      errorMessage.value = 'Please enter a valid 10-digit mobile number';
       _showSmallSnackbar('Error', 'Please enter a valid 10-digit mobile number', Colors.red);
       return false;
     }
@@ -169,6 +205,7 @@ class AuthViewModel extends GetxController {
 
     _isSendingOtp = true;
     isLoading.value = true;
+    errorMessage.value = ''; // Clear previous errors
 
     try {
       final dio = Get.find<Dio>();
@@ -197,22 +234,28 @@ class AuthViewModel extends GetxController {
         _otpSentTime = DateTime.now();
         _startTimer();
 
+        errorMessage.value = ''; // Clear error on success
         _showSmallSnackbar('Success', 'OTP sent to $cleanNumber', Colors.white);
         return true;
       } else {
         String msg = response.data['message'] ?? 'Failed to send OTP';
+        errorMessage.value = msg;
         _showSmallSnackbar('Error', msg, Colors.red);
         return false;
       }
     } on DioException catch (e) {
       isLoading.value = false;
       _isSendingOtp = false;
-      _showSmallSnackbar('Error', _getApiErrorMessage(e), Colors.red);
+      String msg = _getApiErrorMessage(e);
+      errorMessage.value = msg;
+      _showSmallSnackbar('Error', msg, Colors.red);
       return false;
     } catch (e) {
       isLoading.value = false;
       _isSendingOtp = false;
-      _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
+      String msg = 'Something went wrong. Please try again.';
+      errorMessage.value = msg;
+      _showSmallSnackbar('Error', msg, Colors.red);
       return false;
     }
   }
@@ -232,6 +275,7 @@ class AuthViewModel extends GetxController {
     }
 
     if (isOtpTimeExpired()) {
+      errorMessage.value = 'OTP has expired. Please request a new one.';
       _showSmallSnackbar('Error', 'OTP has expired. Please request a new one.', Colors.red);
       return false;
     }
@@ -244,6 +288,7 @@ class AuthViewModel extends GetxController {
 
     _isVerifyingOtp = true;
     isLoading.value = true;
+    errorMessage.value = ''; // Clear previous errors
 
     try {
       final dio = Get.find<Dio>();
@@ -271,6 +316,7 @@ class AuthViewModel extends GetxController {
         final user = data['user'];
 
         if (token == null || token.isEmpty) {
+          errorMessage.value = 'Authentication failed. Please try again.';
           _showSmallSnackbar('Error', 'Authentication failed. Please try again.', Colors.red);
           return false;
         }
@@ -333,9 +379,9 @@ class AuthViewModel extends GetxController {
         }
 
         // ✅ Register device with FCM token
-        print('\n╔════════════════════════════════════════════════════════════╗');
+        print('\n╔══════════════════════════════════════════════════════════════════╗');
         print('║  📱 PHONE OTP LOGIN SUCCESS - REGISTERING DEVICE          ║');
-        print('╚════════════════════════════════════════════════════════════╝');
+        print('╚══════════════════════════════════════════════════════════════════╝');
 
         await _registerDeviceToken(token);
 
@@ -345,27 +391,34 @@ class AuthViewModel extends GetxController {
         // ✅ Navigate to home
         Get.offAllNamed(AppRoutes.mainPage);
 
+        errorMessage.value = ''; // Clear error on success
         _showSmallSnackbar('Welcome!', '${user['name']?.isNotEmpty == true ? user['name'] : ''}', Colors.white);
         return true;
       } else {
         String msg = response.data['message'] ?? 'Verification failed. Please try again.';
+        errorMessage.value = msg;
         _showSmallSnackbar('Error', msg, Colors.red);
         return false;
       }
     } on DioException catch (e) {
       isLoading.value = false;
       _isVerifyingOtp = false;
-
+      String msg = _getApiErrorMessage(e);
+      errorMessage.value = msg;
       if (e.response?.statusCode == 400) {
-        _showSmallSnackbar('Error', 'Invalid OTP. Please try again.', Colors.red);
+        msg = 'Invalid OTP. Please try again.';
+        errorMessage.value = msg;
+        _showSmallSnackbar('Error', msg, Colors.red);
       } else {
-        _showSmallSnackbar('Error', _getApiErrorMessage(e), Colors.red);
+        _showSmallSnackbar('Error', msg, Colors.red);
       }
       return false;
     } catch (e) {
       isLoading.value = false;
       _isVerifyingOtp = false;
-      _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
+      String msg = 'Something went wrong. Please try again.';
+      errorMessage.value = msg;
+      _showSmallSnackbar('Error', msg, Colors.red);
       return false;
     }
   }
@@ -452,7 +505,7 @@ class AuthViewModel extends GetxController {
       final deviceManager = Get.find<DeviceManager>();
 
       print('\n📱 Registering device with PERSISTENT ID...');
-      print('   🆔 Device ID: $persistentDeviceId');
+      print('   🔆 Device ID: $persistentDeviceId');
       print('   👤 User: ${SharedPrefsHelper.getUserPhone() ?? 'Unknown'}');
       print('   📍 Location: "${currentLocation ?? "none"}"');
       print('   📱 FCM Token: ${fcmToken != null ? "Available" : "Not available"}');
@@ -628,9 +681,9 @@ class AuthViewModel extends GetxController {
   // ✅ LOGOUT - COMPLETE CLEANUP (Token only, not device ID)
   // ============================================================
   Future<void> logout() async {
-    print('\n╔════════════════════════════════════════════════════════════╗');
+    print('\n╔══════════════════════════════════════════════════════════════════╗');
     print('║  🚪 LOGGING OUT - COMPLETE CLEANUP                        ║');
-    print('╚════════════════════════════════════════════════════════════╝');
+    print('╚══════════════════════════════════════════════════════════════════╝');
 
     // ✅ Stop auto refresh service
     if (Get.isRegistered<AutoRefreshService>()) {
@@ -735,9 +788,9 @@ class AuthViewModel extends GetxController {
     }
 
     print('\n✅ LOGOUT COMPLETE - All data cleared');
-    print('   🔒 Device ID preserved');
+    print('   🔑 Device ID preserved');
     print('   🔄 App will start fresh on next login');
-    print('═══════════════════════════════════════════════════════════════\n');
+    print('══════════════════════════════════════════════════════════════════\n');
 
     Get.offAllNamed(AppRoutes.login);
     _showSmallSnackbar('Success', 'Successfully logged out', Colors.white);
