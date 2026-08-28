@@ -1028,6 +1028,7 @@ class BookingSummaryViewModel extends GetxController {
 
     final options = {
       'key': razorpayKey,
+      'timeout': 120,
       'amount': amountInPaise,
       'name': 'Book Your Turf',
       'description': description,
