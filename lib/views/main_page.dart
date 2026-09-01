@@ -7,7 +7,7 @@ import 'package:book_your_turf/view_models/main_page_view_model.dart';
 import 'package:book_your_turf/view_models/profile_view_model.dart';
 import 'package:book_your_turf/views/booking_history_view.dart';
 import 'package:book_your_turf/views/home_view.dart';
-import 'package:book_your_turf/views/profile_view.dart';
+import 'package:book_your_turf/views/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';

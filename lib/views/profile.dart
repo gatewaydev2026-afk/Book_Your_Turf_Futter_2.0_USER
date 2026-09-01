@@ -1,4 +1,4 @@
-// views/profile_view.dart
+// views/profile.dart
 // ✅ Complete with Device Management menu item & Lazy Loading
 // ✅ Duplicate API call prevention with flags
 // ✅ Updated to use system_media_picker (No permissions required)

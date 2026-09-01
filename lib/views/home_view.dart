@@ -5,7 +5,7 @@
 // ✅ Guest mode fully working
 
 import 'dart:async';
-import 'package:book_your_turf/views/profile_view.dart';
+import 'package:book_your_turf/views/profile.dart';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:flutter_svg/flutter_svg.dart';

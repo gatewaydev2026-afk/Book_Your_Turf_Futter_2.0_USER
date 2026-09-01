@@ -1,44 +1,40 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
     package="com.bookyourturf.app">
 
     <!-- Internet and Location Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <!-- Optional: For auto-detecting phone number from SIM -->
-
-    <!-- Optional: For auto-reading OTP from SMS -->
-
-    <!-- Camera and Media Permissions -->
-    <uses-permission android:name="android.permission.CAMERA" />
 
     <!-- POST_NOTIFICATIONS for Android 13+ -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
-    <!-- Optional: Needed if using photo capture -->
-    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- ========== FORCE REMOVE PHOTO/VIDEO PERMISSIONS ========== -->
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
+        tools:node="remove" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
+        tools:node="remove" />
+
+    <!-- Optional: Camera (remove if not needed) -->
+    <!-- <uses-permission android:name="android.permission.CAMERA" /> -->
 
     <!-- ========== QUERIES SECTION ========== -->
     <queries>
-        <!-- For Play Store -->
         <intent>
             <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" android:host="play.google.com" />
         </intent>
         <intent>
             <action android:name="android.intent.action.VIEW" />
-            <data android:scheme="market" />
-        </intent>
-        <!-- For general web links -->
-        <intent>
-            <action android:name="android.intent.action.VIEW" />
             <data android:scheme="https" />
         </intent>
-        <!-- For image pick & capture -->
         <intent>
-            <action android:name="android.intent.action.GET_CONTENT" />
-            <category android:name="android.intent.category.DEFAULT" />
-            <data android:mimeType="image/*" />
+            <action android:name="android.media.action.PICK_IMAGES" />
         </intent>
         <intent>
             <action android:name="android.media.action.IMAGE_CAPTURE" />
@@ -53,11 +49,10 @@
         android:name="${applicationName}"
         android:label="Book Your Turf"
         android:icon="@mipmap/ic_launcher"
-        android:requestLegacyExternalStorage="true"
         android:usesCleartextTraffic="true"
         android:enableOnBackInvokedCallback="true">
 
-        <!-- ✅ FACEBOOK META TAGS -->
+        <!-- FACEBOOK META TAGS -->
         <meta-data
             android:name="com.facebook.sdk.ApplicationId"
             android:value="@string/facebook_app_id" />
@@ -71,27 +66,24 @@
             android:name="com.facebook.sdk.AdvertiserIDCollectionEnabled"
             android:value="true" />
 
-        <!-- ✅ FIREBASE APP CHECK -->
+        <!-- FIREBASE APP CHECK -->
         <meta-data
             android:name="com.google.firebase.appcheck.playintegrity"
             android:value="true" />
 
-        <!-- ✅ GOOGLE MAPS API KEY -->
+        <!-- GOOGLE MAPS API KEY -->
         <meta-data
             android:name="com.google.android.geo.API_KEY"
             android:value="AIzaSyAmaDiy7rbKN9XHJnH9WCZ5VWoH87L9Zs4" />
 
-        <!-- ✅ FIREBASE MESSAGING - DEFAULT CHANNEL -->
+        <!-- FIREBASE MESSAGING -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_channel_id"
             android:value="book_your_turf_channel" />
-
-        <!-- ✅ FIREBASE MESSAGING - DEFAULT ICON -->
         <meta-data
             android:name="com.google.firebase.messaging.default_notification_icon"
             android:resource="@mipmap/ic_launcher" />
 
-        <!-- ✅ FIREBASE MESSAGING SERVICE - CRITICAL FOR BACKGROUND NOTIFICATIONS -->
         <service
             android:name="com.google.firebase.messaging.FirebaseMessagingService"
             android:exported="false">
@@ -100,7 +92,6 @@
             </intent-filter>
         </service>
 
-        <!-- ✅ FLUTTER FIREBASE MESSAGING SERVICE (for FlutterFire) -->
         <service
             android:name="io.flutter.plugins.firebase.messaging.FlutterFirebaseMessagingService"
             android:exported="false">
@@ -121,12 +112,10 @@
             android:windowSoftInputMode="adjustResize"
             android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode">
 
-            <!-- Edge-to-edge flag for modern Android -->
             <meta-data
                 android:name="android.window.enableEdgeToEdge"
                 android:value="true" />
 
-            <!-- Splash Theme Metadata -->
             <meta-data
                 android:name="io.flutter.embedding.android.NormalTheme"
                 android:resource="@style/NormalTheme" />
@@ -143,7 +132,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
-                <data android:scheme="http" />
                 <data android:host="play.google.com" />
                 <data android:pathPrefix="/store/apps/details" />
             </intent-filter>
@@ -161,7 +149,6 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
-                <data android:scheme="http" />
                 <data android:host="bookyourturf.net" />
                 <data android:pathPrefix="/refer" />
             </intent-filter>
@@ -171,19 +158,17 @@
                 <category android:name="android.intent.category.DEFAULT" />
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="https" />
-                <data android:scheme="http" />
                 <data android:host="www.bookyourturf.net" />
                 <data android:pathPrefix="/refer" />
             </intent-filter>
 
         </activity>
 
-        <!-- UCrop Activity for image cropping -->
+        <!-- UCrop Activity -->
         <activity
             android:name="com.yalantis.ucrop.UCropActivity"
             android:theme="@style/Theme.AppCompat.Light.NoActionBar" />
 
-        <!-- Flutter Embedding API Compatibility -->
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />

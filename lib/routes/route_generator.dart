@@ -18,7 +18,7 @@ import '../views/reset_password_view.dart';
 import '../views/home_view.dart';
 import '../views/main_page.dart';
 import '../views/booking_history_view.dart';
-import '../views/profile_view.dart';
+import '../views/profile.dart';
 import '../views/turf_details_view.dart';
 import '../views/slot_view.dart';
 import '../views/term_condition_view.dart';
