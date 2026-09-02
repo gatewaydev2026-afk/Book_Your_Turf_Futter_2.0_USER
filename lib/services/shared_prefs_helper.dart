@@ -1,5 +1,5 @@
 // services/shared_prefs_helper.dart
-// ✅ COMPLETE - With Phone Auth Support
+// ✅ COMPLETE - With Phone Auth Support & Booking Count
 
 import 'package:book_your_turf/config/app_config.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -35,6 +35,7 @@ class SharedPrefsHelper {
   static const String _keySessionId = 'session_id';
   static const String _keyLastLogoutTime = 'last_logout_time';
   static const String _keyAppInitialized = 'app_initialized';
+  static const String _keyBookingCount = 'booking_count'; // ✅ NEW: Booking count key
 
   // ✅ Phone Auth specific keys
   static const String _keyIsPhoneAuthUser = 'is_phone_auth_user';
@@ -225,6 +226,36 @@ class SharedPrefsHelper {
   }
 
   // ============================================================
+  // ✅ BOOKING COUNT - Track total number of bookings
+  // ============================================================
+
+  /// Get the current booking count
+  static int getBookingCount() {
+    return _prefs.getInt(_keyBookingCount) ?? 0;
+  }
+
+  /// Set the booking count
+  static Future<void> setBookingCount(int count) async {
+    await _prefs.setInt(_keyBookingCount, count);
+    print('📊 Booking count set to: $count');
+  }
+
+  /// Increment booking count by 1 and return the new value
+  static Future<int> incrementBookingCount() async {
+    final current = getBookingCount();
+    final newCount = current + 1;
+    await setBookingCount(newCount);
+    print('📊 Booking count incremented: $current -> $newCount');
+    return newCount;
+  }
+
+  /// Reset booking count to 0 (for testing purposes)
+  static Future<void> resetBookingCount() async {
+    await _prefs.setInt(_keyBookingCount, 0);
+    print('🔄 Booking count reset to 0');
+  }
+
+  // ============================================================
   // ✅ PERMANENT DEVICE ID
   // ============================================================
   static Future<String> getPermanentDeviceId() async {
@@ -353,7 +384,7 @@ class SharedPrefsHelper {
 
   // ============================================================
   // ✅ CLEAR ALL - COMPLETE SESSION RESET
-  // ✅ Preserves ONLY Device ID (survives reinstall)
+  // ✅ Preserves ONLY Device ID & Booking Count (survives reinstall)
   // ============================================================
   static Future<void> clearAll() async {
     print('\n╔════════════════════════════════════════════════════════════╗');
@@ -365,6 +396,9 @@ class SharedPrefsHelper {
     final backupId = _prefs.getString(_keyDeviceIdBackup);
     final deviceLocation = _prefs.getString(_keyDeviceLocation);
     final locationTime = _prefs.getString(_keyLocationUpdatedAt);
+
+    // ✅ PRESERVE BOOKING COUNT (tracks total bookings across sessions)
+    final bookingCount = _prefs.getInt(_keyBookingCount) ?? 0;
 
     // ✅ PRESERVE FIRST LAUNCH STATUS
     final isFirst = _prefs.getBool(_keyFirstLaunch) ?? true;
@@ -386,6 +420,12 @@ class SharedPrefsHelper {
       await _prefs.setString(_keyLocationUpdatedAt, locationTime);
     }
 
+    // ✅ RESTORE BOOKING COUNT
+    if (bookingCount > 0) {
+      await _prefs.setInt(_keyBookingCount, bookingCount);
+      print('📊 Booking count preserved: $bookingCount');
+    }
+
     // ✅ SET FIRST LAUNCH TO FALSE (app already installed)
     await _prefs.setBool(_keyFirstLaunch, isFirst);
 
@@ -401,6 +441,7 @@ class SharedPrefsHelper {
     print('✅ All user data cleared');
     print('   🔒 Device ID preserved: $deviceId');
     print('   📍 Location preserved: $deviceLocation');
+    print('   📊 Booking count preserved: $bookingCount');
     print('   ⏰ Logout time: ${DateTime.now()}');
     print('═══════════════════════════════════════════════════════════════\n');
   }

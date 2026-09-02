@@ -1,7 +1,4 @@
-// booking_summary_view_model.dart - Complete with Profile Check & Duplicate Prevention
-// ✅ FIXED: Profile dialog auto-closes and proceeds with payment
-// ✅ FIXED: After save & continue, app stays on summary page and proceeds with payment
-// ✅ FIXED: Small snackbar with 1-second duration
+// booking_summary_view_model.dart - Complete with Booking Count for Meta
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -141,6 +138,91 @@ class BookingSummaryViewModel extends GetxController {
       print('✅ Facebook view content event logged');
     } catch (e) {
       print('❌ Facebook view content error: $e');
+    }
+  }
+
+  // ✅ NEW: Log booking success event to Meta with incremented count
+  Future<void> _logBookingSuccessEvent({
+    required double amountPaid,
+    String? paymentId,
+    String? orderId,
+  }) async {
+    try {
+      // ✅ Get current count and increment by 1
+      final int currentCount = await _incrementBookingCount();
+
+      // Prepare the parameters for the purchase event
+      final parameters = {
+        'content_ids': [turf.id.toString()],
+        'content_type': 'turf_booking',
+        'content_name': turf.name,
+        'content_category': turf.gameType,
+        'num_items': selectedSlots.length.toString(),
+        'payment_type': selectedPaymentType,
+        'currency': 'INR',
+        'payment_method': orderId != null ? 'online' : 'wallet',
+        // ✅ Send the incremented count to Meta
+        'booking_count': currentCount.toString(),
+        'total_bookings': currentCount.toString(),
+      };
+
+      // Add payment IDs if available (for Razorpay)
+      if (paymentId != null) {
+        parameters['payment_id'] = paymentId;
+      }
+      if (orderId != null) {
+        parameters['order_id'] = orderId;
+      }
+
+      // Add discount info if applied
+      if (discountVm.hasSelectedDiscount) {
+        parameters['discount_amount'] = discountVm.totalDiscountAmount.toString();
+        parameters['admin_discount_id'] = discountVm.selectedAdminDiscountId.value?.toString() ?? '';
+        parameters['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value?.toString() ?? '';
+      }
+
+      // Add turf details
+      parameters['turf_id'] = turf.id.toString();
+      parameters['turf_name'] = turf.name;
+      parameters['court_number'] = selectedCourt.toString();
+      parameters['slots_count'] = selectedSlots.length.toString();
+      parameters['date'] = formattedDate;
+
+      // ✅ Log the purchase event to Meta
+      await facebookAppEvents.logEvent(
+        name: 'fb_mobile_purchase',
+        parameters: parameters,
+        valueToSum: amountPaid,
+      );
+
+      print('✅ Booking success event sent to Meta/Facebook');
+      print('   Amount: ₹$amountPaid');
+      print('   Turf: ${turf.name}');
+      print('   Payment Type: $selectedPaymentType');
+      print('   Booking Count (after increment): $currentCount');
+      print('   Payment Method: ${orderId != null ? 'Online' : 'Wallet'}');
+    } catch (e) {
+      print('❌ Error logging booking success event: $e');
+    }
+  }
+
+  // ✅ NEW: Method to increment the booking count and return the new value
+  Future<int> _incrementBookingCount() async {
+    try {
+      // Get the current count from SharedPreferences
+      int currentCount = SharedPrefsHelper.getBookingCount();
+
+      // ✅ Increment the count by 1 (for this new booking)
+      currentCount += 1;
+
+      // ✅ Save the updated count
+      await SharedPrefsHelper.setBookingCount(currentCount);
+
+      print('📊 Booking Count Incremented: $currentCount');
+      return currentCount;
+    } catch (e) {
+      print('❌ Error incrementing booking count: $e');
+      return 1; // Return 1 as default if there's an error
     }
   }
 
@@ -377,8 +459,12 @@ class BookingSummaryViewModel extends GetxController {
           shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
           title: Row(
             children: [
-
-
+              const Icon(Icons.person, color: Colors.green),
+              const SizedBox(width: 8),
+              const Text(
+                'Complete Your Profile',
+                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 18),
+              ),
             ],
           ),
           content: Column(
@@ -695,6 +781,10 @@ class BookingSummaryViewModel extends GetxController {
   void _handleWalletSuccess() {
     paymentSuccessConfirmed.value = true;
 
+    // ✅ LOG THE BOOKING SUCCESS EVENT TO META
+    final amountPaid = _getAmountToPay();
+    _logBookingSuccessEvent(amountPaid: amountPaid);
+
     // ✅ Show success dialog only if not shown yet
     if (!hasShownSuccessPopup.value) {
       hasShownSuccessPopup.value = true;
@@ -750,7 +840,7 @@ class BookingSummaryViewModel extends GetxController {
     );
   }
 
-  // ✅ FIXED: Success dialog with duplicate prevention - FULLY LOCKED
+  // ✅ FIXED: Success dialog with booking count display
   void _showWalletSuccessDialog() {
     if (_isSuccessDialogShown || (Get.isDialogOpen ?? false)) {
       print('⏭️ Success dialog already showing - skipping duplicate');
@@ -759,6 +849,7 @@ class BookingSummaryViewModel extends GetxController {
 
     _isSuccessDialogShown = true;
     final amountPaid = _getAmountToPay();
+    final int bookingCount = SharedPrefsHelper.getBookingCount();
 
     Get.dialog(
       PopScope(
@@ -815,6 +906,31 @@ class BookingSummaryViewModel extends GetxController {
                     style: TextStyle(fontSize: 13, color: Colors.green.shade700),
                   ),
                 ),
+              // ✅ Show booking count
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.receipt_long, size: 18, color: Colors.blue.shade700),
+                    const SizedBox(width: 8),
+                    Text(
+                      'Booking #$bookingCount',
+                      style: TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.blue.shade700,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
               const SizedBox(height: 16),
               if (selectedPaymentType == 'advance')
                 const Text(
@@ -1076,6 +1192,13 @@ class BookingSummaryViewModel extends GetxController {
 
     final amountPaid = _currentPayableAmount ?? _getAmountToPay();
 
+    // ✅ LOG THE BOOKING SUCCESS EVENT TO META WITH PAYMENT DETAILS
+    _logBookingSuccessEvent(
+      amountPaid: amountPaid,
+      paymentId: response.paymentId,
+      orderId: response.orderId,
+    );
+
     try {
       final dio = Get.find<Dio>();
 
@@ -1143,7 +1266,7 @@ class BookingSummaryViewModel extends GetxController {
       Future.delayed(const Duration(seconds: 3), () {
         _showSmallSnackbar(
           'Payment Failed',
-           'Please try again. The slot will be unlocked after 120 seconds.',
+          'Please try again. The slot will be unlocked after 120 seconds.',
           Colors.red,
         );
       });
