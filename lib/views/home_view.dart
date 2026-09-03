@@ -3,6 +3,7 @@
 // ✅ API Search - Search button calls API
 // ✅ Typing shows local suggestions only
 // ✅ Guest mode fully working
+// ✅ Transparent bottom navigation bar
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile.dart';
@@ -99,7 +100,6 @@ class _HomeViewState extends State<HomeView>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
-    // ✅ COMPACT: Reduced height values
     _categoryHeightAnimation = Tween<double>(
       begin: 125,
       end: 38,
@@ -294,10 +294,6 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  // ============================================================
-  // ✅ SEARCH - UPDATED METHODS
-  // ============================================================
-
   void _onSearchChanged(String query) {
     homeVm.onSearchTextChanged(query);
   }
@@ -371,75 +367,70 @@ class _HomeViewState extends State<HomeView>
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      color: const Color(0xFFF5F7F6),
-      child: Scaffold(
-        backgroundColor: Colors.transparent,
-        body: Stack(
-          children: [
-            SafeArea(
-              child: GestureDetector(
-                behavior: HitTestBehavior.translucent,
-                onTap: () {
-                  FocusManager.instance.primaryFocus?.unfocus();
-                  homeVm.showSuggestions.value = false;
-                },
-                child: Column(
-                  children: [
-                    if (_showGreeting)
-                      Container(
-                        height: 30,
-                        alignment: Alignment.center,
-                        child: Obx(() => Text(
-                          homeVm.isGuestMode.value
-                              ? "Hello Guest! 👋"
-                              : "Hello $_cachedUserName!",
-                          style: const TextStyle(
-                            fontSize: 12,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.green,
-                          ),
-                        )),
-                      ),
-                    if (!_showGreeting) _headerSection(context),
-                    _searchBar(),
-                    const SizedBox(height: 4),
-                    AnimatedBuilder(
-                      animation: _categoryAnimationController,
-                      builder: (context, child) {
-                        return Container(
-                          height: _categoryHeightAnimation.value,
-                          width: double.infinity,
-                          child: !_isCategoryMinimized
-                              ? Column(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              _allCategoryCard(),
-                              const SizedBox(height: 4),
-                              _threeCategoriesRow(),
-                            ],
-                          )
-                              : _miniCategorySection(),
-                        );
-                      },
+    // ✅ FIXED: Removed the colored Container - now transparent for glass nav
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7F6),
+      body: Stack(
+        children: [
+          SafeArea(
+            child: GestureDetector(
+              behavior: HitTestBehavior.translucent,
+              onTap: () {
+                FocusManager.instance.primaryFocus?.unfocus();
+                homeVm.showSuggestions.value = false;
+              },
+              child: Column(
+                children: [
+                  if (_showGreeting)
+                    Container(
+                      height: 30,
+                      alignment: Alignment.center,
+                      child: Obx(() => Text(
+                        homeVm.isGuestMode.value
+                            ? "Hello Guest! 👋"
+                            : "Hello $_cachedUserName!",
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.green,
+                        ),
+                      )),
                     ),
-                    const SizedBox(height: 2),
-                    Expanded(
-                      child: _buildMainContent(),
-                    ),
-                  ],
-                ),
+                  if (!_showGreeting) _headerSection(context),
+                  _searchBar(),
+                  const SizedBox(height: 4),
+                  AnimatedBuilder(
+                    animation: _categoryAnimationController,
+                    builder: (context, child) {
+                      return Container(
+                        height: _categoryHeightAnimation.value,
+                        width: double.infinity,
+                        child: !_isCategoryMinimized
+                            ? Column(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            _allCategoryCard(),
+                            const SizedBox(height: 4),
+                            _threeCategoriesRow(),
+                          ],
+                        )
+                            : _miniCategorySection(),
+                      );
+                    },
+                  ),
+                  const SizedBox(height: 2),
+                  Expanded(
+                    child: _buildMainContent(),
+                  ),
+                ],
               ),
             ),
-          ],
-        ),
+          ),
+        ],
       ),
     );
   }
 
-  // ============================================================
-  // ✅ ALL CATEGORY CARD - COMPACT
-  // ============================================================
   Widget _allCategoryCard() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -505,9 +496,6 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
-  // ============================================================
-  // ✅ THREE CATEGORIES ROW - COMPACT
-  // ============================================================
   Widget _threeCategoriesRow() {
     final categories = [
       {"name": "Cricket &\n Football", "filter": "Football", "image1": "assets/sports/human_cricket.png", "colors": [const Color(0xffFF9A9E), const Color(0xffF6416C)]},
@@ -591,9 +579,6 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
-  // ============================================================
-  // ✅ MINI CATEGORY SECTION - COMPACT
-  // ============================================================
   Widget _miniCategorySection() {
     final categories = [
       {"name": "All", "filter": ""},
@@ -656,9 +641,6 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
-  // ============================================================
-  // ✅ SEARCH BAR
-  // ============================================================
   Widget _searchBar() {
     return Container(
       margin: const EdgeInsets.symmetric(horizontal: 16),
@@ -753,12 +735,8 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  // ============================================================
-  // ✅ MAIN CONTENT
-  // ============================================================
   Widget _buildMainContent() {
     return Obx(() {
-      // ✅ Show loading state
       if (homeVm.isLoading.value && homeVm.turfs.isEmpty && !homeVm.isSearching.value) {
         return GridView.builder(
           controller: _scrollController,
@@ -774,7 +752,6 @@ class _HomeViewState extends State<HomeView>
         );
       }
 
-      // ✅ Show search results (API search)
       if (homeVm.searchQuery.value.isNotEmpty) {
         if (homeVm.turfs.isEmpty && !homeVm.isLoading.value) {
           return _buildSearchEmptyState();
@@ -784,24 +761,18 @@ class _HomeViewState extends State<HomeView>
         }
       }
 
-      // ✅ Show suggestions while typing
       if (homeVm.showSuggestions.value && homeVm.searchResults.isNotEmpty) {
         return _buildSuggestionsList();
       }
 
-      // ✅ Show nearby turfs (default view)
       if (homeVm.turfs.isNotEmpty) {
         return _buildTurfGrid();
       }
 
-      // ✅ Empty state
       return _buildEmptyState();
     });
   }
 
-  // ============================================================
-  // ✅ SUGGESTIONS LIST
-  // ============================================================
   Widget _buildSuggestionsList() {
     return ListView.builder(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -844,9 +815,6 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
-  // ============================================================
-  // ✅ TURF GRID
-  // ============================================================
   Widget _buildTurfGrid() {
     return RefreshIndicator(
       onRefresh: _handleRefresh,
@@ -996,9 +964,6 @@ class _HomeViewState extends State<HomeView>
     );
   }
 
-  // ============================================================
-  // ✅ HEADER SECTION
-  // ============================================================
   Widget _headerSection(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -1147,7 +1112,6 @@ class _HomeViewState extends State<HomeView>
                 ],
               ),
             ),
-            // Refresh Button
             Obx(() => Container(
               width: 40,
               height: 40,
@@ -1173,7 +1137,6 @@ class _HomeViewState extends State<HomeView>
               ),
             )),
             const SizedBox(width: 8),
-            // Notification Icon with Badge
             Obx(() {
               final count = _notificationService.unreadCount.value;
               return Stack(

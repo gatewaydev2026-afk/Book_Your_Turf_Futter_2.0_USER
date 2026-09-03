@@ -1,4 +1,4 @@
-// main_page.dart - FIXED version with proper tab reset
+// main_page.dart - FIXED with transparent background for glass nav
 
 import 'package:book_your_turf/services/shared_prefs_helper.dart';
 import 'package:book_your_turf/view_models/booking_view_model.dart';
@@ -36,11 +36,9 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
-    // ✅ IMPORTANT: Reset to Home tab when MainPage is created
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized) {
         _initialized = true;
-        // ✅ Force reset to home tab
         controller.currentIndex.value = 0;
         print('🏠 MainPage initialized - Setting tab to Home (index 0)');
         _loadTabData(0);
@@ -52,12 +50,27 @@ class _MainPageState extends State<MainPage> {
   Widget build(BuildContext context) {
     return Obx(
           () => Scaffold(
-        body: IndexedStack(
-          index: controller.currentIndex.value,
-          children: screens,
+        // ✅ FIXED: Make scaffold background transparent
+        backgroundColor: Colors.transparent,
+        body: Stack(
+          children: [
+            // ✅ Content with IndexedStack
+            IndexedStack(
+              index: controller.currentIndex.value,
+              children: screens,
+            ),
+            // ✅ Bottom Navigation Bar on top with glass effect
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: _buildGlassNavigationBar(),
+            ),
+          ],
         ),
         extendBody: true,
-        bottomNavigationBar: _buildGlassNavigationBar(),
+        // ✅ Remove the default bottomNavigationBar
+        bottomNavigationBar: null,
       ),
     );
   }
@@ -77,30 +90,30 @@ class _MainPageState extends State<MainPage> {
           color: Colors.transparent,
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withOpacity(0.1),
-              blurRadius: 10,
-              offset: const Offset(0, 5),
+              color: Colors.black.withOpacity(0.08),
+              blurRadius: 15,
+              offset: const Offset(0, 4),
             ),
           ],
         ),
         child: ClipRRect(
           borderRadius: BorderRadius.circular(35),
           child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 15, sigmaY: 15),
+            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
                   begin: Alignment.topLeft,
                   end: Alignment.bottomRight,
                   colors: [
-                    Colors.white.withOpacity(0.25),
-                    Colors.white.withOpacity(0.15),
+                    Colors.white.withOpacity(0.12),
                     Colors.white.withOpacity(0.08),
+                    Colors.white.withOpacity(0.04),
                   ],
                 ),
                 border: Border.all(
-                  color: Colors.white.withOpacity(0.3),
-                  width: 1.2,
+                  color: Colors.white.withOpacity(0.15),
+                  width: 0.8,
                 ),
                 borderRadius: BorderRadius.circular(35),
               ),
@@ -225,23 +238,19 @@ class _MainPageState extends State<MainPage> {
     final homeVm = Get.find<HomeViewModel>();
     final isGuest = homeVm.isGuestMode.value;
 
-    // ✅ Check if user is logged in
     final token = SharedPrefsHelper.getToken();
     final bool hasToken = token != null && token.isNotEmpty;
 
-    // ✅ Update guest mode status
     if (!hasToken) {
       homeVm.isGuestMode.value = true;
     }
 
-    // ✅ For guest, only allow Home tab
     if (isGuest || !hasToken) {
       if (index != 0) {
         print('👤 Guest mode - Showing login prompt for tab $index');
         _showLoginRequiredDialog(index);
         return;
       }
-      // ✅ For home tab in guest mode, ensure data loads
       if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
         print('🏠 Guest mode - Loading home data...');
         await homeVm.loadHomeData();
@@ -253,9 +262,8 @@ class _MainPageState extends State<MainPage> {
       return;
     }
 
-    // ✅ Logged-in user
     switch (index) {
-      case 0: // Home Tab
+      case 0:
         print('🏠 Home tab selected - Ensuring data is loaded...');
         if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
           print('📡 Home data empty - Loading now...');
@@ -274,7 +282,7 @@ class _MainPageState extends State<MainPage> {
         }
         break;
 
-      case 1: // Bookings Tab
+      case 1:
         if (_loadedTabs.contains(index)) {
           print('✅ Bookings already loaded, skipping');
           return;
@@ -287,7 +295,7 @@ class _MainPageState extends State<MainPage> {
         _loadedTabs.add(index);
         break;
 
-      case 2: // Profile Tab
+      case 2:
         if (_loadedTabs.contains(index)) {
           print('✅ Profile already loaded, skipping');
           return;

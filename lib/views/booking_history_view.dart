@@ -3,10 +3,10 @@
 // ADDED: Discount display with strikethrough pricing
 // ADDED: Discount breakdown in booking details
 // FIXED: CircularProgressIndicator division by zero error
-// FIXED: Extra closing bracket removed
 // FIXED: Duplicate API call prevention with flags
 // FIXED: Small snackbar with 1-second duration at TOP
 // FIXED: Success snackbar - White background with black text
+// FIXED: Transparent bottom navigation bar with proper header
 
 import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
@@ -28,16 +28,12 @@ class BookingHistoryView extends StatelessWidget {
   final vm = Get.find<BookingViewModel>();
   final profileVm = Get.find<ProfileViewModel>();
 
-  // ✅ DUPLICATE API CALL PREVENTION FLAGS
   static bool _isPayingBalance = false;
   static bool _isRefreshing = false;
   static bool _isShowingDetails = false;
   static bool _isShowingCancelDialog = false;
   static bool _isShowingPaymentMethod = false;
 
-  // ============================================================
-  // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
-  // ============================================================
   void _showSmallSnackbar(String title, String message, Color color, {Color textColor = Colors.white}) {
     Get.snackbar(
       title,
@@ -65,7 +61,6 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // Helper: Format price with decimals only when needed
   String _formatPrice(double price) {
     if (price == price.toInt()) {
       return price.toInt().toString();
@@ -78,7 +73,6 @@ class BookingHistoryView extends StatelessWidget {
     return formatted;
   }
 
-  // Helper to determine if sport is Cricket or Football
   bool _isCricketOrFootball(String gameType) {
     final type = gameType.toLowerCase();
     return type.contains('cricket') || type.contains('football');
@@ -101,7 +95,6 @@ class BookingHistoryView extends StatelessWidget {
     return 'assets/sports/all .png';
   }
 
-  // Parse date from string - handles both DD-MM-YYYY and YYYY-MM-DD formats
   DateTime? _parseDate(String dateStr) {
     if (dateStr.isEmpty) return null;
 
@@ -127,7 +120,6 @@ class BookingHistoryView extends StatelessWidget {
     }
   }
 
-  // Check if booking can be cancelled (all slots > 6 hours away)
   bool _canCancelBooking(BookingModel booking) {
     if (booking.isCancelled) return false;
     if (booking.isCompleted) return false;
@@ -170,7 +162,6 @@ class BookingHistoryView extends StatelessWidget {
     return true;
   }
 
-  // Get earliest slot time for warning message
   DateTime? _getEarliestSlotDateTime(BookingModel booking) {
     DateTime? earliest;
 
@@ -220,36 +211,56 @@ class BookingHistoryView extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 380;
 
-    // ✅ Load bookings when screen opens (lazy loading)
     WidgetsBinding.instance.addPostFrameCallback((_) {
       vm.loadBookings();
     });
 
-    return SafeArea(
-      child: Scaffold(
-        body: Container(
-          decoration: const BoxDecoration(
-            image: DecorationImage(
-              image: AssetImage("assets/images/byt-bg.png"),
+    // ✅ FIXED: Proper background with glass nav support
+    return Scaffold(
+      backgroundColor: const Color(0xFFF5F7F6),
+      body: Stack(
+        children: [
+          // ✅ Background image
+          Positioned.fill(
+            child: Image.asset(
+              "assets/images/byt-bg.png",
               fit: BoxFit.cover,
-              opacity: 0.3,
+              opacity: const AlwaysStoppedAnimation(0.3),
             ),
           ),
-          child: SafeArea(
+          // ✅ Main content with white background card
+          SafeArea(
             child: Column(
               children: [
                 const SizedBox(height: 8),
                 _header(screenWidth, context),
                 const SizedBox(height: 6),
-                _filterSection(screenWidth, isSmallScreen),
-                const SizedBox(height: 6),
-                _tabs(isSmallScreen),
-                const SizedBox(height: 8),
-                Expanded(child: _list(isSmallScreen)),
+                // ✅ White background container for content
+                Expanded(
+                  child: Container(
+                    decoration: const BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.only(
+                        topLeft: Radius.circular(20),
+                        topRight: Radius.circular(20),
+                      ),
+                    ),
+                    child: Column(
+                      children: [
+                        const SizedBox(height: 6),
+                        _filterSection(screenWidth, isSmallScreen),
+                        const SizedBox(height: 6),
+                        _tabs(isSmallScreen),
+                        const SizedBox(height: 8),
+                        Expanded(child: _list(isSmallScreen)),
+                      ],
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
-        ),
+        ],
       ),
     );
   }
@@ -272,6 +283,7 @@ class BookingHistoryView extends StatelessWidget {
             style: TextStyle(
               fontSize: screenWidth < 380 ? 20 : 24,
               fontWeight: FontWeight.bold,
+              color: Colors.black87,
             ),
           ),
           Row(
@@ -584,7 +596,6 @@ class BookingHistoryView extends StatelessWidget {
 
       return RefreshIndicator(
         onRefresh: () async {
-          // ✅ Prevent duplicate refreshes
           if (_isRefreshing) {
             print('⏭️ Booking refresh already in progress - skipping duplicate');
             return;
@@ -717,7 +728,6 @@ class BookingHistoryView extends StatelessWidget {
                   ],
                 ),
                 const SizedBox(height: 8),
-                // ========== UPDATED: Amount with Discount Display ==========
                 Row(
                   children: [
                     Expanded(
@@ -726,7 +736,6 @@ class BookingHistoryView extends StatelessWidget {
                           Icon(Icons.currency_rupee, size: isSmallScreen ? 10 : 12, color: Colors.green),
                           const SizedBox(width: 4),
                           if (b.hasDiscount) ...[
-                            // Original price with strikethrough
                             Text(
                               "₹${_formatPrice(b.totalAmount)}",
                               style: TextStyle(
@@ -737,7 +746,6 @@ class BookingHistoryView extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            // Discounted price (actual amount)
                             Text(
                               "₹${_formatPrice(b.discountedTotalAmount)}",
                               style: TextStyle(
@@ -747,7 +755,6 @@ class BookingHistoryView extends StatelessWidget {
                               ),
                             ),
                             const SizedBox(width: 4),
-                            // Discount percentage badge
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
                               decoration: BoxDecoration(
@@ -764,7 +771,6 @@ class BookingHistoryView extends StatelessWidget {
                               ),
                             ),
                           ] else ...[
-                            // No discount - show regular price
                             Text(
                               "₹${_formatPrice(b.discountedTotalAmount)}",
                               style: TextStyle(
@@ -922,17 +928,13 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // ✅ FIXED: Safe CircularProgressIndicator with division by zero protection
   Widget _indicatior(BookingModel b, bool isSmallScreen) {
-    // ✅ SAFE CALCULATION - Prevent division by zero
     double progressValue = 0.0;
     if (b.discountedTotalAmount > 0) {
       progressValue = b.paidAmount / b.discountedTotalAmount;
-      // Clamp between 0 and 1
       if (progressValue > 1.0) progressValue = 1.0;
       if (progressValue < 0) progressValue = 0.0;
     } else if (b.paidAmount > 0 && b.totalAmount > 0) {
-      // Fallback to original total amount
       progressValue = b.paidAmount / b.totalAmount;
       if (progressValue > 1.0) progressValue = 1.0;
       if (progressValue < 0) progressValue = 0.0;
@@ -950,7 +952,7 @@ class BookingHistoryView extends StatelessWidget {
               alignment: Alignment.center,
               children: [
                 CircularProgressIndicator(
-                  value: progressValue,  // ✅ SAFE VALUE (0.0 to 1.0)
+                  value: progressValue,
                   strokeWidth: isSmallScreen ? 4 : 5,
                   backgroundColor: Colors.grey.shade200,
                   valueColor: const AlwaysStoppedAnimation<Color>(Colors.green),
@@ -1062,7 +1064,6 @@ class BookingHistoryView extends StatelessWidget {
 
   // ==================== BALANCE PAYMENT METHODS ====================
 
-  // ✅ FIXED: Balance payment method selection with duplicate prevention
   void _showBalancePaymentMethodSelection(BookingModel booking) {
     if (_isShowingPaymentMethod || (Get.isBottomSheetOpen ?? false)) {
       print('⏭️ Payment method already showing - skipping duplicate');
@@ -1202,7 +1203,6 @@ class BookingHistoryView extends StatelessWidget {
     });
   }
 
-  // ✅ FIXED: Proceed with wallet balance payment with duplicate prevention
   void _proceedWithWalletBalancePayment(BookingModel booking) async {
     if (Get.isDialogOpen ?? false) return;
 
@@ -1309,7 +1309,6 @@ class BookingHistoryView extends StatelessWidget {
     );
   }
 
-  // ✅ FIXED: Wallet payment with duplicate prevention
   Future<void> _payBalanceWithWallet(BookingModel booking) async {
     if (_isPayingBalance) {
       print('⏭️ Balance payment already in progress - skipping duplicate');
@@ -1370,7 +1369,6 @@ class BookingHistoryView extends StatelessWidget {
     }
   }
 
-  // ✅ NEW: Refresh after payment with duplicate prevention
   Future<void> _refreshAfterPayment() async {
     if (_isRefreshing) {
       print('⏭️ Refresh already in progress - skipping duplicate');
@@ -1393,7 +1391,6 @@ class BookingHistoryView extends StatelessWidget {
 
   // ==================== CANCEL CONFIRMATION ====================
 
-  // ✅ FIXED: Cancel dialog with duplicate prevention
   void _showCancelConfirmDialog(BookingModel booking) {
     if (_isShowingCancelDialog || (Get.isDialogOpen ?? false)) {
       print('⏭️ Cancel dialog already showing - skipping duplicate');
@@ -1408,7 +1405,6 @@ class BookingHistoryView extends StatelessWidget {
     final isAdvancePaid = booking.paymentStatus == "Advance Paid";
     final paidAmount = booking.paidAmount;
 
-    // Build refund message based on payment type
     Widget _refundInfoWidget() {
       if (isFullyPaid) {
         return Column(
@@ -1489,7 +1485,6 @@ class BookingHistoryView extends StatelessWidget {
         );
       }
 
-      // No payment made (pending state)
       return Container(
         width: double.infinity,
         padding: const EdgeInsets.all(10),
@@ -1800,9 +1795,8 @@ class BookingHistoryView extends StatelessWidget {
     return gameType;
   }
 
-  // ==================== UPDATED: Booking Details with Discount Breakdown ====================
+  // ==================== BOOKING DETAILS ====================
 
-  // ✅ FIXED: Show booking details with duplicate prevention
   void _showBookingDetails(BookingModel b, bool isSmallScreen) {
     if (_isShowingDetails || (Get.isBottomSheetOpen ?? false)) {
       print('⏭️ Booking details already showing - skipping duplicate');
@@ -1850,7 +1844,6 @@ class BookingHistoryView extends StatelessWidget {
               _detailRow("$courtTurfLabel Number", "$courtTurfLabel ${b.courtNumber}", isSmallScreen),
               _detailRow("Payment Status", b.paymentStatus, isSmallScreen),
 
-              // ========== DISCOUNT BREAKDOWN SECTION ==========
               if (b.hasDiscount) ...[
                 const SizedBox(height: 8),
                 Container(
