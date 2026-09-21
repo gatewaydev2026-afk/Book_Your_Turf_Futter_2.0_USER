@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../services/meta_events_service.dart';
 import 'package:intl/intl.dart';
 import '../services/notification_service.dart';
 import '../models/notification_model.dart';
@@ -14,6 +15,7 @@ class NotificationScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    MetaEvents.screenView('notifications'); // 📊 Meta (throttled)
     final NotificationService notificationService = Get.find<NotificationService>();
 
     return Scaffold(

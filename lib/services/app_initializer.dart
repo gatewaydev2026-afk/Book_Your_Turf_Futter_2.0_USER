@@ -1,6 +1,9 @@
 // services/app_initializer.dart
 // ✅ Only loads essential data ONCE
+// ✅ FIX (Sep 2026): turfs are refreshed in the background (HomeViewModel is
+//    single-flight), profile waits max 6s → login opens Home quickly.
 
+import 'dart:async';
 import 'package:get/get.dart';
 import 'package:book_your_turf/services/cache_manager.dart';
 import '../view_models/booking_view_model.dart';
@@ -62,25 +65,28 @@ class AppInitializer {
 
       // ✅ Check if data is already cached and fresh
       bool needProfile = !cacheManager.hasCachedProfile || !cacheManager.isProfileFresh();
-      bool needTurfs = !cacheManager.hasCachedTurfs || !cacheManager.isTurfsFresh();
 
-      // 1️⃣ Load profile only if needed
+      // 1️⃣ Load profile only if needed (never block login for more than 6s)
       if (needProfile) {
         print('📡 Loading profile...');
         final profileVm = Get.find<ProfileViewModel>();
-        await profileVm.fetchUser(forceRefresh: true);
+        try {
+          await profileVm
+              .fetchUser(forceRefresh: true)
+              .timeout(const Duration(seconds: 6));
+        } on TimeoutException {
+          print('⏳ Profile still loading - continuing to Home');
+        }
       } else {
         print('⏭️ Profile already cached - using cache');
       }
 
-      // 2️⃣ Load turfs only if needed
-      if (needTurfs) {
-        print('📡 Loading turfs...');
-        final homeVm = Get.find<HomeViewModel>();
-        await homeVm.loadHomeData(forceRefresh: true);
-      } else {
-        print('⏭️ Turfs already cached - using cache');
-      }
+      // 2️⃣ Turfs: refresh once as the logged-in user (favourites etc.),
+      //    in the background. (The old "needTurfs" check was always true
+      //    because CacheManager never stored turfs → an extra call every login.)
+      final homeVm = Get.find<HomeViewModel>();
+      homeVm.isGuestMode.value = false;
+      unawaited(homeVm.loadHomeData(forceRefresh: true));
 
       // ✅ DO NOT LOAD: Bookings, Wallet, Coins - Lazy loaded on demand
 

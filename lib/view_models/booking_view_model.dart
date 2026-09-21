@@ -11,6 +11,7 @@ import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../config/app_config.dart';
 import '../models/booking_model.dart';
 import '../services/shared_prefs_helper.dart';
+import '../services/meta_events_service.dart';
 
 class BookingViewModel extends GetxController {
   final bookings = <BookingModel>[].obs;
@@ -43,6 +44,9 @@ class BookingViewModel extends GetxController {
 
   // ✅ NEW: Track if refresh is in progress
   static bool _isRefreshInProgress = false;
+  // ✅ Single-flight: callers arriving during a fetch wait for it
+  static Future<void>? _bookingsFetchFuture;
+  static Future<void>? _refreshFuture;
 
   // ============================================================
   // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
@@ -91,6 +95,28 @@ class BookingViewModel extends GetxController {
   // ==================== LAZY LOADING ====================
 
   Future<void> loadBookings({bool forceRefresh = false}) async {
+    final running = _bookingsFetchFuture;
+    if (running != null) {
+      print('⏳ Bookings fetch in progress - waiting for it');
+      await running;
+      if (!forceRefresh) return;
+      final again = _bookingsFetchFuture;
+      if (again != null) {
+        await again;
+        return;
+      }
+    }
+    final completer = Completer<void>();
+    _bookingsFetchFuture = completer.future;
+    try {
+      await _loadBookingsInternal(forceRefresh: forceRefresh);
+    } finally {
+      _bookingsFetchFuture = null;
+      completer.complete();
+    }
+  }
+
+  Future<void> _loadBookingsInternal({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       print('🚫 No token, skipping bookings fetch');
@@ -140,11 +166,23 @@ class BookingViewModel extends GetxController {
       final dio = Get.find<Dio>();
       final response = await dio.get(AppConfig.bookings);
 
-      if (response.data['result'] == 'success') {
-        final List<dynamic> data = response.data['data']['results'] ?? [];
-        bookings.value = data
-            .map((json) => BookingModel.fromJson(json))
-            .toList();
+      final rData = response.data;
+      if (_isSuccess(rData)) {
+        final inner = rData['data'];
+        final List<dynamic> data =
+            (inner is Map && inner['results'] is List) ? inner['results'] as List : const [];
+        // ✅ one bad record no longer empties the whole list
+        final parsed = <BookingModel>[];
+        for (final json in data) {
+          try {
+            if (json is Map) {
+              parsed.add(BookingModel.fromJson(Map<String, dynamic>.from(json)));
+            }
+          } catch (e) {
+            print('⚠️ Skipped bad booking record: $e');
+          }
+        }
+        bookings.value = parsed;
 
         _applyAllFilters();
         _dataLoaded = true;
@@ -313,6 +351,36 @@ class BookingViewModel extends GetxController {
 
   // ==================== CANCEL BOOKING ====================
 
+  // 📊 Meta: booking history screen opened (called by MainPage / history route)
+  DateTime? _lastHistoryLog;
+  void logHistoryView() {
+    final now = DateTime.now();
+    if (_lastHistoryLog != null && now.difference(_lastHistoryLog!) < const Duration(seconds: 30)) {
+      return; // same visit
+    }
+    _lastHistoryLog = now;
+    try {
+      final list = bookings.toList();
+      int upcoming = 0, cancelled = 0, pending = 0;
+      for (final b in list) {
+        if (b.isCancelled) {
+          cancelled++;
+          continue;
+        }
+        if (b.pendingAmount > 0) pending++;
+        if (b.status == 'upcoming') upcoming++;
+      }
+      unawaited(MetaEvents.bookingHistoryView(
+        totalBookings: list.length,
+        upcoming: upcoming,
+        cancelled: cancelled,
+        pendingPayment: pending,
+      ));
+    } catch (e) {
+      print('⚠️ history view event skipped: $e');
+    }
+  }
+
   Future<bool> cancelBooking(int bookingId) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
@@ -328,14 +396,28 @@ class BookingViewModel extends GetxController {
         data: {'booking_id': bookingId},
       );
 
-      if (response.data['result'] == 'success') {
+      if (_isSuccess(response.data)) {
+        // 📊 Meta: booking cancelled
+        BookingModel? cancelled;
+        for (final b in bookings) {
+          if (b.id == bookingId) {
+            cancelled = b;
+            break;
+          }
+        }
+        unawaited(MetaEvents.bookingCancelled(
+          bookingId: bookingId,
+          turfName: cancelled?.turfName,
+          refundAmount: cancelled?.paidAmount,
+        ));
+
         _dataLoaded = false;
         // ✅ Use forceRefresh directly to bypass cache
         await loadBookings(forceRefresh: true);
         _showSmallSnackbar('Success', 'Booking cancelled and amount refunded to wallet!', Colors.white, textColor: Colors.black);
         return true;
       } else {
-        _showSmallSnackbar('Error', response.data['message'] ?? 'Cancellation failed', Colors.red);
+        _showSmallSnackbar('Error', _messageOf(response.data) ?? 'Cancellation failed', Colors.red);
         return false;
       }
     } on DioException catch (e) {
@@ -351,7 +433,13 @@ class BookingViewModel extends GetxController {
     }
   }
 
+  // ✅ Safe response helpers – a non-JSON / HTML error page must not crash
+  bool _isSuccess(dynamic data) => data is Map && data['result'] == 'success';
+  String? _messageOf(dynamic data) =>
+      data is Map ? data['message']?.toString() : null;
+
   // ==================== BALANCE PAYMENT (Razorpay) ====================
+  double _currentBalanceAmount = 0;
 
   Future<void> initiateBalancePayment(int bookingId, double amount) async {
     final token = SharedPrefsHelper.getToken();
@@ -368,22 +456,37 @@ class BookingViewModel extends GetxController {
         data: {'booking_id': bookingId, 'amount': amount.toString()},
       );
 
-      if (response.data['result'] == 'success') {
-        final orderData = response.data['data'];
+      final rData = response.data;
+      if (_isSuccess(rData) && rData['data'] is Map) {
+        final orderData = Map<String, dynamic>.from(rData['data'] as Map);
         _currentBookingId = bookingId;
+        _currentBalanceAmount = amount;
         _openRazorpayForBalance(orderData);
       } else {
-        _showSmallSnackbar('Error', response.data['message'] ?? 'Failed to initiate payment', Colors.red);
+        final msg = _messageOf(rData) ?? 'Failed to initiate payment';
+        _showSmallSnackbar('Error', msg, Colors.red);
         isPayingBalance.value = false;
+        unawaited(MetaEvents.balancePaymentFailed(
+            bookingId: bookingId, method: 'online', amount: amount, reason: msg));
       }
     } catch (e) {
       _showSmallSnackbar('Error', 'Failed to initiate payment', Colors.red);
       isPayingBalance.value = false;
+      unawaited(MetaEvents.balancePaymentFailed(
+          bookingId: bookingId, method: 'online', amount: amount, reason: 'initiate_error'));
     }
   }
 
   void _openRazorpayForBalance(Map<String, dynamic> orderData) {
-    int amountInPaise = (double.parse(orderData['amount'].toString()) * 100).toInt();
+    // ✅ tryParse – a bad amount from the server must not crash the app
+    final double orderAmount =
+        double.tryParse(orderData['amount']?.toString() ?? '') ?? _currentBalanceAmount;
+    if (orderAmount <= 0 || orderData['razorpay_order_id'] == null) {
+      _showSmallSnackbar('Error', 'Invalid payment details. Please try again.', Colors.red);
+      isPayingBalance.value = false;
+      return;
+    }
+    int amountInPaise = (orderAmount * 100).round();
 
     final options = {
       'key': AppConfig.razorpayKey,
@@ -407,8 +510,40 @@ class BookingViewModel extends GetxController {
     }
   }
 
+  // ============================================================
+  // ✅ CONFIRM-BALANCE AFTER RAZORPAY (webhook-aware, called once)
+  //  • 200 + result success → OK. data = { booking_id: "<code>" } in both the
+  //    first-time and the already-done case.
+  //  • 400 "Invalid booking" / "No pending reservation found..." → reload the
+  //    bookings once; if this booking's pending balance is now cleared → SUCCESS.
+  //  • Advance Paid is NOT Fully Paid – success is judged on the pending
+  //    balance going down, never on the order being "fulfilled".
+  // ============================================================
+  static final Set<String> _confirmedBalancePayments = <String>{};
+
   void _handleBalancePaymentSuccess(PaymentSuccessResponse response) async {
     print('Balance Payment Success - Payment ID: ${response.paymentId}');
+
+    final int? bookingId = _currentBookingId;
+    final double amount = _currentBalanceAmount;
+
+    // pending balance before this payment (to verify the fallback)
+    double? pendingBefore;
+    for (final b in bookings) {
+      if (b.id == bookingId) {
+        pendingBefore = b.pendingAmount;
+        break;
+      }
+    }
+
+    final String payKey = (response.paymentId ?? response.orderId ?? '').toString();
+    if (payKey.isNotEmpty && !_confirmedBalancePayments.add(payKey)) {
+      print('⏭️ confirm-balance already sent for $payKey - not calling again');
+      return;
+    }
+
+    bool confirmed = false;
+    String failReason = 'confirm_error';
 
     try {
       final dio = Get.find<Dio>();
@@ -417,27 +552,86 @@ class BookingViewModel extends GetxController {
         data: {
           'razorpay_payment_id': response.paymentId,
           'razorpay_order_id': response.orderId,
-          'booking_id': _currentBookingId,
+          'booking_id': bookingId,
         },
       );
+      if (confirmResponse.statusCode == 200 && _isSuccess(confirmResponse.data)) {
+        confirmed = true;
+      } else {
+        failReason = 'confirm: ${_messageOf(confirmResponse.data) ?? 'not_success'}';
+      }
+    } on DioException catch (e) {
+      final msg = _messageOf(e.response?.data) ?? '';
+      final lower = msg.toLowerCase();
+      failReason = msg.isNotEmpty ? 'confirm: $msg' : 'http_${e.response?.statusCode ?? e.type.name}';
 
-      if (confirmResponse.data['result'] == 'success') {
+      if (e.response?.statusCode == 400 &&
+          (lower.contains('invalid booking') ||
+              lower.contains('no pending reservation found') ||
+              lower.contains('already'))) {
+        print('ℹ️ confirm-balance 400 "$msg" - checking bookings once');
+        confirmed = await _balancePaidOnServer(bookingId, pendingBefore, amount);
+      }
+    } catch (e) {
+      print('⚠️ confirm-balance error: $e');
+    }
+
+    try {
+      if (confirmed) {
+        unawaited(MetaEvents.balancePaymentSuccess(
+          bookingId: bookingId ?? 0,
+          method: 'online',
+          amount: amount,
+        ));
         _dataLoaded = false;
         await loadBookings(forceRefresh: true);
         _showSmallSnackbar('Success', 'Balance payment completed successfully!', Colors.white, textColor: Colors.black);
       } else {
-        _showSmallSnackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed', Colors.red);
+        unawaited(MetaEvents.balancePaymentFailed(
+            bookingId: bookingId, method: 'online', amount: amount, reason: failReason));
+        // Money was taken by Razorpay – don't say "failed"; refresh and inform.
+        _dataLoaded = false;
+        await loadBookings(forceRefresh: true);
+        _showSmallSnackbar(
+          'Payment received',
+          'We are updating your booking. Pull down to refresh if the balance still shows.',
+          Colors.orange,
+        );
       }
-    } catch (e) {
-      _showSmallSnackbar('Error', 'Failed to confirm payment', Colors.red);
     } finally {
       isPayingBalance.value = false;
       _currentBookingId = null;
     }
   }
 
+  /// Reloads bookings once and checks that this booking's pending balance
+  /// went down by the amount just paid (Advance Paid ≠ Fully Paid).
+  Future<bool> _balancePaidOnServer(int? bookingId, double? pendingBefore, double paid) async {
+    if (bookingId == null) return false;
+    try {
+      _dataLoaded = false;
+      await loadBookings(forceRefresh: true);
+      for (final b in bookings) {
+        if (b.id != bookingId) continue;
+        if (pendingBefore == null) return b.pendingAmount <= 0.01;
+        return b.pendingAmount <= (pendingBefore - paid) + 0.01;
+      }
+    } catch (e) {
+      print('⚠️ Balance verification failed: $e');
+    }
+    return false;
+  }
+
   void _handleBalancePaymentError(PaymentFailureResponse response) {
     print('Balance Payment Error: ${response.code} - ${response.message}');
+    unawaited(MetaEvents.balancePaymentFailed(
+      bookingId: _currentBookingId,
+      method: 'online',
+      amount: _currentBalanceAmount,
+      reason: response.code == Razorpay.PAYMENT_CANCELLED
+          ? 'user_cancelled'
+          : (response.message ?? 'unknown'),
+    ));
     _showSmallSnackbar('Payment Failed', response.message ?? 'Payment failed. Please try again.', Colors.red);
     isPayingBalance.value = false;
   }
@@ -462,7 +656,12 @@ class BookingViewModel extends GetxController {
         },
       );
 
-      if (response.data['result'] == 'success') {
+      if (_isSuccess(response.data)) {
+        unawaited(MetaEvents.balancePaymentSuccess(
+          bookingId: bookingId,
+          method: 'wallet',
+          amount: amount,
+        ));
         _dataLoaded = false;
         // ✅ Use forceRefresh directly to bypass cache
         await loadBookings(forceRefresh: true);
@@ -473,17 +672,24 @@ class BookingViewModel extends GetxController {
           textColor: Colors.black,
         );
       } else {
+        final msg = _messageOf(response.data) ?? 'Something went wrong';
+        unawaited(MetaEvents.balancePaymentFailed(
+            bookingId: bookingId, method: 'wallet', amount: amount, reason: msg));
         _showSmallSnackbar(
           'Payment Failed',
-          response.data['message'] ?? 'Something went wrong',
+          msg,
           Colors.red,
         );
       }
     } catch (e) {
       print('Wallet balance payment error: $e');
+      String msg = 'Payment failed. Please try again.';
+      if (e is DioException) msg = _messageOf(e.response?.data) ?? msg;
+      unawaited(MetaEvents.balancePaymentFailed(
+          bookingId: bookingId, method: 'wallet', amount: amount, reason: msg));
       _showSmallSnackbar(
         'Error',
-        'Payment failed: ${e.toString()}',
+        msg,
         Colors.red,
       );
     } finally {
@@ -494,11 +700,24 @@ class BookingViewModel extends GetxController {
   // ==================== REFRESH ====================
 
   Future<void> refreshBookings() async {
-    // ✅ Prevent duplicate refresh calls
-    if (_isRefreshInProgress) {
-      print('⏭️ Refresh already in progress - skipping duplicate');
+    // ✅ A refresh is running → wait for it (callers get fresh data)
+    final running = _refreshFuture;
+    if (running != null) {
+      print('⏳ Refresh already in progress - waiting for it');
+      await running;
       return;
     }
+    final completer = Completer<void>();
+    _refreshFuture = completer.future;
+    try {
+      await _refreshBookingsInternal();
+    } finally {
+      _refreshFuture = null;
+      completer.complete();
+    }
+  }
+
+  Future<void> _refreshBookingsInternal() async {
 
     _isRefreshInProgress = true;
     _refreshDebounceTimer?.cancel();

@@ -68,21 +68,18 @@ class DeviceManager extends GetxService {
       }
     });
 
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    // ✅ Background messages (incl. device_logout) are handled by the single
+    //    top-level firebaseMessagingBackgroundHandler in
+    //    firebase_messaging_service.dart. Registering a second handler here
+    //    replaced that one and broke background notifications.
   }
 
-  // Background message handler
-  @pragma('vm:entry-point')
-  static Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-    print('📱 Background message received: ${message.messageId}');
-    if (message.data['type'] == 'device_logout') {
-      print('🔴 Device logout notification received in background');
-      await SharedPrefsHelper.clearAll();
-    }
-  }
+  bool _isForcedLogoutShowing = false;
 
   // Handle forced logout
   Future<void> _handleForcedLogout() async {
+    if (_isForcedLogoutShowing) return; // one dialog only
+    _isForcedLogoutShowing = true;
     try {
       await SharedPrefsHelper.clearAll();
       await clearRegistration();
@@ -112,6 +109,7 @@ class DeviceManager extends GetxService {
           actions: [
             ElevatedButton(
               onPressed: () {
+                _isForcedLogoutShowing = false;
                 Get.back();
                 Get.offAllNamed('/login');
               },
@@ -132,6 +130,7 @@ class DeviceManager extends GetxService {
       );
     } catch (e) {
       print('❌ Error handling forced logout: $e');
+      _isForcedLogoutShowing = false;
       Get.offAllNamed('/login');
     }
   }

@@ -21,6 +21,7 @@ import '../view_models/booking_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../themes/app_colors.dart';
 import '../routes/app_routes.dart';
+import '../services/meta_events_service.dart';
 import '../views/wallet_recharge_dialog.dart';
 import '../views/wallet_transactions_view.dart';
 import '../views/coin_transactions_view.dart';
@@ -1474,8 +1475,8 @@ Widget referEarnCard({
   Future<void> shareApp(String code) async {
     try {
       final playStoreLink =
-          'https://play.google.com/store/apps/details?id=com.book_your_turf.app&referral_code=$code';
-      final customSchemeLink = 'book_your_turf://refer/$code';
+          'https://play.google.com/store/apps/details?id=com.bookyourturf.app&referral_code=$code';
+      final customSchemeLink = 'bookyourturf://refer/$code';
 
       print('📤 Sharing referral code: $code');
       print('🔗 Play Store Link: $playStoreLink');
@@ -1506,13 +1507,14 @@ Download now and start playing! 🚀
       await SharePlus.instance.share(
         ShareParams(text: message, files: [XFile(file.path)]),
       );
+      MetaEvents.appShared(type: 'referral'); // 📊 Meta
 
       print('✅ Share completed successfully');
 
     } catch (e) {
       print('❌ Error sharing: $e');
       final playStoreLink =
-          'https://play.google.com/store/apps/details?id=com.book_your_turf.app&referral_code=$code';
+          'https://play.google.com/store/apps/details?id=com.bookyourturf.app&referral_code=$code';
       final message = '''
 🔥 Book Your Turf App!
 
@@ -1522,7 +1524,12 @@ Download now and start playing! 🚀
 
 Get ₹100 bonus on your first booking!
 ''';
-      await SharePlus.instance.share(ShareParams(text: message));
+      try {
+        await SharePlus.instance.share(ShareParams(text: message));
+        MetaEvents.appShared(type: 'referral_text'); // 📊 Meta
+      } catch (e2) {
+        print('❌ Share fallback failed: $e2');
+      }
     }
   }
 

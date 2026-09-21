@@ -3,23 +3,40 @@
 // ✅ Fixed: Background handler is now a TOP-LEVEL function with @pragma
 
 import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/widgets.dart';
+import 'shared_prefs_helper.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'dart:async';
 
 // ✅ 1. TOP-LEVEL BACKGROUND HANDLER (MUST be outside class)
 // ✅ 2. Must be annotated with @pragma('vm:entry-point')
+// ✅ FIX (Sep 2026): this is now the ONLY background handler in the app
+//    (DeviceManager used to register a second one, which silently replaced
+//    this one). Remote-logout is handled here too.
+// ✅ FIX: messages that already carry a `notification` block are shown by
+//    Android itself – showing a local one as well gave duplicate notifications.
 @pragma('vm:entry-point')
 Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  // ✅ 3. Initialize any services needed
-  // WidgetsFlutterBinding.ensureInitialized();
+  WidgetsFlutterBinding.ensureInitialized();
 
   print('📨 BACKGROUND MESSAGE: ${message.messageId}');
-  print('   Title: ${message.notification?.title}');
-  print('   Body: ${message.notification?.body}');
 
   try {
-    // Show notification using a separate helper or static method
-    await FirebaseMessagingService._showBackgroundNotification(message);
+    if (message.data['type'] == 'device_logout') {
+      print('🔴 Device logout notification received in background');
+      await SharedPrefsHelper.init();
+      final myDeviceId = await SharedPrefsHelper.getPermanentDeviceId();
+      final target = message.data['device_id']?.toString();
+      if (target == null || target.isEmpty || target == myDeviceId) {
+        await SharedPrefsHelper.clearAll();
+      }
+      return;
+    }
+
+    if (message.notification == null) {
+      // data-only push → we must show it ourselves
+      await FirebaseMessagingService._showBackgroundNotification(message);
+    }
   } catch (e) {
     print('⚠️ Background notification error: $e');
   }
@@ -119,15 +136,23 @@ class FirebaseMessagingService {
 
   // ✅ Called from background handler (static)
   static Future<void> _showBackgroundNotification(RemoteMessage message) async {
+    // background isolate: the plugin must be initialised here as well
+    try {
+      await _localNotifications.initialize(const InitializationSettings(
+        android: AndroidInitializationSettings('@mipmap/ic_launcher'),
+        iOS: DarwinInitializationSettings(),
+      ));
+    } catch (_) {}
     await _showLocalNotification(message);
   }
 
   static Future<void> _showLocalNotification(RemoteMessage message) async {
     try {
+      // same channel as NotificationService / main.dart
       const AndroidNotificationDetails androidDetails = AndroidNotificationDetails(
-        'book_your_turf_channel',
-        'Book Your Turf Notifications',
-        channelDescription: 'Notifications for bookings, wallet updates, and offers',
+        'user_channel',
+        'Book Your Turf',
+        channelDescription: 'Notifications for bookings, wallet and coins',
         importance: Importance.high,
         priority: Priority.high,
         playSound: true,
@@ -147,8 +172,8 @@ class FirebaseMessagingService {
 
       await _localNotifications.show(
         id,
-        message.notification?.title ?? 'New Notification',
-        message.notification?.body ?? '',
+        message.notification?.title ?? message.data['title']?.toString() ?? 'New Notification',
+        message.notification?.body ?? message.data['body']?.toString() ?? '',
         details,
         payload: message.data.toString(),
       );

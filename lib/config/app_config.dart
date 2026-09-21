@@ -56,6 +56,11 @@ class AppConfig {
   // ============================================================
   static const int otpValidDuration = 300; // 5 minutes
   static const int otpResendCooldown = 60; // seconds
+
+  // ✅ OTP auto-read with app signature (Google SMS Retriever API).
+  //    Backend must end the OTP SMS with the `app_hash` sent in send-otp.
+  //    Set to false to go back to the old "Allow" popup (User Consent API).
+  static const bool useSmsRetriever = true;
   static const int otpLength = 6;
 
   // ============================================================
@@ -161,7 +166,7 @@ class AppConfig {
   // ============================================================
   // 🔗 DEEP LINK & STORE LINKS
   // ============================================================
-  static String get playStoreLink => 'https://play.google.com/store/apps/details?id=com.book_your_turf.app';
+  static String get playStoreLink => 'https://play.google.com/store/apps/details?id=com.bookyourturf.app';
   static String get appStoreLink => 'https://apps.apple.com/in/app/book_your_turf/id6756934347';
 
   static String generateShareLink(String code) =>

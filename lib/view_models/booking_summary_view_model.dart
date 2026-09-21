@@ -1,5 +1,12 @@
 // booking_summary_view_model.dart - Complete with Booking Count for Meta
+// ✅ Sep 2026 funnel fixes:
+//   • Summary event renamed: fb_mobile_view_content → fb_mobile_initiated_checkout (+ visit count)
+//   • "Complete your profile" popup REMOVED from the payment path (name/email not needed to pay)
+//   • Best eligible offer is AUTO-APPLIED (user can still remove it)
+//   • payment_initiated / payment_failed events added
+//   • Purchase event: standard fb_currency / fb_content_type added, lists JSON-encoded
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:dio/dio.dart';
@@ -17,7 +24,7 @@ import '../view_models/profile_view_model.dart';
 import '../view_models/booking_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../routes/app_routes.dart';
-import 'package:book_your_turf/main.dart' show facebookAppEvents;
+import '../services/meta_events_service.dart';
 
 class RazorpayConfig {
   static const String key = String.fromEnvironment(
@@ -105,7 +112,7 @@ class BookingSummaryViewModel extends GetxController {
     discountedTotal.value = totalAmount;
     discountedAdvanceAmount.value = payableAmount;
 
-    _logViewContentEvent();
+    _logInitiatedCheckoutEvent();
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       loadDiscounts(forceRefresh: true);
@@ -120,90 +127,168 @@ class BookingSummaryViewModel extends GetxController {
     print('==================================\n');
   }
 
-  Future<void> _logViewContentEvent() async {
+  // 📊 Meta: Booking summary opened → Initiated Checkout (was wrongly named View Content)
+  Future<void> _logInitiatedCheckoutEvent() async {
+    await MetaEvents.initiatedCheckout(
+      turf: turf,
+      slotsCount: selectedSlots.length,
+      paymentType: selectedPaymentType,
+      totalAmount: totalAmount,
+      payableAmount: payableAmount,
+      date: formattedDate,
+      courtNumber: selectedCourt,
+    );
+  }
+
+  // ✅ Log booking success to Meta (wallet / online counted separately).
+  //    Fire-and-forget: never blocks or crashes the payment flow.
+  bool _bookingSuccessLogged = false;
+
+  // ✅ Confirm is sent at most ONCE per Razorpay order, even if the success
+  //    callback fires twice or a second BookingSummaryViewModel exists.
+  static final Set<String> _confirmedOrderIds = <String>{};
+
+  /// 200 from confirm means the booking is saved – either the first-time
+  /// response or "Booking already confirmed" with the booking object.
+  // ============================================================
+  // ✅ CONFIRM AFTER RAZORPAY (webhook-aware)
+  // Flow: initiate → Razorpay → webhook saves booking → app confirm (backup).
+  //  • 200 + result success  → OK. Data is either {booking_id, id} (first time)
+  //    or "Booking already confirmed" with the full booking object.
+  //  • 400 "No pending reservation found. It may have expired." / "Invalid
+  //    booking" (old backend, slow users) → check GET /bookings once; if the
+  //    booking for these slots exists → SUCCESS, no error popup.
+  //  • Called exactly once. Request body = same JSON shape as before.
+  // ============================================================
+  static const List<String> _webhookAlreadySavedMessages = [
+    'no pending reservation found',
+    'invalid booking',
+    'already confirmed',
+  ];
+
+  bool _isWebhookAlreadySavedMessage(String msg) {
+    final lower = msg.toLowerCase();
+    return _webhookAlreadySavedMessages.any(lower.contains);
+  }
+
+  /// Returns true when the booking is confirmed (by this call or by the webhook).
+  Future<bool> _confirmBookingOnce(Map<String, dynamic> confirmData, double amountPaid) async {
     try {
-      await facebookAppEvents.logEvent(
-        name: 'fb_mobile_view_content',
-        parameters: {
-          'content_type': 'turf_booking_summary',
-          'content_id': turf.id.toString(),
-          'content_name': turf.name,
-          'content_category': turf.gameType,
-          'currency': 'INR',
-          'num_items': selectedSlots.length.toString(),
-          'booking_type': selectedPaymentType,
-        },
-        valueToSum: totalAmount,
-      );
-      print('✅ Facebook view content event logged');
+      print('📤 Confirm Booking: $confirmData');
+      final dio = Get.find<Dio>();
+      final res = await dio.post(AppConfig.confirmBooking, data: confirmData);
+      final data = res.data;
+
+      if (res.statusCode == 200 && _confirmLooksSuccessful(data)) {
+        final msg = data is Map ? (data['message']?.toString() ?? '') : '';
+        print('✅ Booking confirmed${msg.isNotEmpty ? ' ($msg)' : ''}');
+        return true;
+      }
+
+      final msg = (data is Map ? data['message']?.toString() : null) ?? 'confirm_not_success';
+      unawaited(MetaEvents.bookingConfirmFailed(
+        turf: turf, amount: amountPaid, reason: msg, orderId: _currentOrderId,
+      ));
+      return false;
+    } on DioException catch (e) {
+      final data = e.response?.data;
+      final msg = (data is Map ? data['message']?.toString() : data?.toString()) ?? '';
+
+      if (e.response?.statusCode == 400 && _isWebhookAlreadySavedMessage(msg)) {
+        print('ℹ️ Confirm 400 "$msg" - checking bookings once');
+        if (await _bookingExistsOnServer()) {
+          print('✅ Booking already saved by the webhook - treating as success');
+          return true;
+        }
+      }
+
+      print('⚠️ Confirmation error (${e.response?.statusCode}): $msg');
+      unawaited(MetaEvents.bookingConfirmFailed(
+        turf: turf,
+        amount: amountPaid,
+        reason: msg.isNotEmpty ? msg : 'http_${e.response?.statusCode ?? e.type.name}',
+        orderId: _currentOrderId,
+      ));
+      return false;
     } catch (e) {
-      print('❌ Facebook view content error: $e');
+      print('⚠️ Confirmation error: $e');
+      unawaited(MetaEvents.bookingConfirmFailed(
+        turf: turf, amount: amountPaid, reason: 'exception', orderId: _currentOrderId,
+      ));
+      return false;
     }
   }
 
-  // ✅ NEW: Log booking success event to Meta with incremented count
-  Future<void> _logBookingSuccessEvent({
+  bool _confirmLooksSuccessful(dynamic data) {
+    if (data is! Map) return false;
+    if (data['result'] == 'success') return true;
+    final inner = data['data'];
+    if (inner is Map && (inner['booking_id'] != null || inner['id'] != null)) return true;
+    return data['booking_id'] != null || data['id'] != null;
+  }
+
+  /// Reads the bookings list ONCE and checks whether this turf/date/slot is
+  /// already booked (used when confirm answers 400 after a webhook save).
+  Future<bool> _bookingExistsOnServer() async {
+    try {
+      if (!Get.isRegistered<BookingViewModel>()) return false;
+      final bookingVm = Get.find<BookingViewModel>();
+      await bookingVm.loadBookings(forceRefresh: true);
+
+      final String date = formattedDate;
+      final Set<String> startTimes =
+          selectedSlots.map((s) => s.startTime.toString()).toSet();
+
+      for (final b in bookingVm.bookings) {
+        if (b.isCancelled) continue;
+        if (b.turfName.trim().toLowerCase() != turf.name.trim().toLowerCase()) continue;
+        for (final slot in b.slots) {
+          final sameDate = (slot['date'] ?? '').toString() == date;
+          final sameSlot = startTimes.contains((slot['start_time'] ?? '').toString());
+          if (sameDate && sameSlot) return true;
+        }
+      }
+    } catch (e) {
+      print('⚠️ Booking verification failed: $e');
+    }
+    return false;
+  }
+
+  void _logBookingSuccessEvent({
+    required String method, // 'wallet' | 'online'
     required double amountPaid,
     String? paymentId,
     String? orderId,
-  }) async {
-    try {
-      // ✅ Get current count and increment by 1
-      final int currentCount = await _incrementBookingCount();
-
-      // Prepare the parameters for the purchase event
-      final parameters = {
-        'content_ids': [turf.id.toString()],
-        'content_type': 'turf_booking',
-        'content_name': turf.name,
-        'content_category': turf.gameType,
-        'num_items': selectedSlots.length.toString(),
-        'payment_type': selectedPaymentType,
-        'currency': 'INR',
-        'payment_method': orderId != null ? 'online' : 'wallet',
-        // ✅ Send the incremented count to Meta
-        'booking_count': currentCount.toString(),
-        'total_bookings': currentCount.toString(),
-      };
-
-      // Add payment IDs if available (for Razorpay)
-      if (paymentId != null) {
-        parameters['payment_id'] = paymentId;
-      }
-      if (orderId != null) {
-        parameters['order_id'] = orderId;
-      }
-
-      // Add discount info if applied
-      if (discountVm.hasSelectedDiscount) {
-        parameters['discount_amount'] = discountVm.totalDiscountAmount.toString();
-        parameters['admin_discount_id'] = discountVm.selectedAdminDiscountId.value?.toString() ?? '';
-        parameters['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value?.toString() ?? '';
-      }
-
-      // Add turf details
-      parameters['turf_id'] = turf.id.toString();
-      parameters['turf_name'] = turf.name;
-      parameters['court_number'] = selectedCourt.toString();
-      parameters['slots_count'] = selectedSlots.length.toString();
-      parameters['date'] = formattedDate;
-
-      // ✅ Log the purchase event to Meta
-      await facebookAppEvents.logEvent(
-        name: 'fb_mobile_purchase',
-        parameters: parameters,
-        valueToSum: amountPaid,
-      );
-
-      print('✅ Booking success event sent to Meta/Facebook');
-      print('   Amount: ₹$amountPaid');
-      print('   Turf: ${turf.name}');
-      print('   Payment Type: $selectedPaymentType');
-      print('   Booking Count (after increment): $currentCount');
-      print('   Payment Method: ${orderId != null ? 'Online' : 'Wallet'}');
-    } catch (e) {
-      print('❌ Error logging booking success event: $e');
+  }) {
+    if (_bookingSuccessLogged) {
+      print('⏭️ Booking success already logged for this checkout');
+      return;
     }
+    _bookingSuccessLogged = true;
+
+    unawaited(() async {
+      try {
+        await _incrementBookingCount(); // keeps the old SharedPrefs counter in sync
+        await MetaEvents.bookingSuccess(
+          turf: turf,
+          method: method,
+          paymentType: selectedPaymentType,
+          amountPaid: amountPaid,
+          totalAmount: totalAmount,
+          slotsCount: selectedSlots.length,
+          date: formattedDate,
+          courtNumber: selectedCourt,
+          paymentId: paymentId,
+          orderId: orderId,
+          discountAmount: discountVm.hasSelectedDiscount ? discountVm.totalDiscountAmount : 0,
+          adminDiscountId: discountVm.selectedAdminDiscountId.value,
+          partnerDiscountId: discountVm.selectedPartnerDiscountId.value,
+        );
+        print('✅ Booking success sent to Meta ($method, ₹$amountPaid)');
+      } catch (e) {
+        print('❌ Error logging booking success event: $e');
+      }
+    }());
   }
 
   // ✅ NEW: Method to increment the booking count and return the new value
@@ -249,7 +334,8 @@ class BookingSummaryViewModel extends GetxController {
 
       if (adminCount > 0 || partnerCount > 0) {
         print('✅ $adminCount admin discounts and $partnerCount partner discounts available');
-        print('   ⚠️ User must tap to select');
+        // ✅ Funnel fix: apply the best offer automatically (user can still tap to remove)
+        _autoApplyBestDiscounts();
       }
 
     } catch (e) {
@@ -257,6 +343,47 @@ class BookingSummaryViewModel extends GetxController {
     } finally {
       isLoadingDiscounts.value = false;
     }
+  }
+
+  // ============================================================
+  // ✅ AUTO-APPLY BEST OFFER (first-booking offer etc.)
+  // ============================================================
+  DiscountModel? _bestDiscount(List<DiscountModel> list) {
+    DiscountModel? best;
+    for (final d in list) {
+      if (d.discountType == 'percentage' && d.discountValue > 99.0) continue;
+      if (!d.isApplicableForPaymentType(selectedPaymentType)) continue;
+      final value = d.calculatedDiscount ?? 0;
+      if (value <= 0) continue;
+      if (best == null || value > (best.calculatedDiscount ?? 0)) best = d;
+    }
+    return best;
+  }
+
+  void _autoApplyBestDiscounts() {
+    // Same rule as the offers section: offers need the turf's minimum slots
+    if (selectedSlots.length < turf.minSlots) return;
+
+    final admin = _bestDiscount(discountVm.adminDiscounts);
+    final partner = _bestDiscount(discountVm.partnerDiscounts);
+    if (admin == null && partner == null) return;
+
+    if (admin != null) discountVm.selectAdminDiscount(admin.id);
+    if (partner != null) discountVm.selectPartnerDiscount(partner.id);
+    _updateDiscountedAmounts();
+
+    // Never auto-apply into a zero / negative amount
+    if (_getAmountToPay() <= 0 && admin != null && partner != null) {
+      discountVm.selectPartnerDiscount(null);
+      _updateDiscountedAmounts();
+    }
+    if (_getAmountToPay() <= 0) {
+      removeAllDiscounts();
+      return;
+    }
+
+    print('🎁 Auto-applied offer(s): admin=${admin?.id} partner=${partner?.id}');
+    _logDiscountApplied(auto: true);
   }
 
   void toggleAdminDiscount(int discountId) {
@@ -313,13 +440,14 @@ class BookingSummaryViewModel extends GetxController {
     print('========================================');
   }
 
-  void _logDiscountApplied() {
+  void _logDiscountApplied({bool auto = false}) {
     if (!discountVm.hasSelectedDiscount) return;
 
     try {
       facebookAppEvents.logEvent(
         name: 'discount_applied',
         parameters: {
+          'auto_applied': auto ? '1' : '0',
           'admin_discount_id': discountVm.selectedAdminDiscountId.value?.toString() ?? '',
           'partner_discount_id': discountVm.selectedPartnerDiscountId.value?.toString() ?? '',
           'total_discount': discountVm.totalDiscountAmount.toString(),
@@ -400,7 +528,22 @@ class BookingSummaryViewModel extends GetxController {
   }
 
   // ============================================================
-  // ✅ PROFILE CHECK BEFORE BOOKING - FIXED
+  // ✅ PAYMENT ACTION RUNNER (used where no profile check is needed)
+  // ============================================================
+  // ignore: unused_element
+  Future<void> _runPaymentAction(Future<void> Function() bookingAction) async {
+    try {
+      await bookingAction();
+    } catch (e) {
+      print('❌ Payment action error: $e');
+      _showSmallSnackbar('Error', 'Something went wrong. Please try again.', Colors.red);
+    }
+  }
+
+  // ============================================================
+  // ✅ PROFILE CHECK BEFORE PAYMENT (restored Sep 2026 on request).
+  // Shows the "Complete Your Profile" dialog only when the name/email are
+  // missing; after saving, the payment continues by itself.
   // ============================================================
   Future<void> _checkProfileAndProceed(Future<void> Function() bookingAction) async {
     // ✅ Prevent duplicate profile checks
@@ -611,7 +754,8 @@ class BookingSummaryViewModel extends GetxController {
   // ✅ WALLET PAYMENT WITH PROFILE CHECK
   // ============================================================
   Future<void> initiateWalletPayment() async {
-    // ✅ Check profile before proceeding
+    // ✅ New users are asked for name/email first (as in the original flow);
+    //    for completed profiles it goes straight to payment.
     await _checkProfileAndProceed(() async {
       // ✅ Prevent duplicate wallet payment calls
       if (_isWalletPaymentInProgress) {
@@ -646,6 +790,12 @@ class BookingSummaryViewModel extends GetxController {
       await profileVm.fetchUser();
 
       final amountToPay = _getAmountToPay();
+      MetaEvents.paymentInitiated(
+        turf: turf,
+        method: 'wallet',
+        amount: amountToPay,
+        paymentType: selectedPaymentType,
+      );
 
       if (amountToPay <= 0) {
         _isWalletPaymentInProgress = false;
@@ -783,7 +933,7 @@ class BookingSummaryViewModel extends GetxController {
 
     // ✅ LOG THE BOOKING SUCCESS EVENT TO META
     final amountPaid = _getAmountToPay();
-    _logBookingSuccessEvent(amountPaid: amountPaid);
+    _logBookingSuccessEvent(method: 'wallet', amountPaid: amountPaid);
 
     // ✅ Show success dialog only if not shown yet
     if (!hasShownSuccessPopup.value) {
@@ -829,6 +979,12 @@ class BookingSummaryViewModel extends GetxController {
   }
 
   void _showWalletError(String message) {
+    MetaEvents.paymentFailed(
+      turf: turf,
+      method: 'wallet',
+      amount: _getAmountToPay(),
+      reason: message,
+    );
     isUILocked.value = false;
     isLoading.value = false;
     _isWalletPaymentInProgress = false;
@@ -908,29 +1064,6 @@ class BookingSummaryViewModel extends GetxController {
                 ),
               // ✅ Show booking count
               const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                decoration: BoxDecoration(
-                  color: Colors.blue.shade50,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: Colors.blue.shade200),
-                ),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    Icon(Icons.receipt_long, size: 18, color: Colors.blue.shade700),
-                    const SizedBox(width: 8),
-                    Text(
-                      'Booking #$bookingCount',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blue.shade700,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
               const SizedBox(height: 16),
               if (selectedPaymentType == 'advance')
                 const Text(
@@ -1021,7 +1154,8 @@ class BookingSummaryViewModel extends GetxController {
   // ✅ RAZORPAY PAYMENT WITH PROFILE CHECK
   // ============================================================
   Future<void> initiatePayment() async {
-    // ✅ Check profile before proceeding
+    // ✅ New users are asked for name/email first (as in the original flow);
+    //    once saved, Razorpay opens directly - no confirm popup.
     await _checkProfileAndProceed(() async {
       if (_isProcessing) return;
 
@@ -1039,6 +1173,14 @@ class BookingSummaryViewModel extends GetxController {
       _isProcessing = true;
       isLoading.value = true;
       isUILocked.value = true;
+
+      // 📊 Meta: pay tapped (online / UPI)
+      MetaEvents.paymentInitiated(
+        turf: turf,
+        method: 'online',
+        amount: amountToPay,
+        paymentType: selectedPaymentType,
+      );
 
       try {
         final dio = Get.find<Dio>();
@@ -1194,14 +1336,14 @@ class BookingSummaryViewModel extends GetxController {
 
     // ✅ LOG THE BOOKING SUCCESS EVENT TO META WITH PAYMENT DETAILS
     _logBookingSuccessEvent(
+      method: 'online',
       amountPaid: amountPaid,
       paymentId: response.paymentId,
-      orderId: response.orderId,
+      orderId: response.orderId ?? _currentOrderId,
     );
 
     try {
-      final dio = Get.find<Dio>();
-
+      // Same JSON shape the backend has always accepted
       Map<String, dynamic> confirmData = {
         'razorpay_payment_id': response.paymentId,
         'razorpay_order_id': _currentOrderId,
@@ -1221,14 +1363,18 @@ class BookingSummaryViewModel extends GetxController {
         confirmData['partner_discount_id'] = discountVm.selectedPartnerDiscountId.value;
       }
 
-      print('📤 Confirm Booking: $confirmData');
-      final confirmResponse = await dio.post(AppConfig.confirmBooking, data: confirmData);
+      // ✅ Confirm is sent ONCE per Razorpay order - never in a loop.
+      final String orderKey =
+          (_currentOrderId ?? response.orderId ?? response.paymentId ?? '').toString();
+      final bool alreadySent = orderKey.isNotEmpty && !_confirmedOrderIds.add(orderKey);
 
-      if (confirmResponse.statusCode == 200 && confirmResponse.data['result'] == 'success') {
-        print('✅ Booking confirmed');
+      if (alreadySent) {
+        print('⏭️ Confirm already sent for $orderKey - not calling the API again');
+      } else {
+        await _confirmBookingOnce(confirmData, amountPaid);
       }
     } catch (e) {
-      print('⚠️ Confirmation error: $e');
+      print('⚠️ Confirm preparation error: $e');
     }
 
     // ✅ Show success dialog - UI remains LOCKED
@@ -1254,6 +1400,19 @@ class BookingSummaryViewModel extends GetxController {
       print('Payment already successful - ignoring error');
       return;
     }
+
+    // 📊 Meta: payment failed / cancelled
+    MetaEvents.paymentFailed(
+      turf: turf,
+      method: 'online',
+      amount: _currentPayableAmount ?? _getAmountToPay(),
+      reason: response.code == Razorpay.PAYMENT_CANCELLED
+          ? 'user_cancelled'
+          : response.code == Razorpay.NETWORK_ERROR
+              ? 'network_error'
+              : (response.message ?? 'unknown'),
+      code: response.code?.toString(),
+    );
 
     // ✅ Unlock UI immediately on error so user can retry
     isPaymentInitiated.value = false;

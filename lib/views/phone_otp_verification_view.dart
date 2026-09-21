@@ -5,6 +5,7 @@ import 'package:lottie/lottie.dart';
 import 'package:smart_auth/smart_auth.dart';
 
 import '../view_models/auth_view_model.dart';
+import '../services/otp_autofill_service.dart';
 import '../routes/app_routes.dart';
 
 class PhoneOtpVerificationView extends StatefulWidget {
@@ -50,6 +51,7 @@ class _PhoneOtpVerificationViewState
     try {
       smartAuth.removeUserConsentApiListener();
     } catch (_) {}
+    OtpAutofillService.stop();
 
     _otpController.dispose();
     _otpFocusNode.dispose();
@@ -89,6 +91,32 @@ class _PhoneOtpVerificationViewState
       _autoReadFailed = false;
     });
 
+    // ============================================================
+    // ✅ 1st choice: SMS Retriever with app signature
+    //    (no permission, no "Allow" popup – OTP fills by itself)
+    // ============================================================
+    if (OtpAutofillService.isRetrieverActive) {
+      debugPrint('📩 Waiting for OTP via SMS Retriever (app hash)');
+      final otp = await OtpAutofillService.waitForOtp();
+      _isListening = false;
+      if (!mounted || currentRequestId != _otpRequestId) return;
+
+      if (otp != null) {
+        debugPrint('✅ OTP from SMS Retriever: $otp');
+        await _setOtpAndVerify(otp, currentRequestId);
+      } else {
+        // timeout (5 min) or SMS without hash → user types it
+        setState(() {
+          _isAutoReading = false;
+          _autoReadFailed = true;
+        });
+      }
+      return;
+    }
+
+    // ============================================================
+    // 2nd choice (fallback): SMS User Consent popup
+    // ============================================================
     try {
       final res = await smartAuth.getSmsWithUserConsentApi();
 
@@ -444,6 +472,7 @@ class _PhoneOtpVerificationViewState
       smartAuth.removeUserConsentApiListener();
     } catch (_) {}
 
+    OtpAutofillService.stop();
     authVm.resetPhoneAuth();
     Get.offAllNamed(AppRoutes.guestOrLogin);
   }
@@ -587,10 +616,10 @@ class _PhoneOtpVerificationViewState
                       borderRadius: BorderRadius.circular(20),
                       border: Border.all(color: Colors.green.shade200),
                     ),
-                    child: const Row(
+                    child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        SizedBox(
+                        const SizedBox(
                           width: 16,
                           height: 16,
                           child: CircularProgressIndicator(
@@ -598,13 +627,19 @@ class _PhoneOtpVerificationViewState
                             color: Colors.green,
                           ),
                         ),
-                        SizedBox(width: 8),
-                        Text(
-                          'Waiting for OTP... Tap Allow when asked',
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.green,
-                            fontWeight: FontWeight.w500,
+                        const SizedBox(width: 8),
+                        Flexible(
+                          child: Text(
+                            OtpAutofillService.isRetrieverActive
+                                ? 'Waiting for OTP... it will fill automatically'
+                                : 'Waiting for OTP... Tap Allow when asked',
+                            maxLines: 2,
+                            overflow: TextOverflow.ellipsis,
+                            style: const TextStyle(
+                              fontSize: 12,
+                              color: Colors.green,
+                              fontWeight: FontWeight.w500,
+                            ),
                           ),
                         ),
                       ],

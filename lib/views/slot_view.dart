@@ -1,4 +1,5 @@
 // slot_view.dart - Complete with proper back navigation, argument handling, and duplicate prevention
+// ✅ Meta: slot_view event (screen visit count)
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -8,6 +9,7 @@ import '../view_models/slot_view_model.dart';
 import '../routes/app_routes.dart';
 import '../utils/helpers.dart';
 import '../services/shared_prefs_helper.dart';
+import '../services/meta_events_service.dart';
 
 // ============================================================
 // ✅ HELPER FUNCTIONS
@@ -182,6 +184,11 @@ class _SlotViewState extends State<SlotView> {
   void initState() {
     super.initState();
     _initializeView();
+
+    // 📊 Meta: slot screen opened
+    if (_cachedTurf != null) {
+      MetaEvents.slotView(_cachedTurf!);
+    }
   }
 
   void _initializeView() {

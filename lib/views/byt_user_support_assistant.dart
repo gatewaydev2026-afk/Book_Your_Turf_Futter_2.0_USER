@@ -383,7 +383,7 @@ class SupportKnowledgeBase {
       officialLinks: <String, String>{
         'Website': 'https://book_your_turf.net/',
         'Android':
-            'https://play.google.com/store/apps/details?id=com.book_your_turf.app',
+            'https://play.google.com/store/apps/details?id=com.bookyourturf.app',
         'iPhone/iPad':
             'https://apps.apple.com/in/app/book_your_turf/id6756934347',
         'Privacy Policy': 'https://book_your_turf.net/privacy',

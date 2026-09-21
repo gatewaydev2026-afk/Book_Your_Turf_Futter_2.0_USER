@@ -23,7 +23,8 @@ import '../services/shared_prefs_helper.dart';
 import '../services/auto_refresh_service.dart';
 import '../services/device_manager.dart';
 import '../routes/app_routes.dart';
-import 'package:book_your_turf/main.dart' show facebookAppEvents;
+import '../services/meta_events_service.dart';
+import '../services/otp_autofill_service.dart';
 
 // ✅ Import for Phone Number Hint API
 import 'package:phone_hint_android/phone_hint_android.dart';
@@ -42,6 +43,11 @@ class AuthViewModel extends GetxController {
   // Phone OTP state
   final phoneNumber = ''.obs;
   final isRegistered = false.obs;
+
+  // ✅ Meta: is_registered from the LAST send-otp response
+  //    (true = old user, false = new user, null = unknown)
+  bool? _sendOtpIsRegistered;
+  String? _lastOtpNumber;
   final isNumberVerified = false.obs;
   final otpSent = false.obs;
   final isNewUser = true.obs;
@@ -143,6 +149,8 @@ class AuthViewModel extends GetxController {
   void resetPhoneAuth() {
     phoneNumber.value = '';
     isRegistered.value = false;
+    _sendOtpIsRegistered = null;
+    _lastOtpNumber = null;
     isNumberVerified.value = false;
     otpSent.value = false;
     errorMessage.value = ''; // ✅ Clear error message
@@ -215,6 +223,18 @@ class AuthViewModel extends GetxController {
         requestData['referral_code'] = referralCode;
       }
 
+      // ✅ OTP auto-read: start the SMS Retriever BEFORE the SMS is sent and
+      //    give the backend our app signature hash to put at the end of the SMS.
+      try {
+        await OtpAutofillService.startListening();
+        final appHash = OtpAutofillService.appHash;
+        if (appHash != null) {
+          requestData['app_hash'] = appHash;
+        }
+      } catch (e) {
+        print('⚠️ OTP autofill setup skipped: $e');
+      }
+
       print('📤 SEND OTP Request: $requestData');
 
       final response = await dio.post(AppConfig.phoneSendOtp, data: requestData);
@@ -231,6 +251,13 @@ class AuthViewModel extends GetxController {
         isNumberVerified.value = data['is_number_verified'] ?? false;
         otpSent.value = true;
 
+        // 📊 Meta: new vs existing user (is_registered true = old, false = new)
+        final bool registered = data['is_registered'] == true;
+        final bool isResend = _lastOtpNumber == phoneNumber.value;
+        _sendOtpIsRegistered = registered;
+        _lastOtpNumber = phoneNumber.value;
+        MetaEvents.otpRequested(isRegistered: registered, isResend: isResend);
+
         _otpSentTime = DateTime.now();
         _startTimer();
 
@@ -241,11 +268,13 @@ class AuthViewModel extends GetxController {
         String msg = response.data['message'] ?? 'Failed to send OTP';
         errorMessage.value = msg;
         _showSmallSnackbar('Error', msg, Colors.red);
+        OtpAutofillService.stop();
         return false;
       }
     } on DioException catch (e) {
       isLoading.value = false;
       _isSendingOtp = false;
+      OtpAutofillService.stop();
       String msg = _getApiErrorMessage(e);
       errorMessage.value = msg;
       _showSmallSnackbar('Error', msg, Colors.red);
@@ -253,6 +282,7 @@ class AuthViewModel extends GetxController {
     } catch (e) {
       isLoading.value = false;
       _isSendingOtp = false;
+      OtpAutofillService.stop();
       String msg = 'Something went wrong. Please try again.';
       errorMessage.value = msg;
       _showSmallSnackbar('Error', msg, Colors.red);
@@ -362,18 +392,26 @@ class AuthViewModel extends GetxController {
         print('   Is Number Verified: ${user['is_number_verified']}');
         print('   Profile Complete: ${data['profile_complete']}');
 
-        // ✅ Log Facebook event
+        // ✅ Log Facebook events
+        // New / old user decided by send-otp  data.is_registered
+        //   true  → old user  → existing_user_login
+        //   false → new user  → fb_mobile_complete_registration + new_user_signup
+        // (falls back to verify's is_new_user only if send-otp value is unknown)
+        // ⚠️ Phone number is NOT sent to Meta (personal data not allowed)
+        final bool wasRegistered = _sendOtpIsRegistered ?? !(data['is_new_user'] == true);
+        final bool isFirstTimeUser = !wasRegistered;
         try {
+          await MetaEvents.otpVerified(isRegistered: wasRegistered);
           await facebookAppEvents.logEvent(
             name: 'fb_mobile_login',
             parameters: {
               'registration_method': 'phone_otp',
               'user_id': user['id'].toString(),
-              'user_phone': user['number'] ?? '',
-              'is_new_user': data['is_new_user'].toString(),
+              'user_type': MetaEvents.userTypeOf(wasRegistered),
+              'is_new_user': isFirstTimeUser ? '1' : '0',
             },
           );
-          print('✅ Facebook login event logged');
+          print('✅ Facebook login event logged (new user: $isFirstTimeUser)');
         } catch (e) {
           print('❌ Facebook login event error: $e');
         }
@@ -383,9 +421,14 @@ class AuthViewModel extends GetxController {
         print('║  📱 PHONE OTP LOGIN SUCCESS - REGISTERING DEVICE          ║');
         print('╚══════════════════════════════════════════════════════════════════╝');
 
-        await _registerDeviceToken(token);
+        // ✅ FIX (Sep 2026): runs in the background – login no longer waits
+        //    up to ~17s for location + device registration
+        unawaited(_registerDeviceToken(token).catchError((e) {
+          print('⚠️ Background device registration error: $e');
+          return false;
+        }));
 
-        // ✅ Initialize app services
+        // ✅ Initialize app services (profile only; turfs refresh in background)
         await AppInitializer.initializeApp();
 
         // ✅ Navigate to home

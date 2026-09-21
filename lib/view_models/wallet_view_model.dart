@@ -1,6 +1,7 @@
 // view_models/wallet_view_model.dart - With Cache Management
 // ✅ Small snackbar with 1-second duration at TOP
 
+import 'dart:async';
 import 'package:book_your_turf/config/app_config.dart';
 import 'package:book_your_turf/services/cache_manager.dart';
 import 'package:flutter/material.dart';
@@ -9,6 +10,7 @@ import 'package:dio/dio.dart';
 import 'package:razorpay_flutter/razorpay_flutter.dart';
 import '../models/wallet_transaction_model.dart';
 import '../services/shared_prefs_helper.dart';
+import '../services/meta_events_service.dart';
 import 'profile_view_model.dart';
 
 class WalletViewModel extends GetxController {
@@ -22,6 +24,7 @@ class WalletViewModel extends GetxController {
   late Razorpay _razorpay;
   String? _currentOrderId;
   String? _currentReferenceId;
+  double _currentRechargeAmount = 0;
 
   // ============================================================
   // ✅ SHOW CUSTOM SMALL SNACKBAR AT TOP
@@ -186,7 +189,10 @@ class WalletViewModel extends GetxController {
       return;
     }
 
+    if (isRecharging.value) return; // ✅ double tap guard
     isRecharging.value = true;
+    _currentRechargeAmount = amount;
+    unawaited(MetaEvents.walletRecharge(status: 'initiated', amount: amount));
     try {
       final dio = Get.find<Dio>();
       final response = await dio.post(
@@ -194,26 +200,30 @@ class WalletViewModel extends GetxController {
         data: {'amount': amount},
       );
 
-      if (response.data['result'] == 'success') {
-        final data = response.data['data'];
-        _currentOrderId = data['razorpay_order_id'];
-        _currentReferenceId = data['reference_id'];
+      final rData = response.data;
+      if (rData is Map && rData['result'] == 'success' && rData['data'] is Map) {
+        final data = Map<String, dynamic>.from(rData['data'] as Map);
+        _currentOrderId = data['razorpay_order_id']?.toString();
+        _currentReferenceId = data['reference_id']?.toString();
         _openRazorpayCheckout(data, amount);
       } else {
-        _showSmallSnackbar('Error', response.data['message'] ?? 'Failed to initiate recharge', Colors.red);
+        final msg = (rData is Map ? rData['message']?.toString() : null) ?? 'Failed to initiate recharge';
+        _showSmallSnackbar('Error', msg, Colors.red);
         isRecharging.value = false;
+        unawaited(MetaEvents.walletRecharge(status: 'failed', amount: amount, reason: msg));
       }
     } catch (e) {
       print('Error initiating recharge: $e');
       _showSmallSnackbar('Error', 'Failed to initiate recharge. Please try again.', Colors.red);
       isRecharging.value = false;
+      unawaited(MetaEvents.walletRecharge(status: 'failed', amount: amount, reason: 'initiate_error'));
     }
   }
 
   void _openRazorpayCheckout(Map<String, dynamic> orderData, double amount) {
     final options = {
       'key': AppConfig.razorpayKey,
-      'amount': (amount * 100).toInt(),
+      'amount': (amount * 100).round(),
       'name': 'Book Your Turf',
       'description': 'Wallet Recharge - ₹${amount.toStringAsFixed(2)}',
       'order_id': orderData['razorpay_order_id'],
@@ -246,7 +256,9 @@ class WalletViewModel extends GetxController {
         },
       );
 
-      if (confirmResponse.data['result'] == 'success') {
+      final cData = confirmResponse.data;
+      if (cData is Map && cData['result'] == 'success') {
+        unawaited(MetaEvents.walletRecharge(status: 'success', amount: _currentRechargeAmount));
         // ✅ Force refresh - clear cache
         if (Get.isRegistered<CacheManager>()) {
           Get.find<CacheManager>().clearAllCaches();
@@ -257,10 +269,13 @@ class WalletViewModel extends GetxController {
         }
         _showSmallSnackbar('Success', 'Wallet recharged successfully!', Colors.white);
       } else {
-        _showSmallSnackbar('Error', confirmResponse.data['message'] ?? 'Payment confirmation failed', Colors.red);
+        final msg = (cData is Map ? cData['message']?.toString() : null) ?? 'Payment confirmation failed';
+        unawaited(MetaEvents.walletRecharge(status: 'failed', amount: _currentRechargeAmount, reason: 'confirm: $msg'));
+        _showSmallSnackbar('Error', msg, Colors.red);
       }
     } catch (e) {
       print('Error confirming recharge: $e');
+      unawaited(MetaEvents.walletRecharge(status: 'failed', amount: _currentRechargeAmount, reason: 'confirm_error'));
       _showSmallSnackbar('Error', 'Failed to confirm payment. Please contact support.', Colors.red);
     } finally {
       isRecharging.value = false;
@@ -272,12 +287,20 @@ class WalletViewModel extends GetxController {
   void _handlePaymentError(PaymentFailureResponse response) {
     print('Wallet Recharge Error: ${response.code} - ${response.message}');
 
+    // ✅ Razorpay codes: 0 network, 1 invalid options, 2 cancelled
     String errorMessage = 'Please try again.';
-    if (response.code == 0) {
-      errorMessage = 'Payment cancelled by user';
-    } else if (response.code == 1) {
+    if (response.code == Razorpay.PAYMENT_CANCELLED) {
+      errorMessage = 'Payment cancelled';
+    } else if (response.code == Razorpay.NETWORK_ERROR) {
+      errorMessage = 'Network error. Please check your internet.';
+    } else if (response.code == Razorpay.INVALID_OPTIONS) {
       errorMessage = 'Please check your payment method.';
     }
+    unawaited(MetaEvents.walletRecharge(
+      status: 'failed',
+      amount: _currentRechargeAmount,
+      reason: response.code == Razorpay.PAYMENT_CANCELLED ? 'user_cancelled' : (response.message ?? errorMessage),
+    ));
 
     _showSmallSnackbar('Payment Failed', errorMessage, Colors.red);
     isRecharging.value = false;

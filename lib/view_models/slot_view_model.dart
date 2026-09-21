@@ -1,5 +1,6 @@
 // slot_view_model.dart - Updated with updateTurf method
 // ✅ Small snackbar with 1-second duration at TOP
+// ✅ Meta: Add to Cart (fb_mobile_add_to_cart) on every slot SELECT
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -7,6 +8,13 @@ import 'package:dio/dio.dart';
 import '../models/turf_model.dart';
 import '../models/slot_model.dart';
 import '../services/shared_prefs_helper.dart';
+import '../services/meta_events_service.dart';
+import 'package:flutter/foundation.dart';
+
+// ✅ PERF: slot parsing logs only in debug builds
+void _dlog(Object? message) {
+  if (kDebugMode) print(message);
+}
 
 class SlotViewModel extends GetxController {
   late TurfModel turf;
@@ -58,13 +66,13 @@ class SlotViewModel extends GetxController {
   @override
   void onInit() {
     super.onInit();
-    print('\n=== SLOT VIEW MODEL INITIALIZED ===');
-    print('Turf: ${turf.name}');
-    print('Courts: ${turf.courts}');
-    print('Min Slots: ${turf.minSlots}');
-    print('Advance Type: ${turf.advanceType}');
-    print('Advance Value: ${turf.advanceValue}');
-    print('====================================\n');
+    _dlog('\n=== SLOT VIEW MODEL INITIALIZED ===');
+    _dlog('Turf: ${turf.name}');
+    _dlog('Courts: ${turf.courts}');
+    _dlog('Min Slots: ${turf.minSlots}');
+    _dlog('Advance Type: ${turf.advanceType}');
+    _dlog('Advance Value: ${turf.advanceValue}');
+    _dlog('====================================\n');
 
     _refreshDates();
     fetchSlotsForCurrentDate();
@@ -72,13 +80,13 @@ class SlotViewModel extends GetxController {
 
   // ✅ NEW: Update turf and refresh data
   void updateTurf(TurfModel newTurf) {
-    print('🔄 Updating turf in ViewModel');
+    _dlog('🔄 Updating turf in ViewModel');
     turf = newTurf;
     _refreshDates();
     _slotsCache.clear();
     selectedSlots.clear();
     fetchSlotsForCurrentDate();
-    print('✅ Turf updated: ${turf.name}');
+    _dlog('✅ Turf updated: ${turf.name}');
   }
 
   void _refreshDates() {
@@ -91,9 +99,9 @@ class SlotViewModel extends GetxController {
     // Generate 60 days starting from yesterday
     dates = List.generate(30, (i) => startDate.add(Duration(days: i)));
 
-    print('📅 Dates generated from: ${_formatDate(dates.first)} to ${_formatDate(dates.last)}');
-    print('📅 Today is: ${_formatDate(normalizedToday)}');
-    print('📅 Yesterday was: ${_formatDate(startDate)}');
+    _dlog('📅 Dates generated from: ${_formatDate(dates.first)} to ${_formatDate(dates.last)}');
+    _dlog('📅 Today is: ${_formatDate(normalizedToday)}');
+    _dlog('📅 Yesterday was: ${_formatDate(startDate)}');
 
     // Set selected index to point to TODAY (index 1, since index 0 is yesterday)
     int todayIndex = dates.indexWhere((date) =>
@@ -103,7 +111,7 @@ class SlotViewModel extends GetxController {
 
     if (todayIndex != -1) {
       selectedDateIndex.value = todayIndex;
-      print('📅 Selected today at index: $todayIndex');
+      _dlog('📅 Selected today at index: $todayIndex');
     } else {
       selectedDateIndex.value = 1; // Default to index 1 (today)
     }
@@ -209,13 +217,13 @@ class SlotViewModel extends GetxController {
       availableSlots.value = slots;
       selectedSlots.clear();
 
-      print('✅ Total slots for ${_formatDate(date)}: ${slots.length}');
+      _dlog('✅ Total slots for ${_formatDate(date)}: ${slots.length}');
       for (var slot in slots) {
-        print('   ${slot.startTime}-${slot.endTime} | Price: ₹${slot.formattedPrice} | NextDay: ${slot.isNextDay} | Status: ${slot.status}');
+        _dlog('   ${slot.startTime}-${slot.endTime} | Price: ₹${slot.formattedPrice} | NextDay: ${slot.isNextDay} | Status: ${slot.status}');
       }
 
     } catch (e) {
-      print('❌ Error: $e');
+      _dlog('❌ Error: $e');
       availableSlots.clear();
       errorMessage.value = 'Failed to load slots';
     } finally {
@@ -228,8 +236,8 @@ class SlotViewModel extends GetxController {
     if (selectedDateIndex.value == index) return;
 
     final selectedDate = dates[index];
-    print('🎯 Selected date: ${_formatDate(selectedDate)}');
-    print('📱 Current device date: ${_formatDate(DateTime.now())}');
+    _dlog('🎯 Selected date: ${_formatDate(selectedDate)}');
+    _dlog('📱 Current device date: ${_formatDate(DateTime.now())}');
 
     selectedDateIndex.value = index;
     selectedSlots.clear();
@@ -294,7 +302,7 @@ class SlotViewModel extends GetxController {
           }
         }
       } catch (e) {
-        print('Error checking time: $e');
+        _dlog('Error checking time: $e');
       }
     }
 
@@ -310,10 +318,20 @@ class SlotViewModel extends GetxController {
 
     if (selectedSlots.contains(slot)) {
       selectedSlots.remove(slot);
-      print('❌ Removed slot: ${slot.formattedTimeRange}');
+      _dlog('❌ Removed slot: ${slot.formattedTimeRange}');
     } else {
       selectedSlots.add(slot);
-      print('✅ Added slot: ${slot.formattedTimeRange} - ₹${slot.formattedPrice}');
+      _dlog('✅ Added slot: ${slot.formattedTimeRange} - ₹${slot.formattedPrice}');
+
+      // 📊 Meta: slot tapped → Add to Cart
+      MetaEvents.slotSelected(
+        turf: turf,
+        slot: slot,
+        paymentType: selectedPaymentType.value,
+        date: selectedDate,
+        courtNumber: selectedCourt.value + 1,
+        selectedCount: selectedSlots.length,
+      );
     }
   }
 
@@ -356,7 +374,7 @@ class SlotViewModel extends GetxController {
       return slot.isAvailable && (slotEndMinutes > currentTimeMinutes);
 
     } catch (e) {
-      print('Error in canSelectSlot: $e');
+      _dlog('Error in canSelectSlot: $e');
       return slot.isAvailable;
     }
   }

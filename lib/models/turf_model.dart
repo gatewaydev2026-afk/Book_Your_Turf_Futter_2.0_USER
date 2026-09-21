@@ -2,6 +2,14 @@
 // ✅ Fixed: images parsing from API - handles both String and Object formats
 
 import 'dart:convert';
+import 'package:flutter/foundation.dart';
+
+// ✅ PERF (Sep 2026): parsing used to print ~64 lines PER TURF (≈2,500 lines per
+//    app launch). print() runs in release builds too and blocks the UI thread,
+//    which showed up as "Skipped frames"/Davey warnings. Debug builds only now.
+void _dlog(Object? message) {
+  if (kDebugMode) print(message);
+}
 
 class TurfModel {
   final int id;
@@ -71,26 +79,26 @@ class TurfModel {
   });
 
   factory TurfModel.fromJson(Map<String, dynamic> json) {
-    print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║                 TURF MODEL PARSING START                    ║');
-    print('╚════════════════════════════════════════════════════════════╝');
+    _dlog('\n╔════════════════════════════════════════════════════════════╗');
+    _dlog('║                 TURF MODEL PARSING START                    ║');
+    _dlog('╚════════════════════════════════════════════════════════════╝');
 
-    print('\n📦 RAW JSON DATA RECEIVED:');
-    print('${jsonEncode(json)}\n');
+    _dlog('\n📦 RAW JSON DATA RECEIVED:');
+    _dlog('${jsonEncode(json)}\n');
 
-    print('🔍 PARSING TURF: ${json['name']}');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    _dlog('🔍 PARSING TURF: ${json['name']}');
+    _dlog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
-    print('\n📌 BASIC FIELDS:');
-    print('   id: ${json['id']}');
-    print('   name: ${json['name']}');
-    print('   game_type: ${json['game_type']}');
-    print('   address: ${json['address']}');
+    _dlog('\n📌 BASIC FIELDS:');
+    _dlog('   id: ${json['id']}');
+    _dlog('   name: ${json['name']}');
+    _dlog('   game_type: ${json['game_type']}');
+    _dlog('   address: ${json['address']}');
 
-    print('\n📌 ADVANCE RULES FIELDS (CRITICAL):');
-    print('   advance_type: "${json['advance_type']}"');
-    print('   advance_value: "${json['advance_value']}"');
-    print('   min_slots: ${json['min_slots']}');
+    _dlog('\n📌 ADVANCE RULES FIELDS (CRITICAL):');
+    _dlog('   advance_type: "${json['advance_type']}"');
+    _dlog('   advance_value: "${json['advance_value']}"');
+    _dlog('   min_slots: ${json['min_slots']}');
 
     // ✅ Parse new fields
     String? bestDiscountLabel = json['best_discount_label']?.toString();
@@ -98,19 +106,19 @@ class TurfModel {
         ? double.tryParse(json['distance_km'].toString())
         : null;
 
-    print('\n📌 NEW API FIELDS:');
-    print('   best_discount_label: "${bestDiscountLabel ?? "null"}"');
-    print('   distance_km: ${distanceKm ?? "null"}');
+    _dlog('\n📌 NEW API FIELDS:');
+    _dlog('   best_discount_label: "${bestDiscountLabel ?? "null"}"');
+    _dlog('   distance_km: ${distanceKm ?? "null"}');
 
     // Parse advance fields
     String advanceType = json['advance_type']?.toString() ?? 'percentage';
     String advanceValue = json['advance_value']?.toString() ?? '0';
     int minSlots = json['min_slots'] ?? 1;
 
-    print('\n📌 PARSED ADVANCE VALUES:');
-    print('   advanceType: "$advanceType"');
-    print('   advanceValue: "$advanceValue"');
-    print('   minSlots: $minSlots');
+    _dlog('\n📌 PARSED ADVANCE VALUES:');
+    _dlog('   advanceType: "$advanceType"');
+    _dlog('   advanceValue: "$advanceValue"');
+    _dlog('   minSlots: $minSlots');
 
     // ✅ FIXED: Parse images - handles both String list and Object list
     List<String> imageList = [];
@@ -131,18 +139,18 @@ class TurfModel {
         imageList = [json['images'] as String];
       }
     }
-    print('\n📌 IMAGES: ${imageList.length} images');
+    _dlog('\n📌 IMAGES: ${imageList.length} images');
 
     // Parse times
     String openTime = _parseTimeFromApi(json['open_time'] ?? json['opening_time'], defaultTime: '06:00');
     String closeTime = _parseTimeFromApi(json['close_time'] ?? json['closing_time'], defaultTime: '23:00');
-    print('\n📌 TIMES: open=$openTime, close=$closeTime');
+    _dlog('\n📌 TIMES: open=$openTime, close=$closeTime');
 
     // Parse facilities
     Map<String, dynamic>? facilitiesMap;
     if (json['facilities'] != null && json['facilities'] is Map) {
       facilitiesMap = Map<String, dynamic>.from(json['facilities']);
-      print('\n📌 FACILITIES: ${facilitiesMap.keys.join(', ')}');
+      _dlog('\n📌 FACILITIES: ${facilitiesMap.keys.join(', ')}');
     }
 
     final turf = TurfModel(
@@ -177,20 +185,20 @@ class TurfModel {
       distanceKm: distanceKm,
     );
 
-    print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║                 TURF MODEL PARSING COMPLETE                 ║');
-    print('╚════════════════════════════════════════════════════════════╝');
-    print('\n✅ FINAL TURF VALUES:');
-    print('   Name: ${turf.name}');
-    print('   advanceType: ${turf.advanceType}');
-    print('   advanceValue: ${turf.advanceValue}');
-    print('   minSlots: ${turf.minSlots}');
-    print('   bestDiscountLabel: "${turf.bestDiscountLabel ?? "null"}"');
-    print('   distanceKm: ${turf.distanceKm ?? "null"}');
-    print('   images count: ${turf.images.length}');
-    print('   getAdvanceDisplayText(): ${turf.getAdvanceDisplayText()}');
-    print('   getMinSlotsDisplayText(): ${turf.getMinSlotsDisplayText()}');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    _dlog('\n╔════════════════════════════════════════════════════════════╗');
+    _dlog('║                 TURF MODEL PARSING COMPLETE                 ║');
+    _dlog('╚════════════════════════════════════════════════════════════╝');
+    _dlog('\n✅ FINAL TURF VALUES:');
+    _dlog('   Name: ${turf.name}');
+    _dlog('   advanceType: ${turf.advanceType}');
+    _dlog('   advanceValue: ${turf.advanceValue}');
+    _dlog('   minSlots: ${turf.minSlots}');
+    _dlog('   bestDiscountLabel: "${turf.bestDiscountLabel ?? "null"}"');
+    _dlog('   distanceKm: ${turf.distanceKm ?? "null"}');
+    _dlog('   images count: ${turf.images.length}');
+    _dlog('   getAdvanceDisplayText(): ${turf.getAdvanceDisplayText()}');
+    _dlog('   getMinSlotsDisplayText(): ${turf.getMinSlotsDisplayText()}');
+    _dlog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
 
     return turf;
   }
@@ -225,54 +233,54 @@ class TurfModel {
   bool get hasValidTimes => openTime.isNotEmpty && closeTime.isNotEmpty;
 
   String getAdvanceDisplayText() {
-    print('\n🔍 getAdvanceDisplayText() CALLED');
-    print('   advanceType: $advanceType');
-    print('   advanceValue: $advanceValue');
+    _dlog('\n🔍 getAdvanceDisplayText() CALLED');
+    _dlog('   advanceType: $advanceType');
+    _dlog('   advanceValue: $advanceValue');
 
     double value = double.tryParse(advanceValue) ?? 0;
-    print('   parsed value: $value');
+    _dlog('   parsed value: $value');
 
     if (advanceType == 'fixed') {
       if (value <= 0) {
-        print('   returning: "Pay at venue (No advance)"');
+        _dlog('   returning: "Pay at venue (No advance)"');
         return 'Pay at venue (No advance)';
       }
       String result = 'Advance: ₹${value.toStringAsFixed(0)} per slot';
-      print('   returning: "$result"');
+      _dlog('   returning: "$result"');
       return result;
     } else {
       if (value <= 0) {
-        print('   returning: "Pay at venue (No advance)"');
+        _dlog('   returning: "Pay at venue (No advance)"');
         return 'Pay at venue (No advance)';
       }
       String result = 'Advance: ${value.toStringAsFixed(0)}% of total';
-      print('   returning: "$result"');
+      _dlog('   returning: "$result"');
       return result;
     }
   }
 
   String getMinSlotsDisplayText() {
-    print('\n🔍 getMinSlotsDisplayText() CALLED');
-    print('   minSlots: $minSlots');
+    _dlog('\n🔍 getMinSlotsDisplayText() CALLED');
+    _dlog('   minSlots: $minSlots');
     String result = 'Minimum ${minSlots} slot${minSlots > 1 ? 's' : ''} required';
-    print('   returning: "$result"');
+    _dlog('   returning: "$result"');
     return result;
   }
 
   void debugPrintAll() {
-    print('\n╔════════════════════════════════════════════════════════════╗');
-    print('║                 TURF MODEL DEBUG OUTPUT                     ║');
-    print('╚════════════════════════════════════════════════════════════╝');
-    print('   id: $id');
-    print('   name: $name');
-    print('   advanceType: $advanceType');
-    print('   advanceValue: $advanceValue');
-    print('   minSlots: $minSlots');
-    print('   bestDiscountLabel: "$bestDiscountLabel"');
-    print('   distanceKm: $distanceKm');
-    print('   getAdvanceDisplayText(): ${getAdvanceDisplayText()}');
-    print('   getMinSlotsDisplayText(): ${getMinSlotsDisplayText()}');
-    print('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
+    _dlog('\n╔════════════════════════════════════════════════════════════╗');
+    _dlog('║                 TURF MODEL DEBUG OUTPUT                     ║');
+    _dlog('╚════════════════════════════════════════════════════════════╝');
+    _dlog('   id: $id');
+    _dlog('   name: $name');
+    _dlog('   advanceType: $advanceType');
+    _dlog('   advanceValue: $advanceValue');
+    _dlog('   minSlots: $minSlots');
+    _dlog('   bestDiscountLabel: "$bestDiscountLabel"');
+    _dlog('   distanceKm: $distanceKm');
+    _dlog('   getAdvanceDisplayText(): ${getAdvanceDisplayText()}');
+    _dlog('   getMinSlotsDisplayText(): ${getMinSlotsDisplayText()}');
+    _dlog('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n');
   }
 }
 

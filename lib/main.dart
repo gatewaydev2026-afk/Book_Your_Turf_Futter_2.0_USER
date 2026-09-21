@@ -5,6 +5,9 @@
 // ✅ FavoritesViewModel registered
 // ✅ CacheManager registered for single API call guarantee
 // ✅ Full logout cleanup
+// ✅ Sep 2026: duplicate GET requests merged (ApiDedupeInterceptor),
+//    401 handled once (no repeated login redirects / snackbars),
+//    location permission asked only once (by HomeViewModel), unknown routes safe
 
 import 'package:book_your_turf/config/app_config.dart';
 import 'package:book_your_turf/services/cache_manager.dart';
@@ -16,7 +19,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:dio/dio.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:get/get.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'routes/app_routes.dart';
@@ -28,6 +30,7 @@ import 'services/notification_service.dart';
 import 'services/firebase_messaging_service.dart';
 // 🔥 Import Facebook App Events
 import 'services/facebook_events.dart';
+import 'services/api_dedupe_interceptor.dart';
 import 'view_models/auth_view_model.dart';
 import 'view_models/home_view_model.dart';
 import 'view_models/booking_view_model.dart';
@@ -40,6 +43,7 @@ import 'view_models/favorites_view_model.dart'; // ✅ NEW: FavoritesViewModel
 import 'firebase_options.dart';
 
 bool _isAppInitialized = false;
+bool _isHandling401 = false;
 final FlutterLocalNotificationsPlugin flutterLocalNotificationsPlugin = FlutterLocalNotificationsPlugin();
 
 void main() async {
@@ -61,14 +65,12 @@ void main() async {
   }
 
   // 🔥 Log Facebook App Launch Event
-  try {
-    await facebookAppEvents.logEvent(
-      name: 'fb_mobile_activate_app',
-    );
-    print('✅ Facebook app launch event logged');
-  } catch (e) {
-    print('❌ Facebook app launch error: $e');
-  }
+  // ✅ Not awaited → a slow Meta SDK can never delay app start
+  facebookAppEvents
+      .logEvent(name: 'fb_mobile_activate_app')
+      .timeout(const Duration(seconds: 5))
+      .then((_) => print('✅ Facebook app launch event logged'))
+      .catchError((e) => print('❌ Facebook app launch error: $e'));
 
   // 2️⃣ Initialize SharedPreferences FIRST
   await SharedPrefsHelper.init();
@@ -156,13 +158,8 @@ void main() async {
     print('⚠️ Permission request warning: $e');
   }
 
-  // 9️⃣ Request location permission
-  try {
-    await Geolocator.requestPermission();
-    print('📍 Location permission requested');
-  } catch (e) {
-    print('⚠️ Location permission warning: $e');
-  }
+  // 9️⃣ Location permission is requested by HomeViewModel (only once).
+  //    Asking here as well caused two permission requests at the same time.
 
   // 🔟 Initialize all dependencies
   await initDependencies();
@@ -201,6 +198,9 @@ Future<void> initDependencies() async {
   ));
 
   // Add interceptors
+  // ✅ 1. Merge identical GET requests that are already running
+  dio.interceptors.add(ApiDedupeInterceptor());
+
   dio.interceptors.add(InterceptorsWrapper(
     onRequest: (options, handler) async {
       final token = SharedPrefsHelper.getToken();
@@ -210,7 +210,6 @@ Future<void> initDependencies() async {
       if (kDebugMode) {
         print('📡 API ${options.method} ${options.path}');
         print('📡 FULL URL: ${options.uri}');
-        print('📡 AUTH TOKEN: ${options.headers['Authorization']}');
       }
       return handler.next(options);
     },
@@ -221,20 +220,36 @@ Future<void> initDependencies() async {
       return handler.next(response);
     },
     onError: (error, handler) async {
-      print('❌ API ERROR: ${error.message}');
-      if (error.response?.statusCode == 401) {
-        await SharedPrefsHelper.clearAll();
-        // ✅ Clear all caches on 401
-        if (Get.isRegistered<CacheManager>()) {
-          Get.find<CacheManager>().clearAllCaches();
+      print('❌ API ERROR: ${error.requestOptions.method} ${error.requestOptions.uri}');
+      print('❌ STATUS: ${error.response?.statusCode}');
+      // ✅ the server's message is what tells us WHY (400 etc.)
+      print('❌ SERVER SAID: ${error.response?.data}');
+      final sentToken = error.requestOptions.headers['Authorization'];
+      // ✅ Only a logged-in request can "expire"; handle it ONCE even when
+      //    several requests fail together (used to stack redirects/snackbars)
+      if (error.response?.statusCode == 401 &&
+          sentToken != null &&
+          SharedPrefsHelper.getToken() != null &&
+          !_isHandling401) {
+        _isHandling401 = true;
+        try {
+          await SharedPrefsHelper.clearAll();
+          // ✅ Clear all caches on 401
+          if (Get.isRegistered<CacheManager>()) {
+            Get.find<CacheManager>().clearAllCaches();
+          }
+          Get.offAllNamed(AppRoutes.login);
+          Get.snackbar(
+            'Session Expired',
+            'Please login again',
+            backgroundColor: Colors.red,
+            colorText: Colors.white,
+          );
+        } catch (e) {
+          print('⚠️ 401 handling error: $e');
+        } finally {
+          Future.delayed(const Duration(seconds: 3), () => _isHandling401 = false);
         }
-        Get.offAllNamed(AppRoutes.login);
-        Get.snackbar(
-          'Session Expired',
-          'Please login again',
-          backgroundColor: Colors.red,
-          colorText: Colors.white,
-        );
       }
       return handler.next(error);
     },
@@ -331,6 +346,7 @@ class MyApp extends StatelessWidget {
       theme: AppTheme.lightTheme,
       initialRoute: AppRoutes.splash,
       getPages: RouteGenerator.routes,
+      unknownRoute: RouteGenerator.unknownRoute,
       defaultTransition: Transition.cupertino,
       builder: (context, child) {
         return MediaQuery(

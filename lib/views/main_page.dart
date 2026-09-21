@@ -1,4 +1,7 @@
 // main_page.dart - FIXED with transparent background for glass nav
+// ✅ FIX (Sep 2026): tab data loads exactly once per tab switch (also when the
+//    tab is changed from code, e.g. after a booking); guests no longer land on
+//    the Bookings/Dashboard tab behind the login dialog.
 
 import 'package:book_your_turf/services/shared_prefs_helper.dart';
 import 'package:book_your_turf/view_models/booking_view_model.dart';
@@ -14,6 +17,7 @@ import 'package:flutter_svg/flutter_svg.dart';
 import 'dart:ui' as ui;
 
 import '../routes/app_routes.dart';
+import '../services/meta_events_service.dart';
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -33,9 +37,15 @@ class _MainPageState extends State<MainPage> {
     ProfileView(),
   ];
 
+  Worker? _tabWorker;
+
   @override
   void initState() {
     super.initState();
+    // ✅ Any tab change (tap or controller.changeTab) loads that tab's data
+    _tabWorker = ever<int>(controller.currentIndex, (i) {
+      if (mounted) _loadTabData(i);
+    });
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!_initialized) {
         _initialized = true;
@@ -73,6 +83,17 @@ class _MainPageState extends State<MainPage> {
         bottomNavigationBar: null,
       ),
     );
+  }
+
+  @override
+  void dispose() {
+    _tabWorker?.dispose();
+    super.dispose();
+  }
+
+  bool get _isGuestNow {
+    final token = SharedPrefsHelper.getToken();
+    return token == null || token.isEmpty;
   }
 
   Widget _buildGlassNavigationBar() {
@@ -157,8 +178,12 @@ class _MainPageState extends State<MainPage> {
 
     return GestureDetector(
       onTap: () {
-        controller.changeTab(index);
-        _loadTabData(index);
+        if (index != 0 && _isGuestNow) {
+          _showLoginRequiredDialog(index);
+          return;
+        }
+        if (controller.currentIndex.value == index) return;
+        controller.changeTab(index); // ever() worker loads the data
       },
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 250),
@@ -236,75 +261,45 @@ class _MainPageState extends State<MainPage> {
 
   void _loadTabData(int index) async {
     final homeVm = Get.find<HomeViewModel>();
-    final isGuest = homeVm.isGuestMode.value;
 
-    final token = SharedPrefsHelper.getToken();
-    final bool hasToken = token != null && token.isNotEmpty;
+    // ✅ Token is the source of truth (isGuestMode can be stale right after login)
+    final bool hasToken = !_isGuestNow;
+    homeVm.isGuestMode.value = !hasToken;
 
     if (!hasToken) {
-      homeVm.isGuestMode.value = true;
-    }
-
-    if (isGuest || !hasToken) {
       if (index != 0) {
         print('👤 Guest mode - Showing login prompt for tab $index');
+        controller.changeTab(0);
         _showLoginRequiredDialog(index);
         return;
       }
-      if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
-        print('🏠 Guest mode - Loading home data...');
-        await homeVm.loadHomeData();
-        _loadedTabs.add(index);
-      } else {
-        print('✅ Home data available (${homeVm.allTurfs.length} turfs)');
-        _loadedTabs.add(index);
-      }
+      await homeVm.loadHomeData();
+      _loadedTabs.add(index);
       return;
     }
 
     switch (index) {
       case 0:
-        print('🏠 Home tab selected - Ensuring data is loaded...');
-        if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
-          print('📡 Home data empty - Loading now...');
-          await homeVm.loadHomeData();
-        } else if (homeVm.isLoading.value) {
-          print('⏳ Home data is loading, waiting...');
-          await Future.delayed(const Duration(milliseconds: 800));
-          if (homeVm.allTurfs.isEmpty) {
-            print('⚠️ Home data still empty, retrying...');
-            await homeVm.loadHomeData();
-          }
-        }
-        if (homeVm.allTurfs.isNotEmpty) {
-          print('✅ Home data available (${homeVm.allTurfs.length} turfs)');
-          _loadedTabs.add(index);
-        }
+        // single-flight + cache inside HomeViewModel → no duplicate calls
+        await homeVm.loadHomeData();
+        _loadedTabs.add(index);
         break;
 
       case 1:
-        if (_loadedTabs.contains(index)) {
-          print('✅ Bookings already loaded, skipping');
-          return;
-        }
-        print('📅 Loading Bookings data...');
+        // loadBookings() uses its own 5-min cache, so this is cheap when fresh
         final bookingVm = Get.find<BookingViewModel>();
-        if (bookingVm.bookings.isEmpty && !bookingVm.isLoading.value) {
-          await bookingVm.loadBookings();
-        }
+        await bookingVm.loadBookings();
+        bookingVm.logHistoryView(); // 📊 Meta
         _loadedTabs.add(index);
         break;
 
       case 2:
-        if (_loadedTabs.contains(index)) {
-          print('✅ Profile already loaded, skipping');
-          return;
-        }
-        print('👤 Loading Profile data...');
         final profileVm = Get.find<ProfileViewModel>();
-        if (profileVm.name.value.isEmpty && !profileVm.isLoading.value) {
-          await profileVm.fetchUser();
-        }
+        await profileVm.fetchUser();
+        // 📊 Meta: dashboard opened
+        MetaEvents.screenView('dashboard', {
+          'has_wallet_balance': profileVm.walletBalance.value > 0 ? 1 : 0,
+        });
         _loadedTabs.add(index);
         break;
     }

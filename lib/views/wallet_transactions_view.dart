@@ -3,6 +3,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../services/meta_events_service.dart';
 import '../models/wallet_transaction_model.dart';
 import '../view_models/wallet_view_model.dart';
 
@@ -11,6 +12,7 @@ class WalletTransactionsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    MetaEvents.screenView('wallet_history'); // 📊 Meta (throttled)
     final WalletViewModel vm = Get.find<WalletViewModel>();
 
     // ✅ Load wallet data when screen opens (lazy loading)

@@ -2,6 +2,7 @@
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import '../services/meta_events_service.dart';
 import '../models/coin_transaction_model.dart';
 import '../view_models/coin_view_model.dart';
 
@@ -10,6 +11,7 @@ class CoinTransactionsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    MetaEvents.screenView('coin_history'); // 📊 Meta (throttled)
     final CoinViewModel vm = Get.find<CoinViewModel>();
 
     // ✅ Load coin data when screen opens

@@ -4,6 +4,10 @@
 // ✅ Typing shows local suggestions only
 // ✅ Guest mode fully working
 // ✅ Transparent bottom navigation bar
+// ✅ FIX (Sep 2026): Search results / cards above no longer disappear on load-more
+//    (append-only pagination in HomeViewModel + scroll position kept)
+// ✅ FIX (Sep 2026): Pull-to-refresh works again (scroll notifications were swallowed)
+// ✅ Meta: home_view event with visit count
 
 import 'dart:async';
 import 'package:book_your_turf/views/profile.dart';
@@ -15,6 +19,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/notification_model.dart';
 import '../routes/app_routes.dart';
 import '../services/notification_service.dart';
+import '../services/meta_events_service.dart';
 import '../services/update_service.dart';
 import '../services/shared_prefs_helper.dart';
 import '../view_models/home_view_model.dart';
@@ -56,6 +61,8 @@ class _HomeViewState extends State<HomeView>
   static const int DEBOUNCE_DURATION_MS = 800;
 
   bool _dataLoaded = false;
+  bool _isLoadingHome = false;
+  DateTime? _lastResumeLoad;
   bool _isUpdateCheckDone = false;
 
   StreamSubscription<NotificationItem>? _notificationStreamSubscription;
@@ -113,6 +120,7 @@ class _HomeViewState extends State<HomeView>
       _loadHomeData();
       _scrollController.addListener(_onScroll);
       _notificationService.updateUnreadCount();
+      _logHomeViewEvent(force: true);
     });
 
     _searchFocusNode.addListener(() {
@@ -124,6 +132,15 @@ class _HomeViewState extends State<HomeView>
         });
       }
     });
+  }
+
+  // 📊 Meta: count home screen visits
+  void _logHomeViewEvent({bool force = false}) {
+    MetaEvents.homeView(
+      isGuest: homeVm.isGuestMode.value,
+      locationLabel: homeVm.currentLocationName.value,
+      force: force,
+    );
   }
 
   Future<void> _checkForUpdatesInBackground() async {
@@ -151,37 +168,16 @@ class _HomeViewState extends State<HomeView>
     _notificationService.updateUnreadCount();
   }
 
+  // ✅ All start-up / resume loads go through HomeViewModel.loadHomeData(),
+  //    which is single-flight and skips the API while data is fresh.
   Future<void> _loadHomeData() async {
-    if (_dataLoaded) {
-      print('✅ Home data already loaded, skipping');
-      return;
-    }
-
-    final token = SharedPrefsHelper.getToken();
-    final isGuest = token == null || token.isEmpty;
-
-    if (isGuest) {
-      print('👤 Guest mode - Loading turfs without token');
+    if (_isLoadingHome) return;
+    _isLoadingHome = true;
+    try {
       await homeVm.loadHomeData();
       _dataLoaded = true;
-      return;
-    }
-
-    if (!SharedPrefsHelper.isTokenValid()) {
-      print('⚠️ Token expired, switching to guest mode');
-      await SharedPrefsHelper.clearToken();
-      await homeVm.loadHomeData();
-      _dataLoaded = true;
-      return;
-    }
-
-    if (homeVm.allTurfs.isEmpty && !homeVm.isLoading.value) {
-      print('📡 Loading home data for the first time...');
-      await homeVm.loadHomeData();
-      _dataLoaded = true;
-    } else if (homeVm.allTurfs.isNotEmpty) {
-      print('✅ Home data already available (${homeVm.allTurfs.length} turfs)');
-      _dataLoaded = true;
+    } finally {
+      _isLoadingHome = false;
     }
   }
 
@@ -241,8 +237,13 @@ class _HomeViewState extends State<HomeView>
     print('App state: $state - Updating notification badge only');
     if (state == AppLifecycleState.resumed) {
       _notificationService.updateUnreadCount();
-      final token = SharedPrefsHelper.getToken();
-      if (token != null && token.isNotEmpty && SharedPrefsHelper.isTokenValid()) {
+      _logHomeViewEvent(); // throttled inside the service
+      // ✅ At most one check per minute on resume; loadHomeData itself only
+      //    calls the API when the list is older than the cache duration.
+      final now = DateTime.now();
+      if (_dataLoaded &&
+          (_lastResumeLoad == null || now.difference(_lastResumeLoad!) > const Duration(minutes: 1))) {
+        _lastResumeLoad = now;
         _loadHomeData();
       }
     }
@@ -402,19 +403,28 @@ class _HomeViewState extends State<HomeView>
                   AnimatedBuilder(
                     animation: _categoryAnimationController,
                     builder: (context, child) {
-                      return Container(
+                      // ✅ ClipRect + OverflowBox: no RenderFlex overflow while the
+                      //    height animates between full (125) and mini (38)
+                      return SizedBox(
                         height: _categoryHeightAnimation.value,
                         width: double.infinity,
-                        child: !_isCategoryMinimized
-                            ? Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            _allCategoryCard(),
-                            const SizedBox(height: 4),
-                            _threeCategoriesRow(),
-                          ],
-                        )
-                            : _miniCategorySection(),
+                        child: ClipRect(
+                          child: OverflowBox(
+                            alignment: Alignment.topCenter,
+                            minHeight: 0,
+                            maxHeight: double.infinity,
+                            child: !_isCategoryMinimized
+                                ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      _allCategoryCard(),
+                                      const SizedBox(height: 4),
+                                      _threeCategoriesRow(),
+                                    ],
+                                  )
+                                : _miniCategorySection(),
+                          ),
+                        ),
                       );
                     },
                   ),
@@ -597,10 +607,11 @@ class _HomeViewState extends State<HomeView>
           final category = categories[index];
           final filter = category["filter"] as String;
 
-          return Obx(() {
+          // ✅ Expanded must be the direct child of Row (Obx goes inside it)
+          return Expanded(
+            child: Obx(() {
             final isSelected = homeVm.selectedCategory.value == filter;
-            return Expanded(
-              child: GestureDetector(
+            return GestureDetector(
                 onTap: () => _onCategoryTap(filter),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 2),
@@ -633,9 +644,9 @@ class _HomeViewState extends State<HomeView>
                     ),
                   ),
                 ),
-              ),
             );
-          });
+          }),
+          );
         }),
       ),
     );
@@ -821,16 +832,24 @@ class _HomeViewState extends State<HomeView>
       color: Colors.green,
       child: NotificationListener<ScrollNotification>(
         onNotification: (scrollInfo) {
-          if (scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
+          // ✅ Only the grid's own vertical scroll triggers load-more
+          if (scrollInfo.depth == 0 &&
+              scrollInfo.metrics.axis == Axis.vertical &&
+              (scrollInfo is ScrollUpdateNotification || scrollInfo is ScrollEndNotification) &&
+              scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
             if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
               homeVm.loadMoreTurfs();
             }
           }
-          return true;
+          // ✅ false = let RefreshIndicator also receive the notification
+          return false;
         },
         child: GridView.builder(
+          // ✅ Same key while the list only grows → scroll position is kept on load-more
+          key: const PageStorageKey<String>('home_turf_grid'),
           controller: _scrollController,
-          padding: const EdgeInsets.symmetric(horizontal: 16),
+          physics: const AlwaysScrollableScrollPhysics(),
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: getCrossAxisCount(context),
             childAspectRatio: 0.68,
@@ -1029,6 +1048,14 @@ class _HomeViewState extends State<HomeView>
                               child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
                             ),
                             if (isGuest)
+                              // ✅ Chips shrink instead of overflowing on narrow phones
+                              Flexible(
+                                child: FittedBox(
+                                  fit: BoxFit.scaleDown,
+                                  alignment: Alignment.centerLeft,
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
                               Container(
                                 margin: const EdgeInsets.only(left: 6),
                                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
@@ -1046,7 +1073,6 @@ class _HomeViewState extends State<HomeView>
                                   ),
                                 ),
                               ),
-                            if (isGuest)
                               GestureDetector(
                                 onTap: () {
                                   Get.offAllNamed(AppRoutes.login);
@@ -1066,6 +1092,10 @@ class _HomeViewState extends State<HomeView>
                                       fontWeight: FontWeight.w600,
                                       color: Colors.green.shade700,
                                     ),
+                                  ),
+                                ),
+                              ),
+                                    ],
                                   ),
                                 ),
                               ),

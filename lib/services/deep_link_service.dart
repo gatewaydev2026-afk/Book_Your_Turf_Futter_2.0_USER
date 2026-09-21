@@ -93,8 +93,13 @@ class DeepLinkService {
       }
 
       // Method 3: Custom URL scheme - book_your_turf://refer/ABC123
-      if (referralCode == null && uri.scheme == 'book_your_turf') {
-        if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'refer' && uri.pathSegments.length > 1) {
+      // ✅ Manifest registers "bookyourturf" (underscores are not valid in a URI scheme)
+      if (referralCode == null && (uri.scheme == 'bookyourturf' || uri.scheme == 'book_your_turf')) {
+        // bookyourturf://refer/ABC123 → host = "refer", path = ["ABC123"]
+        if (uri.host == 'refer' && uri.pathSegments.isNotEmpty) {
+          referralCode = uri.pathSegments.first;
+          print('✅ Referral code from custom scheme: $referralCode');
+        } else if (uri.pathSegments.isNotEmpty && uri.pathSegments.first == 'refer' && uri.pathSegments.length > 1) {
           referralCode = uri.pathSegments[1];
           print('✅ Referral code from custom scheme: $referralCode');
         }
@@ -201,11 +206,11 @@ class DeepLinkService {
   }
 
   String generateShareLink(String code) {
-    return 'https://play.google.com/store/apps/details?id=com.book_your_turf.app&referral_code=$code';
+    return 'https://play.google.com/store/apps/details?id=com.bookyourturf.app&referral_code=$code';
   }
 
   String generateDeepLinkScheme(String code) {
-    return 'book_your_turf://refer/$code';
+    return 'bookyourturf://refer/$code';
   }
 }
 

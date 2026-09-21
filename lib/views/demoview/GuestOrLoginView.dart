@@ -6,6 +6,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
+import '../../services/otp_autofill_service.dart';
 import '../../routes/app_routes.dart';
 import '../../themes/app_colors.dart';
 import '../../view_models/auth_view_model.dart';
@@ -56,6 +57,8 @@ class _GuestOrLoginViewState extends State<GuestOrLoginView> {
     super.initState();
     _phoneController.addListener(_validatePhone);
     authVm.resetPhoneAuth();
+    // ✅ Read the SMS app hash early so "Send OTP" is not delayed
+    OtpAutofillService.getAppHash();
     _loadStoredNumber();
 
     // ✅ Auto-trigger detection after page loads

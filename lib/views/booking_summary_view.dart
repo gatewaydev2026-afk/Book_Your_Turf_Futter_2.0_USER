@@ -8,12 +8,15 @@
 // ✅ NO requirements text in coupon card
 // ✅ FIXED: UI locked during payment processing - No back button until navigation completes
 // ✅ Fee Breakup - Click to show Platform Fee & Convenience Fee
+// ✅ Sep 2026 funnel fix: UPI-first single pay button, no confirm popup,
+//    wallet hidden at ₹0, fee shown on the summary ("No extra charge on UPI")
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import '../models/discount_model.dart';
 import '../services/price_formatter.dart';
 import '../view_models/booking_summary_view_model.dart';
+import '../services/meta_events_service.dart';
 import '../view_models/profile_view_model.dart';
 import '../view_models/main_page_view_model.dart';
 import '../routes/app_routes.dart';
@@ -48,7 +51,8 @@ class BookingSummaryView extends StatelessWidget {
   BookingSummaryView({super.key});
 
   // ✅ Controller for fee breakup expansion
-  final RxBool _showFeeBreakup = false.obs;
+  // ✅ Open by default so any fee is visible BEFORE the payment gateway
+  final RxBool _showFeeBreakup = true.obs;
 
   bool _isDiscountValid(DiscountModel discount) {
     if (discount.discountType == 'percentage') {
@@ -1174,7 +1178,7 @@ class BookingSummaryView extends StatelessWidget {
                         ),
                         const SizedBox(width: 8),
                         Text(
-                          ' Breakup',
+                          ' Fees & charges',
                           style: TextStyle(
                             fontSize: 14,
                             fontWeight: FontWeight.w500,
@@ -1220,6 +1224,24 @@ class BookingSummaryView extends StatelessWidget {
                     fontSize: 13,
                     rupeeSize: 13,
                   ),
+                  if (platformFee + convenienceFee == 0)
+                    Padding(
+                      padding: const EdgeInsets.only(top: 4, left: 26),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle, size: 14, color: Colors.green.shade600),
+                          const SizedBox(width: 4),
+                          Text(
+                            'No extra charge on UPI',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: Colors.green.shade700,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
                   const SizedBox(height: 8),
                 ],
               ],
@@ -1524,213 +1546,181 @@ class BookingSummaryView extends StatelessWidget {
     );
   }
 
+  // ============================================================
+  // ✅ PAYMENT BUTTONS (Sep 2026 funnel fix)
+  //   • ONE green primary button: "Pay ₹X with UPI" → opens Razorpay directly
+  //     (no "Confirm online payment" popup, no profile popup)
+  //   • "No extra charge on UPI" shown right on the button
+  //   • Wallet option HIDDEN when balance is ₹0; shown as a secondary option otherwise
+  // ============================================================
   Widget _buildBothPaymentButtons(BuildContext context, BookingSummaryViewModel vm, ProfileViewModel profileVm) {
-    final amountToPay = vm.walletAmountToPay;
+    return Obx(() {
+      final amountToPay = vm.walletAmountToPay;
+      final bool isValidAmount = amountToPay > 0 && amountToPay <= vm.totalAmount;
+      final bool busy = vm.isLoading.value || vm.isUILocked.value || vm.paymentSuccessConfirmed.value;
+      final double walletBalance = profileVm.walletBalance.value;
+      final bool showWallet = walletBalance > 0;
+      final bool walletEnough = walletBalance >= amountToPay;
 
-    final bool isValidAmount = amountToPay > 0 && amountToPay <= vm.totalAmount;
-
-    return Column(
-      children: [
-        Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(
-            color: Colors.green.shade50,
-            borderRadius: BorderRadius.circular(12),
-            border: Border.all(color: Colors.green.shade200),
-          ),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              const Text('BYT Wallet Balance:', style: TextStyle(fontSize: 14)),
-              Obx(() => RichText(
-                text: TextSpan(
-                  children: [
-                    TextSpan(
-                      text: '₹',
-                      style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.bold,
-                        color: profileVm.walletBalance.value >= amountToPay && isValidAmount
-                            ? Colors.green.shade700
-                            : Colors.red.shade700,
-                        fontFamily: 'Georgia',
-                      ),
+      return Column(
+        children: [
+          // ---------- PRIMARY: UPI / ONLINE ----------
+          SizedBox(
+            width: double.infinity,
+            height: 60,
+            child: ElevatedButton(
+              onPressed: (busy || !isValidAmount) ? null : () => _startOnlinePayment(vm),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.green,
+                disabledBackgroundColor: Colors.grey.shade400,
+                elevation: 2,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+              ),
+              child: vm.isLoading.value
+                  ? const SizedBox(
+                      width: 22,
+                      height: 22,
+                      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                    )
+                  : Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        RichText(
+                          text: TextSpan(
+                            children: [
+                              const TextSpan(
+                                text: 'Pay ',
+                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              TextSpan(
+                                text: '₹',
+                                style: TextStyle(
+                                  fontSize: 19,
+                                  fontWeight: FontWeight.bold,
+                                  color: Colors.yellow.shade200,
+                                  fontFamily: 'Georgia',
+                                ),
+                              ),
+                              TextSpan(
+                                text: PriceFormatter.format(vm.razorpayAmountToPay),
+                                style: const TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                              const TextSpan(
+                                text: ' with UPI',
+                                style: TextStyle(fontSize: 17, fontWeight: FontWeight.bold, color: Colors.white),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        const Text(
+                          'No extra charge on UPI',
+                          style: TextStyle(fontSize: 11, color: Colors.white70, fontWeight: FontWeight.w500),
+                        ),
+                      ],
                     ),
-                    TextSpan(
-                      text: PriceFormatter.format(profileVm.walletBalance.value),
-                      style: TextStyle(
-                        fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: profileVm.walletBalance.value >= amountToPay && isValidAmount
-                            ? Colors.green
-                            : Colors.red,
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'GPay • PhonePe • Paytm • Cards • Netbanking',
+            style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+          ),
+
+          if (!isValidAmount && vm.isDiscountApplied)
+            Padding(
+              padding: const EdgeInsets.only(top: 8),
+              child: Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade200),
+                ),
+                child: Row(
+                  children: [
+                    Icon(Icons.error_outline, size: 16, color: Colors.red.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        'Total amount cannot be zero or negative. Please remove some discounts.',
+                        style: TextStyle(fontSize: 12, color: Colors.red.shade700),
                       ),
                     ),
                   ],
                 ),
-              )),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        Obx(() => SizedBox(
-          width: double.infinity,
-          height: 55,
-          child: ElevatedButton(
-            onPressed: (vm.isLoading.value || vm.isUILocked.value || vm.paymentSuccessConfirmed.value || !isValidAmount)
-                ? null
-                : () {
-              if (profileVm.walletBalance.value < amountToPay) {
-                _showInsufficientBalanceDialog(context, amountToPay, profileVm);
-              } else {
-                _showWalletPaymentConfirmation(context, vm, profileVm);
-              }
-            },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isValidAmount ? Colors.green : Colors.grey,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: vm.isLoading.value
-                ? const SizedBox(width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'Pay ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  TextSpan(
-                    text: '₹',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.yellow.shade200,
-                      fontFamily: 'Georgia',
-                    ),
-                  ),
-                  TextSpan(
-                    text: PriceFormatter.format(amountToPay),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  TextSpan(
-                    text: ' via Wallet',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
               ),
             ),
-          ),
-        )),
-        if (!isValidAmount && vm.isDiscountApplied)
-          Padding(
-            padding: const EdgeInsets.only(top: 8),
-            child: Container(
-              padding: const EdgeInsets.all(8),
-              decoration: BoxDecoration(
-                color: Colors.red.shade50,
-                borderRadius: BorderRadius.circular(8),
-                border: Border.all(color: Colors.red.shade200),
-              ),
-              child: Row(
-                children: [
-                  Icon(Icons.error_outline, size: 16, color: Colors.red.shade700),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      'Total amount cannot be zero or negative. Please remove some discounts.',
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Colors.red.shade700,
+
+          // ---------- SECONDARY: WALLET (only when balance > 0) ----------
+          if (showWallet) ...[
+            const SizedBox(height: 14),
+            Row(
+              children: [
+                Expanded(child: Divider(color: Colors.grey.shade300)),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text('or', style: TextStyle(fontSize: 12, color: Colors.grey.shade500)),
+                ),
+                Expanded(child: Divider(color: Colors.grey.shade300)),
+              ],
+            ),
+            const SizedBox(height: 10),
+            SizedBox(
+              width: double.infinity,
+              height: 50,
+              child: OutlinedButton(
+                onPressed: (busy || !isValidAmount)
+                    ? null
+                    : () {
+                        if (!walletEnough) {
+                          _showInsufficientBalanceDialog(context, amountToPay, profileVm);
+                        } else {
+                          _showWalletPaymentConfirmation(context, vm, profileVm);
+                        }
+                      },
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.green.shade400, width: 1.2),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.account_balance_wallet_outlined, size: 20, color: Colors.green.shade700),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        'Pay from BYT Wallet  (₹${PriceFormatter.format(walletBalance)})',
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          fontSize: 14,
+                          fontWeight: FontWeight.w600,
+                          color: walletEnough ? Colors.green.shade800 : Colors.grey.shade600,
+                        ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
-          ),
-        const SizedBox(height: 16),
-        const Divider(),
-        const SizedBox(height: 16),
-        Obx(() => SizedBox(
-          width: double.infinity,
-          height: 55,
-          child: ElevatedButton(
-            onPressed: (vm.isLoading.value || vm.isUILocked.value || vm.paymentSuccessConfirmed.value || !isValidAmount)
-                ? null
-                : () => _showOnlinePaymentConfirmation(context, vm),
-            style: ElevatedButton.styleFrom(
-              backgroundColor: isValidAmount ? Colors.blue : Colors.grey,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            ),
-            child: vm.isLoading.value
-                ? const SizedBox(width: 20, height: 20,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white))
-                : RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'Pay ',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  TextSpan(
-                    text: '₹',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.yellow.shade200,
-                      fontFamily: 'Georgia',
-                    ),
-                  ),
-                  TextSpan(
-                    text: PriceFormatter.format(vm.razorpayAmountToPay),
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                  TextSpan(
-                    text: ' via Online',
-                    style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.white,
-                    ),
-                  ),
-                ],
+            if (!walletEnough)
+              Padding(
+                padding: const EdgeInsets.only(top: 4),
+                child: Text(
+                  'Wallet balance is lower than the amount',
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
               ),
-            ),
-          ),
-        )),
-        const SizedBox(height: 8),
-        const Text('UPI | Credit/Debit Cards | Netbanking',
-            style: TextStyle(fontSize: 11, color: Colors.grey)),
-        const SizedBox(height: 16),
-      ],
-    );
+          ],
+          const SizedBox(height: 16),
+        ],
+      );
+    });
   }
 
-  void _showOnlinePaymentConfirmation(BuildContext context, BookingSummaryViewModel vm) {
+  // ✅ Opens Razorpay directly - no confirmation popup
+  void _startOnlinePayment(BookingSummaryViewModel vm) {
     final amountToPay = vm.razorpayAmountToPay;
-
     if (amountToPay <= 0) {
       Get.snackbar(
         'Invalid Amount',
@@ -1741,67 +1731,7 @@ class BookingSummaryView extends StatelessWidget {
       );
       return;
     }
-
-    Get.dialog(
-      AlertDialog(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        title: const Text('Confirm Online Payment'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            RichText(
-              text: TextSpan(
-                children: [
-                  TextSpan(
-                    text: 'Amount: ',
-                    style: TextStyle(fontSize: 16, color: Colors.black87),
-                  ),
-                  TextSpan(
-                    text: '₹',
-                    style: TextStyle(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: Colors.blue.shade700,
-                      fontFamily: 'Georgia',
-                    ),
-                  ),
-                  TextSpan(
-                    text: PriceFormatter.format(amountToPay),
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 16,
-                      color: Colors.black87,
-                    ),
-                  ),
-                ],
-              ),
-            ),
-            if (vm.isDiscountApplied)
-              Padding(
-                padding: const EdgeInsets.only(top: 4),
-                child: Text(
-                  'Total Discount: ${vm.discountAmountText}',
-                  style: TextStyle(fontSize: 13, color: Colors.green.shade700),
-                ),
-              ),
-            const SizedBox(height: 8),
-            const Text('You will be redirected to Razorpay payment gateway.'),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
-          ElevatedButton(
-            onPressed: () {
-              Get.back();
-              vm.initiatePayment();
-            },
-            style: ElevatedButton.styleFrom(backgroundColor: Colors.blue),
-            child: const Text('Proceed to Pay', style: TextStyle(color: Colors.white)),
-          ),
-        ],
-      ),
-    );
+    vm.initiatePayment();
   }
 
   void _showWalletPaymentConfirmation(BuildContext context, BookingSummaryViewModel vm, ProfileViewModel profileVm) {
@@ -1936,6 +1866,15 @@ class BookingSummaryView extends StatelessWidget {
   }
 
   void _showInsufficientBalanceDialog(BuildContext context, double amountToPay, ProfileViewModel profileVm) {
+    // 📊 Meta: wallet not enough (counts as a payment drop reason)
+    final vm = Get.find<BookingSummaryViewModel>();
+    MetaEvents.paymentFailed(
+      turf: vm.turf,
+      method: 'wallet',
+      amount: amountToPay,
+      reason: 'wallet_insufficient',
+    );
+
     Get.dialog(
       AlertDialog(
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),

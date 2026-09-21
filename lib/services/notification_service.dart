@@ -1,4 +1,6 @@
 // services/notification_service.dart - FIXED duplicate API calls
+// ✅ FIX (Sep 2026): notification opened from tray no longer shows a SECOND
+//    tray notification; parallel history fetches share one request.
 
 import 'dart:async';
 import 'dart:convert';
@@ -13,6 +15,12 @@ import 'package:timezone/timezone.dart' as tz;
 import 'package:timezone/data/latest.dart' as tz;
 import '../services/shared_prefs_helper.dart';
 import '../models/notification_model.dart';
+import '../routes/app_routes.dart';
+import '../view_models/main_page_view_model.dart';
+import '../view_models/wallet_view_model.dart';
+import '../view_models/coin_view_model.dart';
+import '../views/wallet_transactions_view.dart';
+import '../views/coin_transactions_view.dart';
 
 class NotificationService extends GetxService {
   final notifications = <NotificationItem>[].obs;
@@ -125,14 +133,34 @@ class NotificationService extends GetxService {
     }
   }
 
+  // ✅ FIX: '/my-bookings', '/wallet', '/coins' were not registered routes →
+  //    tapping a notification opened an unknown route. Now uses real screens.
   void _handleNavigation(Map<String, dynamic> data) {
-    final type = data['type'];
+    final type = (data['type'] ?? data['notification_type'] ?? '').toString();
+    final token = SharedPrefsHelper.getToken();
+    if (token == null || token.isEmpty) return;
+
     if (type == 'booking' || type == 'booking_confirmed') {
-      Get.toNamed('/my-bookings');
+      if (Get.currentRoute != AppRoutes.mainPage) {
+        Get.offAllNamed(AppRoutes.mainPage);
+      }
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (Get.isRegistered<MainPageViewModel>()) {
+          Get.find<MainPageViewModel>().changeTab(1);
+        }
+      });
     } else if (type == 'wallet' || type == 'wallet_topup') {
-      Get.toNamed('/wallet');
+      if (Get.isRegistered<WalletViewModel>()) {
+        Get.find<WalletViewModel>().loadWalletData(forceRefresh: true);
+      }
+      Get.to(() => const WalletTransactionsView());
     } else if (type == 'coins' || type == 'coins_earned') {
-      Get.toNamed('/coins');
+      if (Get.isRegistered<CoinViewModel>()) {
+        Get.find<CoinViewModel>().loadCoinData();
+      }
+      Get.to(() => const CoinTransactionsView());
+    } else if (Get.currentRoute != AppRoutes.notifications) {
+      Get.toNamed(AppRoutes.notifications);
     }
   }
 
@@ -188,23 +216,39 @@ class NotificationService extends GetxService {
   void _setupForegroundHandler() {
     FirebaseMessaging.onMessage.listen((RemoteMessage message) {
       print('📱 Foreground notification received');
-      _handleIncomingNotification(message);
+      _handleIncomingNotification(message, showInTray: true);
     });
 
+    // Opened from the tray → Android already showed it; just record + navigate
     FirebaseMessaging.instance.getInitialMessage().then((message) {
       if (message != null) {
         print('📱 App opened from terminated state');
-        _handleIncomingNotification(message);
+        _handleIncomingNotification(message, showInTray: false);
+        _navigateLater(message.data);
       }
+    }).catchError((e) {
+      print('⚠️ getInitialMessage error: $e');
     });
 
     FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
       print('📱 App opened from background');
-      _handleIncomingNotification(message);
+      _handleIncomingNotification(message, showInTray: false);
+      _navigateLater(message.data);
     });
   }
 
-  void _handleIncomingNotification(RemoteMessage message) {
+  void _navigateLater(Map<String, dynamic> data) {
+    // wait until the first screens are on the navigator
+    Future.delayed(const Duration(milliseconds: 1500), () {
+      try {
+        _handleNavigation(data);
+      } catch (e) {
+        print('⚠️ Notification navigation error: $e');
+      }
+    });
+  }
+
+  void _handleIncomingNotification(RemoteMessage message, {bool showInTray = true}) {
     try {
       final data = message.data;
       final notification = message.notification;
@@ -245,33 +289,51 @@ class NotificationService extends GetxService {
 
       _notificationController.add(notificationItem);
 
-      _showSystemNotification(
-        title: notificationItem.title,
-        body: notificationItem.body,
-        payload: jsonEncode(data),
-        notificationId: msgId,
-      );
+      if (showInTray) {
+        _showSystemNotification(
+          title: notificationItem.title,
+          body: notificationItem.body,
+          payload: jsonEncode(data),
+          notificationId: msgId,
+        );
+      }
 
 
       print('✅ Notification saved: ${notificationItem.title}');
 
-      _debouncedRefresh();
+      // ✅ No API call here: the push already contains the notification and it
+      //    was added to the list above. Re-fetching the whole list on every push
+      //    meant one extra API call per notification.
 
     } catch (e) {
       print('❌ Error handling notification: $e');
     }
   }
 
-  void _debouncedRefresh() {
-    _refreshDebounceTimer?.cancel();
-    _refreshDebounceTimer = Timer(_debounceDuration, () {
-      refreshFromBackend();
-    });
-  }
 
 
+
+  static final Map<String, Future<List<NotificationItem>>> _inFlightFetches = {};
 
   Future<List<NotificationItem>> fetchFromBackend({
+    int offset = 0,
+    int limit = 20,
+    bool forceRefresh = false,
+  }) {
+    // ✅ Same page already being fetched → share that request
+    final key = '$offset-$limit';
+    final running = _inFlightFetches[key];
+    if (running != null) {
+      print('⏳ Notifications page $key already loading - sharing request');
+      return running;
+    }
+    final f = _fetchFromBackendInternal(offset: offset, limit: limit, forceRefresh: forceRefresh);
+    _inFlightFetches[key] = f;
+    f.whenComplete(() => _inFlightFetches.remove(key));
+    return f;
+  }
+
+  Future<List<NotificationItem>> _fetchFromBackendInternal({
     int offset = 0,
     int limit = 20,
     bool forceRefresh = false,
@@ -281,10 +343,6 @@ class NotificationService extends GetxService {
       return [];
     }
 
-    if (_isFetching && !forceRefresh) {
-      print('⏭️ Notifications already being fetched, skipping duplicate...');
-      return [];
-    }
 
     if (!forceRefresh && _lastFetchTime != null) {
       final age = DateTime.now().difference(_lastFetchTime!);
@@ -308,7 +366,7 @@ class NotificationService extends GetxService {
           'Authorization': 'Bearer $token',
           'Content-Type': 'application/json',
         },
-      );
+      ).timeout(const Duration(seconds: 20));
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -321,9 +379,8 @@ class NotificationService extends GetxService {
             type: json['notification_type'] ?? json['type'] ?? 'general',
             title: json['title'] ?? '',
             body: json['body'] ?? json['message'] ?? '',
-            sentAt: json['sent_at'] != null
-                ? DateTime.parse(json['sent_at'])
-                : DateTime.now(),
+            // ✅ tryParse: a bad date from the server must not crash the list
+            sentAt: DateTime.tryParse(json['sent_at']?.toString() ?? '') ?? DateTime.now(),
             isRead: json['is_read'] ?? false,
           );
         }).toList();

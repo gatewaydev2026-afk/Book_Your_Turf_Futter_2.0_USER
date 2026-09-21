@@ -4,6 +4,9 @@
 // ✅ Cache management
 // ✅ Small snackbar with 1-second duration at TOP
 // ✅ REMOVED image_picker dependency (no longer needed)
+// ✅ FIX (Sep 2026): fetchUser is single-flight – a caller that arrives while a
+//    fetch is running now WAITS for it (it used to return instantly with stale
+//    wallet balance). refresh() now really waits, so pull-to-refresh is correct.
 
 import 'dart:io';
 import 'dart:async';
@@ -57,6 +60,8 @@ class ProfileViewModel extends GetxController {
 
   // ✅ DUPLICATE API CALL PREVENTION
   static bool _isFetchingProfile = false;
+  static Future<void>? _profileFetchFuture;
+  static DateTime? _lastForcedFetch;
   static DateTime? _lastFetchCallTime;
   static const _minFetchInterval = Duration(seconds: 3);
   Timer? _refreshDebounceTimer;
@@ -112,6 +117,33 @@ class ProfileViewModel extends GetxController {
   // 📡 FETCH USER PROFILE
   // ============================================================
   Future<void> fetchUser({bool forceRefresh = false}) async {
+    // ✅ A fetch is running → wait for its result instead of calling again
+    final running = _profileFetchFuture;
+    if (running != null) {
+      print('⏳ Profile fetch in progress - waiting for it');
+      await running;
+      // A normal caller is happy with that result. A forced caller (e.g. after
+      // a wallet payment) needs data fetched AFTER its own action → fetch again,
+      // unless another fetch already started meanwhile.
+      if (!forceRefresh) return;
+      final again = _profileFetchFuture;
+      if (again != null) {
+        await again;
+        return;
+      }
+    }
+
+    final completer = Completer<void>();
+    _profileFetchFuture = completer.future;
+    try {
+      await _fetchUserInternal(forceRefresh: forceRefresh);
+    } finally {
+      _profileFetchFuture = null;
+      completer.complete();
+    }
+  }
+
+  Future<void> _fetchUserInternal({bool forceRefresh = false}) async {
     final token = SharedPrefsHelper.getToken();
     if (token == null || token.isEmpty) {
       print('🚫 No token, skipping profile fetch');
@@ -169,6 +201,7 @@ class ProfileViewModel extends GetxController {
         _initialFetchDone = true;
         _lastFetchTime = DateTime.now();
         _lastFetchCallTime = DateTime.now();
+        if (forceRefresh) _lastForcedFetch = DateTime.now();
         await SharedPrefsHelper.setLastProfileFetch(DateTime.now());
 
         // ✅ Update cache manager
@@ -622,16 +655,27 @@ class ProfileViewModel extends GetxController {
   // ============================================================
   // 🔄 REFRESH PROFILE
   // ============================================================
-  Future<void> refresh() async {
+  Completer<void>? _refreshCompleter;
+
+  /// Debounced (500 ms) but awaitable: callers wait until the data is back.
+  /// Only the profile cache is cleared (turfs / bookings caches are kept).
+  Future<void> refresh() {
     _refreshDebounceTimer?.cancel();
+    final completer = _refreshCompleter ??= Completer<void>();
     _refreshDebounceTimer = Timer(_refreshDebounceDuration, () async {
-      _initialFetchDone = false;
-      if (Get.isRegistered<CacheManager>()) {
-        Get.find<CacheManager>().clearAllCaches();
+      _refreshCompleter = null;
+      try {
+        _initialFetchDone = false;
+        _lastForcedFetch = null;
+        await fetchUser(forceRefresh: true);
+        imageVersion.value++;
+      } catch (e) {
+        print('❌ Profile refresh error: $e');
+      } finally {
+        if (!completer.isCompleted) completer.complete();
       }
-      await fetchUser(forceRefresh: true);
-      imageVersion.value++;
     });
+    return completer.future;
   }
 
   // ============================================================
@@ -643,6 +687,7 @@ class ProfileViewModel extends GetxController {
     _cachedUserData = null;
     _isFetchingProfile = false;
     _lastFetchCallTime = null;
+    _lastForcedFetch = null;
     print('🔄 Profile cache reset');
   }
 

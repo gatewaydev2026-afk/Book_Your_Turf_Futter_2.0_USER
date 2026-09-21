@@ -211,9 +211,15 @@ class BookingHistoryView extends StatelessWidget {
     final screenWidth = MediaQuery.of(context).size.width;
     final isSmallScreen = screenWidth < 380;
 
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      vm.loadBookings();
-    });
+    // ✅ Inside MainPage the tab loader fetches bookings when this tab is opened.
+    //    Only load here when the screen is opened on its own route
+    //    (it used to call the API on every rebuild, even while Home was visible).
+    if (Get.currentRoute != AppRoutes.mainPage) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        await vm.loadBookings();
+        vm.logHistoryView(); // 📊 Meta (throttled inside)
+      });
+    }
 
     // ✅ FIXED: Proper background with glass nav support
     return Scaffold(

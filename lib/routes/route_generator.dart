@@ -28,6 +28,10 @@ import '../views/favorites_view.dart';
 import 'app_routes.dart';
 
 class RouteGenerator {
+  // ✅ Any unknown route falls back to the main page instead of crashing
+  static final GetPage unknownRoute =
+      GetPage(name: '/not-found', page: () => const MainPage());
+
   static List<GetPage> routes = [
     GetPage(name: AppRoutes.splash, page: () => const SplashView()),
     GetPage(name: AppRoutes.guestOrLogin, page: () =>  GuestOrLoginView()),
@@ -36,6 +40,13 @@ class RouteGenerator {
     // ✅ Phone Auth Routes (NEW)
     GetPage(name: AppRoutes.phoneLogin, page: () => const GuestOrLoginView(), transition: Transition.rightToLeft),
     GetPage(name: AppRoutes.phoneOtpVerification, page: () => const PhoneOtpVerificationView(), transition: Transition.rightToLeft),
+
+    // ✅ FIX (Sep 2026): '/login', '/register', '/forgot-password' are still used
+    //    all over the app (401, logout, "Login" buttons, deep links) but were not
+    //    registered → navigating there failed. They now open the phone-login screen.
+    GetPage(name: AppRoutes.login, page: () => const GuestOrLoginView()),
+    GetPage(name: AppRoutes.register, page: () => const GuestOrLoginView()),
+    GetPage(name: AppRoutes.forgotPassword, page: () => const GuestOrLoginView()),
 
     // Legacy auth routes (keep for backward compatibility)
     // GetPage(name: AppRoutes.login, page: () => const LoginView(), transition: Transition.rightToLeft),

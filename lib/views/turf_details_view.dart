@@ -1,6 +1,7 @@
 // turf_details_view.dart - NO API CALL, Use passed data only
 // ✅ FIXED: Arguments parsed once in initState, cached for rebuilds
 // ✅ Added Lemon Yellow Blinking Discount Badge below Verified badge
+// ✅ Meta: View Content (fb_mobile_content_view) with turf_id, city, sport + visit count
 
 import 'package:book_your_turf/widgets/sports_amentites.dart';
 import 'dart:async';
@@ -12,6 +13,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/turf_model.dart';
 import '../routes/app_routes.dart';
 import '../utils/helpers.dart';
+import '../services/meta_events_service.dart';
 
 class TurfDetailsView extends StatefulWidget {
   const TurfDetailsView({Key? key}) : super(key: key);
@@ -49,6 +51,11 @@ class _TurfDetailsViewState extends State<TurfDetailsView> with SingleTickerProv
 
     // ✅ Parse arguments ONCE in initState
     _parseArguments();
+
+    // 📊 Meta: turf page opened (once per screen open)
+    if (_isInitialized && _cachedTurf != null) {
+      MetaEvents.turfView(_cachedTurf!);
+    }
 
     // ✅ Initialize blinking animation
     _blinkController = AnimationController(

@@ -1,4 +1,6 @@
 // widgets/turf_card.dart - Fixed to show City, District, State
+// ✅ FIX (Sep 2026): No more "RenderFlex overflowed" on small phones –
+//    the image takes the space left in the grid cell, text keeps its size.
 
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
@@ -132,16 +134,16 @@ class _TurfCardState extends State<TurfCard> {
             ),
           ],
         ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Image Section ──────────────────────────────────────
+        child: LayoutBuilder(builder: (context, constraints) {
+          // Grid cell → bounded height → image flexes. Otherwise fixed 120.
+          final bool bounded = constraints.maxHeight.isFinite;
+          final Widget imageSection =
             ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
               child: SizedBox(
-                height: 120,
+                height: bounded ? null : 120,
                 width: double.infinity,
                 child: Stack(
                   fit: StackFit.expand,
@@ -294,11 +296,16 @@ class _TurfCardState extends State<TurfCard> {
                   ],
                 ),
               ),
-            ),
+            );
+
+          return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            // ── Image Section ──────────────────────────────────────
+            if (bounded) Expanded(child: imageSection) else imageSection,
 
             // ── Content Section ────────────────────────────────────
-            Flexible(
-              child: Padding(
+            Padding(
                 padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -433,13 +440,17 @@ class _TurfCardState extends State<TurfCard> {
                               size: 10,
                             ),
                             const SizedBox(width: 4),
-                            Text(
-                              latestTurf.isBookable
-                                  ? 'Book Now'
-                                  : 'View Details',
-                              style: const TextStyle(
-                                fontSize: 10,
-                                fontWeight: FontWeight.bold,
+                            Flexible(
+                              child: Text(
+                                latestTurf.isBookable
+                                    ? 'Book Now'
+                                    : 'View Details',
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  fontWeight: FontWeight.bold,
+                                ),
                               ),
                             ),
                           ],
@@ -448,10 +459,10 @@ class _TurfCardState extends State<TurfCard> {
                     ),
                   ],
                 ),
-              ),
             ),
           ],
-        ),
+        );
+        }),
       ),
     );
   }
