@@ -1286,7 +1286,7 @@ class BookingSummaryViewModel extends GetxController {
 
     final options = {
       'key': razorpayKey,
-      'timeout': 120,
+      'timeout': 420,
       'amount': amountInPaise,
       'name': 'Book Your Turf',
       'description': description,
@@ -1425,7 +1425,7 @@ class BookingSummaryViewModel extends GetxController {
       Future.delayed(const Duration(seconds: 3), () {
         _showSmallSnackbar(
           'Payment Failed',
-          'Please try again. The slot will be unlocked after 120 seconds.',
+          'Please try again. The slot will be unlocked after 420 seconds.',
           Colors.red,
         );
       });
