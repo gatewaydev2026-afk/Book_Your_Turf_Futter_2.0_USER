@@ -106,9 +106,11 @@ class _ProfileViewState extends State<ProfileView> {
                           alignment: Alignment.bottomCenter,
                           child: Padding(
                             padding: EdgeInsets.only(bottom: 20 * scale),
-                            child: Transform.scale(
-                              scale: scale,
-                              child: Column(
+                            // Every child below already uses `scale`. Applying
+                            // Transform.scale as well does not reduce the
+                            // Column's layout size, causing a small overflow
+                            // while the SliverAppBar collapses.
+                            child: Column(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
                                   // Profile Image with Edit Icon
@@ -211,7 +213,6 @@ class _ProfileViewState extends State<ProfileView> {
                                     ),
                                   ),
                                 ],
-                              ),
                             ),
                           ),
                         ),

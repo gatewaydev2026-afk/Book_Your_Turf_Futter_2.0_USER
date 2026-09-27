@@ -59,7 +59,7 @@ class _MainPageState extends State<MainPage> {
   @override
   Widget build(BuildContext context) {
     return Obx(
-          () => Scaffold(
+      () => Scaffold(
         // ✅ FIXED: Make scaffold background transparent
         backgroundColor: Colors.transparent,
         body: Stack(
@@ -99,7 +99,7 @@ class _MainPageState extends State<MainPage> {
   Widget _buildGlassNavigationBar() {
     return Obx(
           () => Container(
-        height: 65,
+        height: 56,
         margin: EdgeInsets.fromLTRB(
           16,
           2,

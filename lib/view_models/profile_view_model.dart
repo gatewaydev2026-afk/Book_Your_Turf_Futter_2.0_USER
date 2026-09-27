@@ -332,7 +332,10 @@ class ProfileViewModel extends GetxController {
       return false;
     }
 
-    if (name.isEmpty || email.isEmpty) {
+    final normalizedName = name.trim();
+    final normalizedEmail = email.trim().toLowerCase();
+
+    if (normalizedName.isEmpty || normalizedEmail.isEmpty) {
       return false;
     }
 
@@ -349,28 +352,82 @@ class ProfileViewModel extends GetxController {
       final response = await dio.patch(
         AppConfig.profileUpdate,
         data: {
-          'name': name.trim(),
-          'email': email.trim(),
+          'name': normalizedName,
+          'email': normalizedEmail,
         },
+        // Be explicit here instead of relying on the app-wide default. This
+        // keeps the booking profile update JSON on both Android and iOS.
+        options: Options(contentType: Headers.jsonContentType),
       );
 
-      if (response.data['result'] == 'success') {
+      final data = response.data;
+      final isSuccess = data is Map &&
+          (data['result']?.toString().toLowerCase() == 'success' ||
+              data['status']?.toString().toLowerCase() == 'success');
+      if (isSuccess) {
         // ✅ Update local values directly without extra API call
-        this.name.value = name.trim();
-        this.email.value = email.trim();
+        this.name.value = normalizedName;
+        this.email.value = normalizedEmail;
         profileComplete.value = true;
 
-        // ✅ Save to SharedPreferences
-        await SharedPrefsHelper.setUserName(name.trim());
-        await SharedPrefsHelper.setUserEmail(email.trim());
+        // Persist before continuing to Razorpay. iOS can open the native
+        // checkout immediately, so it must never read stale/empty prefills.
+        await SharedPrefsHelper.setUserName(normalizedName);
+        await SharedPrefsHelper.setUserEmail(normalizedEmail);
         await SharedPrefsHelper.setProfileComplete(true);
+
+        if (Get.isRegistered<CacheManager>()) {
+          final cached = Map<String, dynamic>.from(_cachedUserData ?? {});
+          cached['name'] = normalizedName;
+          cached['email'] = normalizedEmail;
+          _cachedUserData = cached;
+          Get.find<CacheManager>().setCachedProfile(cached);
+        }
 
         print('✅ Profile updated successfully for booking');
         return true;
       } else {
-        print('❌ Profile update failed: ${response.data['message']}');
+        print('❌ Profile update failed: ${data is Map ? data['message'] : data}');
         return false;
       }
+    } on DioException catch (e) {
+      // A few deployments reject PATCH at the edge even though the profile
+      // endpoint supports an update. Retry through the conventional override
+      // rather than stopping a newly registered user at payment.
+      if (e.response?.statusCode == 405 || e.response?.statusCode == 415) {
+        try {
+          final dio = Get.find<Dio>();
+          final response = await dio.post(
+            AppConfig.profileUpdate,
+            data: {
+              'name': normalizedName,
+              'email': normalizedEmail,
+              '_method': 'PATCH',
+            },
+            options: Options(
+              contentType: Headers.jsonContentType,
+              headers: const {'X-HTTP-Method-Override': 'PATCH'},
+            ),
+          );
+          final data = response.data;
+          final isSuccess = data is Map &&
+              (data['result']?.toString().toLowerCase() == 'success' ||
+                  data['status']?.toString().toLowerCase() == 'success');
+          if (isSuccess) {
+            this.name.value = normalizedName;
+            this.email.value = normalizedEmail;
+            profileComplete.value = true;
+            await SharedPrefsHelper.setUserName(normalizedName);
+            await SharedPrefsHelper.setUserEmail(normalizedEmail);
+            await SharedPrefsHelper.setProfileComplete(true);
+            return true;
+          }
+        } on DioException catch (fallbackError) {
+          print('❌ Profile update fallback failed: ${fallbackError.response?.data ?? fallbackError.message}');
+        }
+      }
+      print('❌ Error updating profile: ${e.response?.data ?? e.message}');
+      return false;
     } catch (e) {
       print('❌ Error updating profile: $e');
       return false;

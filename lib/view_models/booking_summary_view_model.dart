@@ -1292,8 +1292,14 @@ class BookingSummaryViewModel extends GetxController {
       'description': description,
       'order_id': orderData['razorpay_order_id'],
       'prefill': {
-        'contact': SharedPrefsHelper.getUserPhone() ?? '',
-        'email': SharedPrefsHelper.getUserEmail() ?? '',
+        // Read the live profile first. The native iOS Razorpay sheet may be
+        // presented before another SharedPreferences read becomes visible.
+        'contact': Get.find<ProfileViewModel>().phone.value.isNotEmpty
+            ? Get.find<ProfileViewModel>().phone.value
+            : (SharedPrefsHelper.getUserPhone() ?? ''),
+        'email': Get.find<ProfileViewModel>().email.value.isNotEmpty
+            ? Get.find<ProfileViewModel>().email.value
+            : (SharedPrefsHelper.getUserEmail() ?? ''),
       },
       'theme': {'color': '#66BB6A'},
       'modal': {

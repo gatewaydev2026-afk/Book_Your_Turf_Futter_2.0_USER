@@ -849,7 +849,16 @@ class _HomeViewState extends State<HomeView>
           key: const PageStorageKey<String>('home_turf_grid'),
           controller: _scrollController,
           physics: const AlwaysScrollableScrollPhysics(),
-          padding: const EdgeInsets.fromLTRB(16, 0, 16, 90),
+          // Keep the final turf card above the floating nav on iPhones. A
+          // fixed 90px inset was shorter than the iOS home-indicator inset
+          // plus the navigation bar, letting the next card image leak below
+          // the bar as a coloured strip.
+          padding: EdgeInsets.fromLTRB(
+            16,
+            0,
+            16,
+            MediaQuery.paddingOf(context).bottom + 56 + 24,
+          ),
           gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
             crossAxisCount: getCrossAxisCount(context),
             childAspectRatio: 0.68,
