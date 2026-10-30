@@ -25,6 +25,7 @@ import '../services/shared_prefs_helper.dart';
 import '../view_models/home_view_model.dart';
 import '../view_models/profile_view_model.dart';
 import '../widgets/turf_card.dart';
+import '../widgets/diwali_turf_animation.dart';
 import '../widgets/turf_skeleton.dart';
 import 'ChatbotView.dart';
 import 'notification_view.dart';
@@ -75,7 +76,8 @@ class _HomeViewState extends State<HomeView>
 
     _notificationService = Get.find<NotificationService>();
 
-    _notificationStreamSubscription = _notificationService.onNotificationReceived.listen((notification) {
+    _notificationStreamSubscription =
+        _notificationService.onNotificationReceived.listen((notification) {
       if (mounted) {
         _notificationService.updateUnreadCount();
       }
@@ -93,11 +95,14 @@ class _HomeViewState extends State<HomeView>
       vsync: this,
       duration: const Duration(milliseconds: 2000),
     );
-    _slideAnimation = Tween<Offset>(begin: Offset.zero, end: const Offset(0, -1)).animate(
-      CurvedAnimation(parent: _greetingAnimationController, curve: Curves.easeIn),
+    _slideAnimation =
+        Tween<Offset>(begin: Offset.zero, end: const Offset(0, -1)).animate(
+      CurvedAnimation(
+          parent: _greetingAnimationController, curve: Curves.easeIn),
     );
     _fadeAnimation = Tween<double>(begin: 1, end: 0).animate(
-      CurvedAnimation(parent: _greetingAnimationController, curve: Curves.easeOut),
+      CurvedAnimation(
+          parent: _greetingAnimationController, curve: Curves.easeOut),
     );
     _greetingAnimationController.forward().then((_) {
       if (mounted) setState(() => _showGreeting = false);
@@ -111,7 +116,8 @@ class _HomeViewState extends State<HomeView>
       begin: 125,
       end: 38,
     ).animate(
-      CurvedAnimation(parent: _categoryAnimationController, curve: Curves.easeInOut),
+      CurvedAnimation(
+          parent: _categoryAnimationController, curve: Curves.easeInOut),
     );
 
     _listenToProfileChanges();
@@ -221,7 +227,8 @@ class _HomeViewState extends State<HomeView>
     });
   }
 
-  Future<void> _handleClick(String actionId, Future<void> Function() action) async {
+  Future<void> _handleClick(
+      String actionId, Future<void> Function() action) async {
     if (_isDebounced(actionId)) return;
     await action();
   }
@@ -242,7 +249,8 @@ class _HomeViewState extends State<HomeView>
       //    calls the API when the list is older than the cache duration.
       final now = DateTime.now();
       if (_dataLoaded &&
-          (_lastResumeLoad == null || now.difference(_lastResumeLoad!) > const Duration(minutes: 1))) {
+          (_lastResumeLoad == null ||
+              now.difference(_lastResumeLoad!) > const Duration(minutes: 1))) {
         _lastResumeLoad = now;
         _loadHomeData();
       }
@@ -275,10 +283,12 @@ class _HomeViewState extends State<HomeView>
       String url;
       if (homeVm.currentLocation.value != null) {
         final pos = homeVm.currentLocation.value!;
-        url = "https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}";
+        url =
+            "https://www.google.com/maps/search/?api=1&query=${pos.latitude},${pos.longitude}";
       } else {
         const fallback = "KK Nagar, Madurai";
-        url = "https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(fallback)}";
+        url =
+            "https://www.google.com/maps/search/?api=1&query=${Uri.encodeComponent(fallback)}";
       }
       try {
         if (await canLaunchUrl(Uri.parse(url))) {
@@ -330,7 +340,8 @@ class _HomeViewState extends State<HomeView>
     Get.dialog(
       AlertDialog(
         title: const Text('Login Required'),
-        content: const Text('Please login to view your profile and access all features.'),
+        content: const Text(
+            'Please login to view your profile and access all features.'),
         actions: [
           TextButton(
             onPressed: () => Get.back(),
@@ -387,15 +398,15 @@ class _HomeViewState extends State<HomeView>
                       height: 30,
                       alignment: Alignment.center,
                       child: Obx(() => Text(
-                        homeVm.isGuestMode.value
-                            ? "Hello Guest! 👋"
-                            : "Hello $_cachedUserName!",
-                        style: const TextStyle(
-                          fontSize: 12,
-                          fontWeight: FontWeight.bold,
-                          color: Colors.green,
-                        ),
-                      )),
+                            homeVm.isGuestMode.value
+                                ? "Hello Guest! 👋"
+                                : "Hello $_cachedUserName!",
+                            style: const TextStyle(
+                              fontSize: 12,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.green,
+                            ),
+                          )),
                     ),
                   if (!_showGreeting) _headerSection(context),
                   _searchBar(),
@@ -460,8 +471,10 @@ class _HomeViewState extends State<HomeView>
               ),
               borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: isSelected ? Colors.white : Colors.transparent,
-                width: 2,
+                color: isSelected
+                    ? Colors.white
+                    : const Color(0xFFFFD166).withValues(alpha: 0.72),
+                width: isSelected ? 2 : 1,
               ),
               boxShadow: [
                 BoxShadow(
@@ -473,28 +486,30 @@ class _HomeViewState extends State<HomeView>
             ),
             child: Row(
               children: [
-                Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: const Text(
-                      "All",
-                      style: TextStyle(
-                        fontSize: 20,
-                        fontWeight: FontWeight.w700,
-                        color: Colors.white,
-                        letterSpacing: 0.2,
-                      ),
-                    ),
+                const Text(
+                  "All",
+                  style: TextStyle(
+                    fontSize: 20,
+                    fontWeight: FontWeight.w700,
+                    color: Colors.white,
+                    letterSpacing: 0.2,
                   ),
                 ),
-                Expanded(
+                const SizedBox(width: 10),
+                const DiwaliFilterBadge(),
+                const Spacer(),
+                const DiwaliFilterLampFirecracker(),
+                const SizedBox(width: 4),
+                SizedBox(
+                  width: 105,
                   child: Align(
                     alignment: Alignment.bottomRight,
                     child: Image.asset(
                       'assets/sports/all .png',
                       height: 80,
-                      fit: BoxFit.fill,
-                      errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                      fit: BoxFit.contain,
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox(),
                     ),
                   ),
                 ),
@@ -508,9 +523,24 @@ class _HomeViewState extends State<HomeView>
 
   Widget _threeCategoriesRow() {
     final categories = [
-      {"name": "Cricket &\n Football", "filter": "Football", "image1": "assets/sports/human_cricket.png", "colors": [const Color(0xffFF9A9E), const Color(0xffF6416C)]},
-      {"name": "Pickleball", "filter": "Pickleball", "image1": "assets/sports/human_pickle.png", "colors": [const Color(0xff43CEA2), const Color(0xff185A9D)]},
-      {"name": "Badminton", "filter": "Badminton", "image1": "assets/sports/human_badminton.png", "colors": [const Color(0xffFDC830), const Color(0xffF37335)]},
+      {
+        "name": "Cricket &\n Football",
+        "filter": "Football",
+        "image1": "assets/sports/human_cricket.png",
+        "colors": [const Color(0xffFF9A9E), const Color(0xffF6416C)]
+      },
+      {
+        "name": "Pickleball",
+        "filter": "Pickleball",
+        "image1": "assets/sports/human_pickle.png",
+        "colors": [const Color(0xff43CEA2), const Color(0xff185A9D)]
+      },
+      {
+        "name": "Badminton",
+        "filter": "Badminton",
+        "image1": "assets/sports/human_badminton.png",
+        "colors": [const Color(0xffFDC830), const Color(0xffF37335)]
+      },
     ];
 
     return Padding(
@@ -541,7 +571,8 @@ class _HomeViewState extends State<HomeView>
                       ),
                       boxShadow: [
                         BoxShadow(
-                          color: (category["colors"] as List<Color>)[1].withOpacity(0.25),
+                          color: (category["colors"] as List<Color>)[1]
+                              .withOpacity(0.25),
                           blurRadius: 6,
                           offset: const Offset(0, 2),
                         ),
@@ -555,7 +586,8 @@ class _HomeViewState extends State<HomeView>
                             category["image1"] as String,
                             height: 100,
                             fit: BoxFit.fill,
-                            errorBuilder: (context, error, stackTrace) => const SizedBox(),
+                            errorBuilder: (context, error, stackTrace) =>
+                                const SizedBox(),
                           ),
                           Center(
                             child: Text(
@@ -575,6 +607,11 @@ class _HomeViewState extends State<HomeView>
                                 ],
                               ),
                             ),
+                          ),
+                          const Positioned(
+                            right: 1,
+                            bottom: 1,
+                            child: DiwaliFilterLampFirecracker(size: 22),
                           ),
                         ],
                       ),
@@ -610,8 +647,8 @@ class _HomeViewState extends State<HomeView>
           // ✅ Expanded must be the direct child of Row (Obx goes inside it)
           return Expanded(
             child: Obx(() {
-            final isSelected = homeVm.selectedCategory.value == filter;
-            return GestureDetector(
+              final isSelected = homeVm.selectedCategory.value == filter;
+              return GestureDetector(
                 onTap: () => _onCategoryTap(filter),
                 child: Container(
                   margin: const EdgeInsets.symmetric(horizontal: 2),
@@ -632,20 +669,27 @@ class _HomeViewState extends State<HomeView>
                         ),
                     ],
                   ),
-                  child: Center(
-                    child: Text(
-                      category["name"] as String,
-                      textAlign: TextAlign.center,
-                      style: TextStyle(
-                        fontSize: 8.5,
-                        fontWeight: FontWeight.w600,
-                        color: isSelected ? Colors.white : Colors.black87,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const DiwaliFilterLampFirecracker(size: 14),
+                      const SizedBox(width: 1),
+                      Flexible(
+                        child: Text(
+                          category["name"] as String,
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 8.5,
+                            fontWeight: FontWeight.w600,
+                            color: isSelected ? Colors.white : Colors.black87,
+                          ),
+                        ),
                       ),
-                    ),
+                    ],
                   ),
                 ),
-            );
-          }),
+              );
+            }),
           );
         }),
       ),
@@ -748,7 +792,9 @@ class _HomeViewState extends State<HomeView>
 
   Widget _buildMainContent() {
     return Obx(() {
-      if (homeVm.isLoading.value && homeVm.turfs.isEmpty && !homeVm.isSearching.value) {
+      if (homeVm.isLoading.value &&
+          homeVm.turfs.isEmpty &&
+          !homeVm.isSearching.value) {
         return GridView.builder(
           controller: _scrollController,
           padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -811,9 +857,9 @@ class _HomeViewState extends State<HomeView>
             ),
             trailing: turf.distanceKm != null
                 ? Text(
-              '${turf.distanceKm!.toStringAsFixed(1)} km',
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
-            )
+                    '${turf.distanceKm!.toStringAsFixed(1)} km',
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
+                  )
                 : null,
             onTap: () {
               _searchController.text = turf.name;
@@ -835,8 +881,10 @@ class _HomeViewState extends State<HomeView>
           // ✅ Only the grid's own vertical scroll triggers load-more
           if (scrollInfo.depth == 0 &&
               scrollInfo.metrics.axis == Axis.vertical &&
-              (scrollInfo is ScrollUpdateNotification || scrollInfo is ScrollEndNotification) &&
-              scrollInfo.metrics.pixels >= scrollInfo.metrics.maxScrollExtent - 300) {
+              (scrollInfo is ScrollUpdateNotification ||
+                  scrollInfo is ScrollEndNotification) &&
+              scrollInfo.metrics.pixels >=
+                  scrollInfo.metrics.maxScrollExtent - 300) {
             if (!homeVm.isLoadingMore.value && homeVm.hasMoreData) {
               homeVm.loadMoreTurfs();
             }
@@ -925,7 +973,7 @@ class _HomeViewState extends State<HomeView>
             'assets/lottie/no.json',
             height: 120,
             errorBuilder: (_, __, ___) =>
-            const Icon(Icons.search_off, size: 80, color: Colors.grey),
+                const Icon(Icons.search_off, size: 80, color: Colors.grey),
           ),
           const SizedBox(height: 16),
           Text(
@@ -946,10 +994,12 @@ class _HomeViewState extends State<HomeView>
               _searchFocusNode.unfocus();
             },
             icon: const Icon(Icons.close, color: Colors.white),
-            label: const Text("Clear Search", style: TextStyle(color: Colors.white)),
+            label: const Text("Clear Search",
+                style: TextStyle(color: Colors.white)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ],
@@ -965,7 +1015,8 @@ class _HomeViewState extends State<HomeView>
           Lottie.asset(
             'assets/lottie/no.json',
             height: 120,
-            errorBuilder: (_, __, ___) => const Icon(Icons.search_off, size: 80, color: Colors.grey),
+            errorBuilder: (_, __, ___) =>
+                const Icon(Icons.search_off, size: 80, color: Colors.grey),
           ),
           const SizedBox(height: 16),
           const Text(
@@ -974,17 +1025,21 @@ class _HomeViewState extends State<HomeView>
           ),
           const SizedBox(height: 8),
           Text(
-            homeVm.locationError.value.isNotEmpty ? homeVm.locationError.value : "Try refreshing",
+            homeVm.locationError.value.isNotEmpty
+                ? homeVm.locationError.value
+                : "Try refreshing",
             style: const TextStyle(color: Colors.grey, fontSize: 12),
           ),
           const SizedBox(height: 16),
           ElevatedButton.icon(
             onPressed: () => _handleRefresh(),
             icon: const Icon(Icons.refresh, color: Colors.white),
-            label: const Text("Refresh Now", style: TextStyle(color: Colors.white)),
+            label: const Text("Refresh Now",
+                style: TextStyle(color: Colors.white)),
             style: ElevatedButton.styleFrom(
               backgroundColor: Colors.green,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
             ),
           ),
         ],
@@ -1021,11 +1076,14 @@ class _HomeViewState extends State<HomeView>
                         ],
                       ),
                       child: CircleAvatar(
-                        radius: MediaQuery.of(context).size.width > 600 ? 26 : 22,
+                        radius:
+                            MediaQuery.of(context).size.width > 600 ? 26 : 22,
                         backgroundColor: Colors.grey[200],
                         backgroundImage: (!isGuest && profileImage.isNotEmpty)
-                            ? NetworkImage('${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
-                            : const AssetImage('assets/images/person_1.png') as ImageProvider,
+                            ? NetworkImage(
+                                '${profileVm.profileImageUrl.value}?v=${profileVm.imageVersion.value}')
+                            : const AssetImage('assets/images/person_1.png')
+                                as ImageProvider,
                       ),
                     ),
                   ),
@@ -1054,7 +1112,9 @@ class _HomeViewState extends State<HomeView>
                             SizedBox(
                               height: 20,
                               width: 20,
-                              child: Lottie.asset('assets/lottie/Hand.json', errorBuilder: (_, __, ___) => const SizedBox()),
+                              child: Lottie.asset('assets/lottie/Hand.json',
+                                  errorBuilder: (_, __, ___) =>
+                                      const SizedBox()),
                             ),
                             if (isGuest)
                               // ✅ Chips shrink instead of overflowing on narrow phones
@@ -1065,45 +1125,54 @@ class _HomeViewState extends State<HomeView>
                                   child: Row(
                                     mainAxisSize: MainAxisSize.min,
                                     children: [
-                              Container(
-                                margin: const EdgeInsets.only(left: 6),
-                                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                decoration: BoxDecoration(
-                                  color: Colors.grey.shade100,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: Colors.grey.shade300, width: 0.6),
-                                ),
-                                child: Text(
-                                  'Guest',
-                                  style: TextStyle(
-                                    fontSize: 10,
-                                    fontWeight: FontWeight.w600,
-                                    color: Colors.grey.shade700,
-                                  ),
-                                ),
-                              ),
-                              GestureDetector(
-                                onTap: () {
-                                  Get.offAllNamed(AppRoutes.login);
-                                },
-                                child: Container(
-                                  margin: const EdgeInsets.only(left: 6),
-                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50,
-                                    borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: Colors.green.shade300, width: 0.5),
-                                  ),
-                                  child: Text(
-                                    'Login',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.w600,
-                                      color: Colors.green.shade700,
-                                    ),
-                                  ),
-                                ),
-                              ),
+                                      Container(
+                                        margin: const EdgeInsets.only(left: 6),
+                                        padding: const EdgeInsets.symmetric(
+                                            horizontal: 8, vertical: 3),
+                                        decoration: BoxDecoration(
+                                          color: Colors.grey.shade100,
+                                          borderRadius:
+                                              BorderRadius.circular(12),
+                                          border: Border.all(
+                                              color: Colors.grey.shade300,
+                                              width: 0.6),
+                                        ),
+                                        child: Text(
+                                          'Guest',
+                                          style: TextStyle(
+                                            fontSize: 10,
+                                            fontWeight: FontWeight.w600,
+                                            color: Colors.grey.shade700,
+                                          ),
+                                        ),
+                                      ),
+                                      GestureDetector(
+                                        onTap: () {
+                                          Get.offAllNamed(AppRoutes.login);
+                                        },
+                                        child: Container(
+                                          margin:
+                                              const EdgeInsets.only(left: 6),
+                                          padding: const EdgeInsets.symmetric(
+                                              horizontal: 8, vertical: 3),
+                                          decoration: BoxDecoration(
+                                            color: Colors.green.shade50,
+                                            borderRadius:
+                                                BorderRadius.circular(12),
+                                            border: Border.all(
+                                                color: Colors.green.shade300,
+                                                width: 0.5),
+                                          ),
+                                          child: Text(
+                                            'Login',
+                                            style: TextStyle(
+                                              fontSize: 10,
+                                              fontWeight: FontWeight.w600,
+                                              color: Colors.green.shade700,
+                                            ),
+                                          ),
+                                        ),
+                                      ),
                                     ],
                                   ),
                                 ),
@@ -1114,13 +1183,16 @@ class _HomeViewState extends State<HomeView>
                           onTap: _openLocationInMap,
                           child: Row(
                             children: [
-                              Icon(Icons.location_on, size: 14, color: Colors.green.shade600),
+                              Icon(Icons.location_on,
+                                  size: 14, color: Colors.green.shade600),
                               const SizedBox(width: 4),
                               Expanded(
                                 child: Obx(
-                                      () => Text(
+                                  () => Text(
                                     homeVm.currentLocationName.value.isEmpty
-                                        ? (homeVm.isLocationLoading.value ? "Fetching location..." : "Location unavailable")
+                                        ? (homeVm.isLocationLoading.value
+                                            ? "Fetching location..."
+                                            : "Location unavailable")
                                         : homeVm.currentLocationName.value,
                                     style: TextStyle(
                                       fontSize: 12,
@@ -1152,29 +1224,31 @@ class _HomeViewState extends State<HomeView>
               ),
             ),
             Obx(() => Container(
-              width: 40,
-              height: 40,
-              decoration: BoxDecoration(
-                color: Colors.grey.shade100,
-                borderRadius: BorderRadius.circular(20),
-                border: Border.all(color: Colors.grey.shade200, width: 1),
-              ),
-              child: IconButton(
-                padding: EdgeInsets.zero,
-                icon: homeVm.isRefreshing.value
-                    ? const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(
-                    strokeWidth: 2,
-                    color: Colors.green,
+                  width: 40,
+                  height: 40,
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(20),
+                    border: Border.all(color: Colors.grey.shade200, width: 1),
                   ),
-                )
-                    : const Icon(Icons.refresh, color: Colors.green, size: 22),
-                onPressed: homeVm.isRefreshing.value ? null : _handleRefresh,
-                tooltip: 'Refresh',
-              ),
-            )),
+                  child: IconButton(
+                    padding: EdgeInsets.zero,
+                    icon: homeVm.isRefreshing.value
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.green,
+                            ),
+                          )
+                        : const Icon(Icons.refresh,
+                            color: Colors.green, size: 22),
+                    onPressed:
+                        homeVm.isRefreshing.value ? null : _handleRefresh,
+                    tooltip: 'Refresh',
+                  ),
+                )),
             const SizedBox(width: 8),
             Obx(() {
               final count = _notificationService.unreadCount.value;
@@ -1191,7 +1265,8 @@ class _HomeViewState extends State<HomeView>
                     ),
                     child: IconButton(
                       padding: EdgeInsets.zero,
-                      icon: const Icon(Icons.notifications_outlined, color: Colors.green, size: 22),
+                      icon: const Icon(Icons.notifications_outlined,
+                          color: Colors.green, size: 22),
                       onPressed: () async {
                         await Get.to(() => NotificationScreen());
                         _notificationService.updateUnreadCount();

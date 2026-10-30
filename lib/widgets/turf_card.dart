@@ -2,12 +2,15 @@
 // ✅ FIX (Sep 2026): No more "RenderFlex overflowed" on small phones –
 //    the image takes the space left in the grid cell, text keeps its size.
 
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../models/turf_model.dart';
 import '../view_models/home_view_model.dart';
 import '../routes/app_routes.dart';
+import 'diwali_turf_animation.dart';
 
 class TurfCard extends StatefulWidget {
   final TurfModel turf;
@@ -33,7 +36,7 @@ class _TurfCardState extends State<TurfCard> {
     final isFavorited = homeVm.isFavorite(widget.turf.id);
 
     final latestTurf = homeVm.allTurfs.firstWhere(
-          (t) => t.id == widget.turf.id,
+      (t) => t.id == widget.turf.id,
       orElse: () => widget.turf,
     );
 
@@ -82,7 +85,8 @@ class _TurfCardState extends State<TurfCard> {
           : '';
     }
 
-    String district = latestTurf.district.isNotEmpty && latestTurf.district != 'null'
+    String district =
+        latestTurf.district.isNotEmpty && latestTurf.district != 'null'
         ? latestTurf.district
         : '';
 
@@ -124,21 +128,35 @@ class _TurfCardState extends State<TurfCard> {
       onTap: _handleTap,
       child: Container(
         decoration: BoxDecoration(
-          color: Colors.white,
+          gradient: const LinearGradient(
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+            colors: [Color(0xFFFFFFFF), Color(0xFFFFF4D6), Color(0xFFFFFBF2)],
+          ),
           borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: const Color(0xFFD69A19).withValues(alpha: 0.82),
+            width: 1.35,
+          ),
           boxShadow: [
             BoxShadow(
               color: Colors.black.withOpacity(0.06),
               blurRadius: 6,
               offset: const Offset(0, 2),
             ),
+            BoxShadow(
+              color: const Color(0xFFFFA000).withValues(alpha: 0.24),
+              blurRadius: 12,
+              spreadRadius: 0.7,
+              offset: const Offset(0, 3),
+            ),
           ],
         ),
-        child: LayoutBuilder(builder: (context, constraints) {
-          // Grid cell → bounded height → image flexes. Otherwise fixed 120.
-          final bool bounded = constraints.maxHeight.isFinite;
-          final Widget imageSection =
-            ClipRRect(
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            // Grid cell → bounded height → image flexes. Otherwise fixed 120.
+            final bool bounded = constraints.maxHeight.isFinite;
+            final Widget imageSection = ClipRRect(
               borderRadius: const BorderRadius.vertical(
                 top: Radius.circular(12),
               ),
@@ -150,23 +168,23 @@ class _TurfCardState extends State<TurfCard> {
                   children: [
                     latestTurf.images.isNotEmpty
                         ? CachedNetworkImage(
-                      imageUrl: latestTurf.images[0],
-                      fit: BoxFit.cover,
-                      width: double.infinity,
-                      placeholder: (_, __) =>
-                          Container(color: Colors.grey[200]),
-                      errorWidget: (_, __, ___) => Container(
-                        color: Colors.grey[200],
-                        child: const Icon(
-                          Icons.image_not_supported,
-                          size: 30,
-                        ),
-                      ),
-                    )
+                            imageUrl: latestTurf.images[0],
+                            fit: BoxFit.cover,
+                            width: double.infinity,
+                            placeholder: (_, __) =>
+                                Container(color: Colors.grey[200]),
+                            errorWidget: (_, __, ___) => Container(
+                              color: Colors.grey[200],
+                              child: const Icon(
+                                Icons.image_not_supported,
+                                size: 30,
+                              ),
+                            ),
+                          )
                         : Container(
-                      color: Colors.grey[200],
-                      child: const Icon(Icons.sports_soccer, size: 30),
-                    ),
+                            color: Colors.grey[200],
+                            child: const Icon(Icons.sports_soccer, size: 30),
+                          ),
 
                     // Subtle bottom scrim for badge legibility
                     if (mainLabel.isNotEmpty)
@@ -198,7 +216,6 @@ class _TurfCardState extends State<TurfCard> {
                         width: 24,
                         height: 24,
                         decoration: BoxDecoration(
-
                           boxShadow: [
                             BoxShadow(
                               color: Colors.black.withOpacity(0.1),
@@ -207,17 +224,23 @@ class _TurfCardState extends State<TurfCard> {
                             ),
                           ],
                         ),
-                      child:  Image.asset(
-                            // 🔁 Replace this URL with your actual image URL
-                            'assets/images/blue.jpeg',
-                            fit: BoxFit.fill,
-                            errorBuilder: (_, __, ___) => Icon(
-                              Icons.image,
-                              size: 16,
-                              color: Colors.grey.shade400,
-                            ),
+                        child: Image.asset(
+                          // 🔁 Replace this URL with your actual image URL
+                          'assets/images/blue.jpeg',
+                          fit: BoxFit.fill,
+                          errorBuilder: (_, __, ___) => Icon(
+                            Icons.image,
+                            size: 16,
+                            color: Colors.grey.shade400,
                           ),
+                        ),
+                      ),
+                    ),
 
+                    // Premium animated Diwali frame; it never handles taps.
+                    Positioned.fill(
+                      child: DiwaliTurfCardDecoration(
+                        variant: latestTurf.id.hashCode.abs() % 4,
                       ),
                     ),
 
@@ -298,182 +321,188 @@ class _TurfCardState extends State<TurfCard> {
               ),
             );
 
-          return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // ── Image Section ──────────────────────────────────────
-            if (bounded) Expanded(child: imageSection) else imageSection,
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                // ── Image Section ──────────────────────────────────────
+                if (bounded) Expanded(child: imageSection) else imageSection,
 
-            // ── Content Section ────────────────────────────────────
-            Padding(
-                padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    // Turf name
-                    Text(
-                      latestTurf.name,
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 13,
-                        color: Colors.black87,
-                      ),
-                    ),
-                    const SizedBox(height: 2),
-
-                    // ✅ Location - Show City, District, State
-                    Row(
-                      children: [
-                        const Icon(
-                          Icons.location_on,
-                          size: 10,
-                          color: Colors.grey,
-                        ),
-                        const SizedBox(width: 3),
-                        Expanded(
-                          child: Text(
-                            locationDisplay.isNotEmpty ? locationDisplay : latestTurf.district,
-                            style: const TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey,
-                              fontWeight: FontWeight.w500,
-                            ),
-                            maxLines: 1,
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        ),
-                      ],
-                    ),
-
-                    // ✅ Distance - Always show
-                    if (homeVm.currentLocation.value != null &&
-                        latestTurf.latitude != null &&
-                        latestTurf.longitude != null)
-                      Padding(
-                        padding: const EdgeInsets.only(top: 2),
-                        child: Row(
-                          children: [
-                            Icon(
-                              isFarAway ? Icons.flight_takeoff : Icons.directions_walk,
-                              size: 10,
-                              color: isFarAway ? Colors.orange.shade600 : Colors.green.shade600,
-                            ),
-                            const SizedBox(width: 3),
-                            Expanded(
-                              child: Text(
-                                homeVm.getDistanceString(latestTurf),
-                                style: TextStyle(
-                                  fontSize: 9,
-                                  color: isFarAway ? Colors.orange.shade600 : Colors.green.shade600,
-                                  fontWeight: FontWeight.w500,
-                                ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-
-                    const SizedBox(height: 4),
-
-                    // Game type chip
-                    Container(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 6,
-                        vertical: 2,
-                      ),
-                      decoration: BoxDecoration(
-                        color: Colors.green.shade50,
-                        borderRadius: BorderRadius.circular(6),
-                        border: Border.all(
-                          color: Colors.green.shade200,
-                          width: 0.5,
-                        ),
-                      ),
-                      child: Text(
-                        latestTurf.gameType.isNotEmpty
-                            ? latestTurf.gameType
-                            : 'Contact',
-                        style: TextStyle(
-                          fontSize: 9,
-                          color: Colors.green.shade700,
-                          fontWeight: FontWeight.w600,
-                        ),
+                // ── Content Section ────────────────────────────────────
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      // Turf name
+                      Text(
+                        latestTurf.name,
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-
-                    const SizedBox(height: 4),
-
-                    // Action Button
-                    SizedBox(
-                      width: double.infinity,
-                      height: 26,
-                      child: ElevatedButton(
-                        onPressed: _handleTap,
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: latestTurf.isBookable
-                              ? Colors.green
-                              : Colors.blue,
-                          foregroundColor: Colors.white,
-                          padding: EdgeInsets.zero,
-                          shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                          minimumSize: const Size(0, 26),
-                          elevation: 0,
-                          shadowColor: Colors.transparent,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 13,
+                          color: Colors.black87,
                         ),
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              latestTurf.isBookable
-                                  ? Icons.calendar_today
-                                  : Icons.info,
-                              size: 10,
+                      ),
+                      const SizedBox(height: 2),
+
+                      // ✅ Location - Show City, District, State
+                      Row(
+                        children: [
+                          const Icon(
+                            Icons.location_on,
+                            size: 10,
+                            color: Colors.grey,
+                          ),
+                          const SizedBox(width: 3),
+                          Expanded(
+                            child: Text(
+                              locationDisplay.isNotEmpty
+                                  ? locationDisplay
+                                  : latestTurf.district,
+                              style: const TextStyle(
+                                fontSize: 10,
+                                color: Colors.grey,
+                                fontWeight: FontWeight.w500,
+                              ),
+                              maxLines: 1,
+                              overflow: TextOverflow.ellipsis,
                             ),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                latestTurf.isBookable
-                                    ? 'Book Now'
-                                    : 'View Details',
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
+                          ),
+                        ],
+                      ),
+
+                      // ✅ Distance - Always show
+                      if (homeVm.currentLocation.value != null &&
+                          latestTurf.latitude != null &&
+                          latestTurf.longitude != null)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 2),
+                          child: Row(
+                            children: [
+                              Icon(
+                                isFarAway
+                                    ? Icons.flight_takeoff
+                                    : Icons.directions_walk,
+                                size: 10,
+                                color: isFarAway
+                                    ? Colors.orange.shade600
+                                    : Colors.green.shade600,
+                              ),
+                              const SizedBox(width: 3),
+                              Expanded(
+                                child: Text(
+                                  homeVm.getDistanceString(latestTurf),
+                                  style: TextStyle(
+                                    fontSize: 9,
+                                    color: isFarAway
+                                        ? Colors.orange.shade600
+                                        : Colors.green.shade600,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
                                 ),
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                        ),
+
+                      const SizedBox(height: 4),
+
+                      // Game type chip
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 6,
+                          vertical: 2,
+                        ),
+                        decoration: BoxDecoration(
+                          color: Colors.green.shade50,
+                          borderRadius: BorderRadius.circular(6),
+                          border: Border.all(
+                            color: Colors.green.shade200,
+                            width: 0.5,
+                          ),
+                        ),
+                        child: Text(
+                          latestTurf.gameType.isNotEmpty
+                              ? latestTurf.gameType
+                              : 'Contact',
+                          style: TextStyle(
+                            fontSize: 9,
+                            color: Colors.green.shade700,
+                            fontWeight: FontWeight.w600,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
                       ),
-                    ),
-                  ],
+
+                      const SizedBox(height: 4),
+
+                      // Action Button
+                      SizedBox(
+                        width: double.infinity,
+                        height: 26,
+                        child: ElevatedButton(
+                          onPressed: _handleTap,
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: latestTurf.isBookable
+                                ? Colors.green
+                                : Colors.blue,
+                            foregroundColor: Colors.white,
+                            padding: EdgeInsets.zero,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(6),
+                            ),
+                            tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                            minimumSize: const Size(0, 26),
+                            elevation: 0,
+                            shadowColor: Colors.transparent,
+                          ),
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                latestTurf.isBookable
+                                    ? Icons.calendar_today
+                                    : Icons.info,
+                                size: 10,
+                              ),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  latestTurf.isBookable
+                                      ? 'Book Now'
+                                      : 'View Details',
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: const TextStyle(
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
-            ),
-          ],
-        );
-        }),
+              ],
+            );
+          },
+        ),
       ),
     );
   }
 }
 
 // ── Discount Badge Widget ──────────────────────────────────────────────
-// A compact, professional offer tag — replaces the old animated gold
-// ribbon. Sits as a translucent gradient strip along the bottom of the
-// image so it never overpowers the photo, with an optional secondary
-// chip for a second offer (e.g. "10% OFF" + "First booking").
-class _DiscountBadge extends StatelessWidget {
+// Animated premium Diwali tag displayed in the card's existing offer position.
+class _DiscountBadge extends StatefulWidget {
   final String mainLabel;
   final String extraLabel;
   final bool isSmallScreen;
@@ -485,83 +514,201 @@ class _DiscountBadge extends StatelessWidget {
   });
 
   @override
+  State<_DiscountBadge> createState() => _DiscountBadgeState();
+}
+
+class _DiscountBadgeState extends State<_DiscountBadge>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 2600),
+    )..repeat();
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return Row(
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        Flexible(
-          child: Container(
-            padding: EdgeInsets.symmetric(
-              horizontal: isSmallScreen ? 8 : 9,
-              vertical: isSmallScreen ? 4 : 5,
-            ),
-            decoration: BoxDecoration(
-              gradient: const LinearGradient(
-                colors: [Color(0xFFE65100), Color(0xFFEF6C00)],
-                begin: Alignment.centerLeft,
-                end: Alignment.centerRight,
-              ),
-              borderRadius: BorderRadius.circular(7),
-              boxShadow: [
-                BoxShadow(
-                  color: Colors.black.withOpacity(0.18),
-                  blurRadius: 4,
-                  offset: const Offset(0, 2),
-                ),
-              ],
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(
-                  Icons.sell_rounded,
-                  size: isSmallScreen ? 10 : 11,
-                  color: Colors.white,
-                ),
-                const SizedBox(width: 4),
-                Flexible(
-                  child: Text(
-                    mainLabel,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: Colors.white,
-                      fontSize: isSmallScreen ? 9.5 : 10.5,
-                      fontWeight: FontWeight.w700,
-                      letterSpacing: 0.1,
+    return IgnorePointer(
+      child: ExcludeSemantics(
+        child: RepaintBoundary(
+          child: AnimatedBuilder(
+            animation: _controller,
+            builder: (context, child) {
+              final time = _controller.value;
+              final wave = math.sin(time * math.pi * 2);
+              final glow = (math.sin(time * math.pi * 4) + 1) / 2;
+              final label = widget.extraLabel.isEmpty
+                  ? widget.mainLabel
+                  : '${widget.mainLabel} • ${widget.extraLabel}';
+
+              return Align(
+                alignment: Alignment.centerLeft,
+                child: Transform.translate(
+                  offset: Offset(0, -0.8 * glow),
+                  child: Transform(
+                    alignment: Alignment.center,
+                    transform: Matrix4.identity()
+                      ..setEntry(3, 2, 0.002)
+                      ..rotateX(-0.025 + wave * 0.012)
+                      ..rotateY(wave * 0.055),
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Positioned.fill(
+                          child: Transform.translate(
+                            offset: const Offset(0, 3),
+                            child: DecoratedBox(
+                              decoration: BoxDecoration(
+                                color: const Color(0xFF65000F),
+                                borderRadius: BorderRadius.circular(9),
+                                boxShadow: [
+                                  BoxShadow(
+                                    color: Colors.black.withValues(alpha: 0.28),
+                                    blurRadius: 5,
+                                    offset: const Offset(0, 3),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Container(
+                          constraints: const BoxConstraints(maxWidth: 190),
+                          padding: EdgeInsets.symmetric(
+                            horizontal: widget.isSmallScreen ? 8 : 10,
+                            vertical: widget.isSmallScreen ? 4 : 5,
+                          ),
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                Color(0xFF820015),
+                                Color(0xFFE21D2F),
+                                Color(0xFF940014),
+                              ],
+                            ),
+                            borderRadius: BorderRadius.circular(9),
+                            border: Border.all(
+                              color: const Color(0xFFFFD54F),
+                              width: 1.2,
+                            ),
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(
+                                  0xFFFFB300,
+                                ).withValues(alpha: 0.28 + glow * 0.28),
+                                blurRadius: 5 + glow * 4,
+                              ),
+                            ],
+                          ),
+                          child: ClipRRect(
+                            borderRadius: BorderRadius.circular(8),
+                            child: Stack(
+                              alignment: Alignment.center,
+                              children: [
+                                Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      Icons.local_fire_department_rounded,
+                                      size: widget.isSmallScreen ? 10 : 11,
+                                      color: const Color(0xFFFFE082),
+                                    ),
+                                    const SizedBox(width: 4),
+                                    Flexible(
+                                      child: Text(
+                                        'DIWALI • $label',
+                                        maxLines: 1,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: TextStyle(
+                                          color: Colors.white,
+                                          fontSize: widget.isSmallScreen
+                                              ? 9.5
+                                              : 10.5,
+                                          height: 1,
+                                          fontWeight: FontWeight.w800,
+                                          letterSpacing: 0.15,
+                                          shadows: const [
+                                            Shadow(
+                                              color: Color(0xFF55000C),
+                                              offset: Offset(0, 1),
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Positioned.fill(
+                                  child: IgnorePointer(
+                                    child: Align(
+                                      alignment: Alignment(
+                                        -1.8 + time * 3.6,
+                                        0,
+                                      ),
+                                      child: Transform.rotate(
+                                        angle: -0.35,
+                                        child: Container(
+                                          width: 12,
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.white.withValues(
+                                                  alpha: 0,
+                                                ),
+                                                Colors.white.withValues(
+                                                  alpha: 0.48,
+                                                ),
+                                                Colors.white.withValues(
+                                                  alpha: 0,
+                                                ),
+                                              ],
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: -4,
+                          right: -3,
+                          child: Opacity(
+                            opacity: 0.35 + glow * 0.65,
+                            child: Transform.scale(
+                              scale: 0.7 + glow * 0.35,
+                              child: const Icon(
+                                Icons.auto_awesome,
+                                size: 10,
+                                color: Color(0xFFFFF59D),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
                   ),
                 ),
-              ],
-            ),
+              );
+            },
           ),
         ),
-        if (extraLabel.isNotEmpty) ...[
-          const SizedBox(width: 4),
-          Flexible(
-            child: Container(
-              padding: EdgeInsets.symmetric(
-                horizontal: isSmallScreen ? 6 : 7,
-                vertical: isSmallScreen ? 3.5 : 4.5,
-              ),
-              decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.55),
-                borderRadius: BorderRadius.circular(7),
-              ),
-              child: Text(
-                extraLabel,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(
-                  color: Colors.white,
-                  fontSize: isSmallScreen ? 8 : 8.5,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ],
+      ),
     );
   }
 }

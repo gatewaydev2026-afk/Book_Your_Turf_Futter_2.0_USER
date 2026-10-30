@@ -18,6 +18,12 @@ import 'dart:ui' as ui;
 
 import '../routes/app_routes.dart';
 import '../services/meta_events_service.dart';
+import '../widgets/diwali_turf_animation.dart';
+import '../widgets/launch_offer_overlay.dart';
+
+// Process-memory flag: navigating between tabs/pages does not repeat the ad,
+// while a genuine app close/relaunch starts a new process and shows it again.
+bool _hasShownLaunchOfferThisProcess = false;
 
 class MainPage extends StatefulWidget {
   const MainPage({super.key});
@@ -30,6 +36,7 @@ class _MainPageState extends State<MainPage> {
   final MainPageViewModel controller = Get.find<MainPageViewModel>();
   final RxSet<int> _loadedTabs = <int>{}.obs;
   bool _initialized = false;
+  bool _showLaunchOffer = false;
 
   final List<Widget> screens = [
     const HomeView(),
@@ -42,6 +49,10 @@ class _MainPageState extends State<MainPage> {
   @override
   void initState() {
     super.initState();
+    if (!_hasShownLaunchOfferThisProcess) {
+      _hasShownLaunchOfferThisProcess = true;
+      _showLaunchOffer = true;
+    }
     // ✅ Any tab change (tap or controller.changeTab) loads that tab's data
     _tabWorker = ever<int>(controller.currentIndex, (i) {
       if (mounted) _loadTabData(i);
@@ -65,9 +76,17 @@ class _MainPageState extends State<MainPage> {
         body: Stack(
           children: [
             // ✅ Content with IndexedStack
-            IndexedStack(
-              index: controller.currentIndex.value,
-              children: screens,
+            RepaintBoundary(
+              child: IndexedStack(
+                index: controller.currentIndex.value,
+                children: screens,
+              ),
+            ),
+            Positioned.fill(
+              child: DiwaliBottomRocketOverlay(
+                bottomClearance: MediaQuery.paddingOf(context).bottom + 72,
+                showTitle: controller.currentIndex.value == 0,
+              ),
             ),
             // ✅ Bottom Navigation Bar on top with glass effect
             Positioned(
@@ -76,6 +95,15 @@ class _MainPageState extends State<MainPage> {
               right: 0,
               child: _buildGlassNavigationBar(),
             ),
+            if (_showLaunchOffer)
+              Positioned.fill(
+                child: LaunchOfferOverlay(
+                  onDismissed: () {
+                    if (!mounted) return;
+                    setState(() => _showLaunchOffer = false);
+                  },
+                ),
+              ),
           ],
         ),
         extendBody: true,
@@ -98,7 +126,7 @@ class _MainPageState extends State<MainPage> {
 
   Widget _buildGlassNavigationBar() {
     return Obx(
-          () => Container(
+      () => Container(
         height: 56,
         margin: EdgeInsets.fromLTRB(
           16,
@@ -120,7 +148,9 @@ class _MainPageState extends State<MainPage> {
         child: ClipRRect(
           borderRadius: BorderRadius.circular(35),
           child: BackdropFilter(
-            filter: ui.ImageFilter.blur(sigmaX: 20, sigmaY: 20),
+            // A smaller blur preserves the glass look without re-blurring the
+            // moving full-screen fireworks at a very high GPU cost.
+            filter: ui.ImageFilter.blur(sigmaX: 8, sigmaY: 8),
             child: Container(
               decoration: BoxDecoration(
                 gradient: LinearGradient(
@@ -169,11 +199,11 @@ class _MainPageState extends State<MainPage> {
   }
 
   Widget _navItem(
-      String activeIcon,
-      String inactiveIcon,
-      String label,
-      int index,
-      ) {
+    String activeIcon,
+    String inactiveIcon,
+    String label,
+    int index,
+  ) {
     final isActive = controller.currentIndex.value == index;
 
     return GestureDetector(
@@ -192,24 +222,24 @@ class _MainPageState extends State<MainPage> {
         decoration: BoxDecoration(
           gradient: isActive
               ? LinearGradient(
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-            colors: [
-              const Color(0xFF009624).withOpacity(0.9),
-              const Color(0xFF00B42A).withOpacity(0.9),
-            ],
-          )
+                  begin: Alignment.topLeft,
+                  end: Alignment.bottomRight,
+                  colors: [
+                    const Color(0xFF009624).withOpacity(0.9),
+                    const Color(0xFF00B42A).withOpacity(0.9),
+                  ],
+                )
               : null,
           color: isActive ? null : Colors.transparent,
           borderRadius: BorderRadius.circular(25),
           boxShadow: isActive
               ? [
-            BoxShadow(
-              color: const Color(0xFF009624).withOpacity(0.3),
-              blurRadius: 8,
-              offset: const Offset(0, 2),
-            ),
-          ]
+                  BoxShadow(
+                    color: const Color(0xFF009624).withOpacity(0.3),
+                    blurRadius: 8,
+                    offset: const Offset(0, 2),
+                  ),
+                ]
               : [],
         ),
         child: Row(
@@ -221,25 +251,25 @@ class _MainPageState extends State<MainPage> {
               switchOutCurve: Curves.easeInOut,
               child: isActive
                   ? SvgPicture.asset(
-                activeIcon,
-                height: 22,
-                width: 22,
-                key: ValueKey('active-$index'),
-                colorFilter: const ColorFilter.mode(
-                  Colors.white,
-                  BlendMode.srcIn,
-                ),
-              )
+                      activeIcon,
+                      height: 22,
+                      width: 22,
+                      key: ValueKey('active-$index'),
+                      colorFilter: const ColorFilter.mode(
+                        Colors.white,
+                        BlendMode.srcIn,
+                      ),
+                    )
                   : SvgPicture.asset(
-                inactiveIcon,
-                height: 22,
-                width: 22,
-                colorFilter: const ColorFilter.mode(
-                  Colors.grey,
-                  BlendMode.srcIn,
-                ),
-                key: ValueKey('inactive-$index'),
-              ),
+                      inactiveIcon,
+                      height: 22,
+                      width: 22,
+                      colorFilter: const ColorFilter.mode(
+                        Colors.grey,
+                        BlendMode.srcIn,
+                      ),
+                      key: ValueKey('inactive-$index'),
+                    ),
             ),
             if (isActive) ...[
               const SizedBox(width: 8),

@@ -2,6 +2,7 @@
 // ✅ Meta: slot_view event (screen visit count)
 
 import 'package:flutter/material.dart';
+import '../widgets/diwali_turf_animation.dart';
 import 'package:get/get.dart';
 import '../models/slot_model.dart';
 import '../models/turf_model.dart';
@@ -20,7 +21,8 @@ IconData _getSportIcon(String gameType) {
   if (type.contains('football')) return Icons.sports_soccer;
   if (type.contains('cricket')) return Icons.sports_cricket;
   if (type.contains('badminton')) return Icons.sports_tennis;
-  if (type.contains('pickleball') || type.contains('pickle ball')) return Icons.sports_tennis;
+  if (type.contains('pickleball') || type.contains('pickle ball'))
+    return Icons.sports_tennis;
   if (type.contains('basketball')) return Icons.sports_basketball;
   if (type.contains('volleyball')) return Icons.sports_volleyball;
   if (type.contains('tennis')) return Icons.sports_tennis;
@@ -32,7 +34,8 @@ Color _getSportColor(String gameType) {
   if (type.contains('football')) return Colors.green.shade700;
   if (type.contains('cricket')) return Colors.green.shade700;
   if (type.contains('badminton')) return Colors.purple.shade700;
-  if (type.contains('pickleball') || type.contains('pickle ball')) return Colors.orange.shade700;
+  if (type.contains('pickleball') || type.contains('pickle ball'))
+    return Colors.orange.shade700;
   if (type.contains('basketball')) return Colors.orange.shade700;
   if (type.contains('volleyball')) return Colors.blue.shade700;
   if (type.contains('tennis')) return Colors.lime.shade700;
@@ -54,7 +57,8 @@ String _getTotalHours(String openTime, String closeTime) {
     int closeHour = int.parse(closeParts[0]);
     int closeMinute = int.parse(closeParts[1]);
 
-    int totalMinutes = (closeHour * 60 + closeMinute) - (openHour * 60 + openMinute);
+    int totalMinutes =
+        (closeHour * 60 + closeMinute) - (openHour * 60 + openMinute);
 
     if (totalMinutes < 0) {
       totalMinutes += 24 * 60;
@@ -210,7 +214,8 @@ class _SlotViewState extends State<SlotView> {
         final turfArg = args['turf'];
         if (turfArg is TurfModel) {
           turf = turfArg;
-          print('✅ SlotView: Received TurfModel from pending booking: ${turf.name}');
+          print(
+              '✅ SlotView: Received TurfModel from pending booking: ${turf.name}');
         } else if (turfArg is Map<String, dynamic>) {
           print('✅ SlotView: Converting Map to TurfModel from pending booking');
           turf = TurfModel.fromJson(turfArg);
@@ -224,14 +229,12 @@ class _SlotViewState extends State<SlotView> {
             _restorePendingBooking(args, turf!);
           });
         }
-      }
-      else if (args is TurfModel) {
+      } else if (args is TurfModel) {
         turf = args;
         print('✅ SlotView: Received TurfModel directly: ${turf.name}');
         _cachedTurf = turf;
         _setupViewModel(turf);
-      }
-      else if (args is Map<String, dynamic>) {
+      } else if (args is Map<String, dynamic>) {
         print('✅ SlotView: Received Map, converting to TurfModel');
         if (args.containsKey('turf') && args['turf'] is TurfModel) {
           turf = args['turf'] as TurfModel;
@@ -242,7 +245,8 @@ class _SlotViewState extends State<SlotView> {
             print('✅ SlotView: Converted Map to TurfModel: ${turf.name}');
           } catch (e) {
             print('❌ SlotView: Error converting Map to TurfModel: $e');
-            if (args.containsKey('turf') && args['turf'] is Map<String, dynamic>) {
+            if (args.containsKey('turf') &&
+                args['turf'] is Map<String, dynamic>) {
               turf = TurfModel.fromJson(args['turf'] as Map<String, dynamic>);
             }
           }
@@ -251,8 +255,7 @@ class _SlotViewState extends State<SlotView> {
           _cachedTurf = turf;
           _setupViewModel(turf);
         }
-      }
-      else {
+      } else {
         print('❌ SlotView: Invalid arguments type: ${args.runtimeType}');
       }
 
@@ -298,13 +301,13 @@ class _SlotViewState extends State<SlotView> {
     final pendingDate = args['pendingDate'] as DateTime?;
     if (pendingDate != null) {
       final dateIndex = vm.dates.indexWhere((d) =>
-      d.year == pendingDate.year &&
+          d.year == pendingDate.year &&
           d.month == pendingDate.month &&
-          d.day == pendingDate.day
-      );
+          d.day == pendingDate.day);
       if (dateIndex != -1) {
         vm.selectedDateIndex.value = dateIndex;
-        print('✅ Restored date: ${pendingDate.toIso8601String().split('T').first}');
+        print(
+            '✅ Restored date: ${pendingDate.toIso8601String().split('T').first}');
       }
     }
 
@@ -347,7 +350,8 @@ class _SlotViewState extends State<SlotView> {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                 ),
-                child: const Text('Go Back', style: TextStyle(color: Colors.white)),
+                child: const Text('Go Back',
+                    style: TextStyle(color: Colors.white)),
               ),
             ],
           ),
@@ -372,41 +376,61 @@ class _SlotViewState extends State<SlotView> {
     return _buildSlotViewUI(context, vm, turf);
   }
 
-  Widget _buildSlotViewUI(BuildContext context, SlotViewModel vm, TurfModel turf) {
+  Widget _buildSlotViewUI(
+      BuildContext context, SlotViewModel vm, TurfModel turf) {
     final width = MediaQuery.of(context).size.width;
-    final isGuest = SharedPrefsHelper.getToken() == null || SharedPrefsHelper.getToken()!.isEmpty;
+    final isGuest = SharedPrefsHelper.getToken() == null ||
+        SharedPrefsHelper.getToken()!.isEmpty;
 
     int crossCount = width > 600 ? 4 : 3;
     double timeFontSize = width > 600 ? 12 : 11;
-    final courtTurfLabel = _isCricketOrFootball(turf.gameType) ? "Turf" : "Court";
+    final courtTurfLabel =
+        _isCricketOrFootball(turf.gameType) ? "Turf" : "Court";
 
     return Scaffold(
       body: SafeArea(
         top: true,
-        child: Column(
+        child: Stack(
           children: [
-            _buildHeader(turf, vm, courtTurfLabel),
-            const SizedBox(height: 4),
-            _buildDatePicker(vm),
-            if (vm.courtCount > 1) _buildCourtSelector(context, vm, courtTurfLabel),
-            const SizedBox(height: 6),
-            _buildLegend(),
-            const SizedBox(height: 6),
-            _buildTodayInfoBanner(vm),
-            const SizedBox(height: 6),
-            Expanded(
-              child: Obx(() {
-                return RefreshIndicator(
-                  key: ValueKey('${vm.selectedDateIndex.value}_${vm.selectedCourt.value}_${vm.isLoadingSlots.value}'),
-                  onRefresh: () async {
-                    await vm.refresh();
-                  },
-                  color: Colors.green,
-                  child: _buildSlotGrid(context, vm, crossCount, timeFontSize),
-                );
-              }),
+            Column(
+              children: [
+                _buildHeader(turf, vm, courtTurfLabel),
+                _buildDatePicker(vm),
+                if (vm.courtCount > 1)
+                  _buildCourtSelector(context, vm, courtTurfLabel),
+                const SizedBox(height: 6),
+                _buildLegend(),
+                const SizedBox(height: 6),
+                _buildTodayInfoBanner(vm),
+                const SizedBox(height: 6),
+                Expanded(
+                  child: Obx(() {
+                    return RefreshIndicator(
+                      key: ValueKey(
+                          '${vm.selectedDateIndex.value}_${vm.selectedCourt.value}_${vm.isLoadingSlots.value}'),
+                      onRefresh: () async {
+                        await vm.refresh();
+                      },
+                      color: Colors.green,
+                      child:
+                          _buildSlotGrid(context, vm, crossCount, timeFontSize),
+                    );
+                  }),
+                ),
+                _buildBottomBar(context, vm, turf, width, isGuest),
+              ],
             ),
-            _buildBottomBar(context, vm, turf, width, isGuest),
+            Positioned.fill(
+              child: DiwaliBottomRocketOverlay(
+                bottomClearance: MediaQuery.paddingOf(context).bottom + 72,
+              ),
+            ),
+            const Positioned(
+              top: 58,
+              left: 12,
+              right: 12,
+              child: DiwaliTurfAnimation(compact: true),
+            ),
           ],
         ),
       ),
@@ -443,7 +467,8 @@ class _SlotViewState extends State<SlotView> {
                 ),
               ),
               IconButton(
-                icon: Icon(Icons.refresh, size: 18, color: Colors.green.shade700),
+                icon:
+                    Icon(Icons.refresh, size: 18, color: Colors.green.shade700),
                 onPressed: () => vm.resetToToday(),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -451,8 +476,9 @@ class _SlotViewState extends State<SlotView> {
               const SizedBox(width: 8),
               if (vm.courtCount > 1)
                 Obx(
-                      () => Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  () => Container(
+                    padding:
+                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                     decoration: BoxDecoration(
                       color: Colors.green.shade50,
                       borderRadius: BorderRadius.circular(15),
@@ -510,10 +536,12 @@ class _SlotViewState extends State<SlotView> {
                     const SizedBox(width: 4),
                     Builder(
                       builder: (context) {
-                        final totalHours = _getTotalHours(turf.openTime, turf.closeTime);
+                        final totalHours =
+                            _getTotalHours(turf.openTime, turf.closeTime);
                         if (totalHours.isNotEmpty) {
                           return Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 4, vertical: 1),
                             decoration: BoxDecoration(
                               color: Colors.green.shade50,
                               borderRadius: BorderRadius.circular(6),
@@ -550,9 +578,8 @@ class _SlotViewState extends State<SlotView> {
         itemBuilder: (_, i) {
           final d = vm.dates[i];
           final now = DateTime.now();
-          final isToday = d.year == now.year &&
-              d.month == now.month &&
-              d.day == now.day;
+          final isToday =
+              d.year == now.year && d.month == now.month && d.day == now.day;
 
           return Obx(() {
             final isSel = vm.selectedDateIndex.value == i;
@@ -611,7 +638,8 @@ class _SlotViewState extends State<SlotView> {
     );
   }
 
-  Widget _buildCourtSelector(BuildContext context, SlotViewModel vm, String courtTurfLabel) {
+  Widget _buildCourtSelector(
+      BuildContext context, SlotViewModel vm, String courtTurfLabel) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: GestureDetector(
@@ -631,18 +659,21 @@ class _SlotViewState extends State<SlotView> {
           child: Row(
             children: [
               Icon(
-                _isCricketOrFootball(vm.turf.gameType) ? Icons.sports_soccer : Icons.sports_tennis,
+                _isCricketOrFootball(vm.turf.gameType)
+                    ? Icons.sports_soccer
+                    : Icons.sports_tennis,
                 size: 16,
                 color: Colors.green,
               ),
               const SizedBox(width: 6),
               Text(
                 "Select $courtTurfLabel",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
               ),
               const Spacer(),
               Obx(
-                    () => Text(
+                () => Text(
                   "$courtTurfLabel ${vm.selectedCourt.value + 1}",
                   style: const TextStyle(
                     color: Colors.green,
@@ -748,9 +779,8 @@ class _SlotViewState extends State<SlotView> {
         endHour = int.parse(endParts[0]);
         endMinute = int.parse(endParts[1]);
 
-        int slotEndMinutes = (endHour == 0 && endMinute == 0)
-            ? 1440
-            : endHour * 60 + endMinute;
+        int slotEndMinutes =
+            (endHour == 0 && endMinute == 0) ? 1440 : endHour * 60 + endMinute;
         return slotEndMinutes > currentTimeMinutes;
       } catch (e) {
         return false;
@@ -758,7 +788,8 @@ class _SlotViewState extends State<SlotView> {
     }).toList();
   }
 
-  Widget _buildSlotGrid(BuildContext context, SlotViewModel vm, int crossCount, double timeFontSize) {
+  Widget _buildSlotGrid(BuildContext context, SlotViewModel vm, int crossCount,
+      double timeFontSize) {
     if (vm.isLoadingSlots.value) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -808,36 +839,30 @@ class _SlotViewState extends State<SlotView> {
         borderColor = Colors.purple;
         textColor = Colors.purple.shade800;
         statusText = "NEXT DAY";
-      }
-      else if (isSelected && isAvailable) {
+      } else if (isSelected && isAvailable) {
         backgroundColor = Colors.green;
         borderColor = Colors.green;
         textColor = Colors.white;
-      }
-      else if (isAvailable) {
+      } else if (isAvailable) {
         backgroundColor = Colors.white;
         borderColor = Colors.green;
         textColor = Colors.black;
-      }
-      else if (isBlocked) {
+      } else if (isBlocked) {
         backgroundColor = Colors.grey.shade300;
         borderColor = Colors.grey.shade500;
         textColor = Colors.grey.shade700;
         statusText = "Blocked";
-      }
-      else if (isReserved) {
+      } else if (isReserved) {
         backgroundColor = Colors.orange.shade100;
         borderColor = Colors.orange;
         textColor = Colors.orange.shade800;
         statusText = "Reserved";
-      }
-      else if (isBooked) {
+      } else if (isBooked) {
         backgroundColor = Colors.red;
         borderColor = Colors.red;
         textColor = Colors.white;
         statusText = "Booked";
-      }
-      else {
+      } else {
         backgroundColor = Colors.grey.shade200;
         borderColor = Colors.grey.shade300;
         textColor = Colors.grey.shade500;
@@ -845,14 +870,19 @@ class _SlotViewState extends State<SlotView> {
       }
 
       return GestureDetector(
-        onTap: (isAvailable && !isBlocked && canSelect) ? () => vm.toggleSlot(slot) : null,
+        onTap: (isAvailable && !isBlocked && canSelect)
+            ? () => vm.toggleSlot(slot)
+            : null,
         child: Container(
           decoration: BoxDecoration(
             color: backgroundColor,
             border: Border.all(color: borderColor, width: 1.5),
             borderRadius: BorderRadius.circular(8),
             boxShadow: isNextDaySlot && isAvailable && !isSelected
-                ? [BoxShadow(color: Colors.purple.withOpacity(0.3), blurRadius: 4)]
+                ? [
+                    BoxShadow(
+                        color: Colors.purple.withOpacity(0.3), blurRadius: 4)
+                  ]
                 : null,
           ),
           child: Center(
@@ -869,7 +899,9 @@ class _SlotViewState extends State<SlotView> {
                       style: TextStyle(
                         fontWeight: isSelected && isAvailable
                             ? FontWeight.bold
-                            : (isNextDaySlot ? FontWeight.w600 : FontWeight.normal),
+                            : (isNextDaySlot
+                                ? FontWeight.w600
+                                : FontWeight.normal),
                         color: textColor,
                         fontSize: timeFontSize - 1,
                       ),
@@ -880,11 +912,14 @@ class _SlotViewState extends State<SlotView> {
                   const SizedBox(height: 2),
                   if (statusText.isNotEmpty)
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 3, vertical: 1),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 3, vertical: 1),
                       decoration: BoxDecoration(
                         color: isNextDaySlot && isAvailable && !isSelected
                             ? Colors.purple
-                            : (isBlocked ? Colors.grey.shade500 : textColor.withOpacity(0.15)),
+                            : (isBlocked
+                                ? Colors.grey.shade500
+                                : textColor.withOpacity(0.15)),
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
@@ -905,7 +940,9 @@ class _SlotViewState extends State<SlotView> {
                         '₹$formattedPrice',
                         style: TextStyle(
                           fontSize: 7,
-                          color: isNextDaySlot ? Colors.purple.shade600 : Colors.green.shade600,
+                          color: isNextDaySlot
+                              ? Colors.purple.shade600
+                              : Colors.green.shade600,
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -952,9 +989,13 @@ class _SlotViewState extends State<SlotView> {
                 onPressed: () => vm.refresh(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
                 ),
-                child: const Text("Refresh Slots", style: TextStyle(fontSize: 12,color: Colors.white),),
+                child: const Text(
+                  "Refresh Slots",
+                  style: TextStyle(fontSize: 12, color: Colors.white),
+                ),
               ),
             ],
           ),
@@ -966,7 +1007,8 @@ class _SlotViewState extends State<SlotView> {
   // ============================================================
   // ✅ BOTTOM BAR - Always shows "Proceed to Pay"
   // ============================================================
-  Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf, double width, bool isGuest) {
+  Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf,
+      double width, bool isGuest) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -985,7 +1027,7 @@ class _SlotViewState extends State<SlotView> {
             children: [
               Expanded(
                 child: Obx(
-                      () => GestureDetector(
+                  () => GestureDetector(
                     onTap: () {
                       print('🟠 Advance Payment Selected');
                       vm.selectedPaymentType.value = 'advance';
@@ -1044,7 +1086,7 @@ class _SlotViewState extends State<SlotView> {
               const SizedBox(width: 12),
               Expanded(
                 child: Obx(
-                      () => GestureDetector(
+                  () => GestureDetector(
                     onTap: () {
                       print('🔵 Full Payment Selected');
                       vm.selectedPaymentType.value = 'full';
@@ -1100,19 +1142,22 @@ class _SlotViewState extends State<SlotView> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.warning_amber, size: 16, color: Colors.red.shade700),
+                      Icon(Icons.warning_amber,
+                          size: 16, color: Colors.red.shade700),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Need ${turf.minSlots - vm.selectedSlots.length} more slot(s)',
-                          style: TextStyle(fontSize: 11, color: Colors.red.shade700),
+                          style: TextStyle(
+                              fontSize: 11, color: Colors.red.shade700),
                         ),
                       ),
                     ],
@@ -1128,7 +1173,7 @@ class _SlotViewState extends State<SlotView> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Obx(
-                        () => Text(
+                    () => Text(
                       "Pay: ₹${vm.getPayableAmount.toStringAsFixed(vm.getPayableAmount == vm.getPayableAmount.toInt() ? 0 : 2)}",
                       style: const TextStyle(
                         fontSize: 16,
@@ -1138,13 +1183,13 @@ class _SlotViewState extends State<SlotView> {
                     ),
                   ),
                   Obx(
-                        () => Text(
+                    () => Text(
                       "Slots selected: ${vm.selectedSlots.length} (Min: ${turf.minSlots})",
                       style: const TextStyle(color: Colors.blue, fontSize: 11),
                     ),
                   ),
                   Obx(
-                        () => Text(
+                    () => Text(
                       "Total: ₹${vm.totalPrice.toStringAsFixed(vm.totalPrice == vm.totalPrice.toInt() ? 0 : 2)}",
                       style: const TextStyle(
                         color: Colors.green,
@@ -1157,7 +1202,7 @@ class _SlotViewState extends State<SlotView> {
               ),
               const Spacer(),
               Obx(
-                    () => GestureDetector(
+                () => GestureDetector(
                   onTap: vm.selectedSlots.isEmpty || !vm.isMinSlotsMet
                       ? null
                       : () => _proceedToPay(context, vm, turf, isGuest),
@@ -1204,7 +1249,8 @@ class _SlotViewState extends State<SlotView> {
   // ============================================================
   // ✅ PROCEED TO PAY - With duplicate prevention
   // ============================================================
-  void _proceedToPay(BuildContext context, SlotViewModel vm, TurfModel turf, bool isGuest) {
+  void _proceedToPay(
+      BuildContext context, SlotViewModel vm, TurfModel turf, bool isGuest) {
     // ✅ Prevent multiple calls
     if (_isProceedingToPay) {
       print('⏭️ Already proceeding to pay - skipping duplicate');
@@ -1294,7 +1340,8 @@ class _SlotViewState extends State<SlotView> {
     return '$hour12:${minute.toString().padLeft(2, '0')} $period';
   }
 
-  void _showCourtSheet(BuildContext context, SlotViewModel vm, String courtTurfLabel) {
+  void _showCourtSheet(
+      BuildContext context, SlotViewModel vm, String courtTurfLabel) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1342,10 +1389,12 @@ class _SlotViewState extends State<SlotView> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         decoration: BoxDecoration(
-                          color: isSelected ? Colors.green : Colors.grey.shade200,
+                          color:
+                              isSelected ? Colors.green : Colors.grey.shade200,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color: isSelected ? Colors.green : Colors.transparent,
+                            color:
+                                isSelected ? Colors.green : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -1354,7 +1403,9 @@ class _SlotViewState extends State<SlotView> {
                             "$courtTurfLabel ${i + 1}",
                             style: TextStyle(
                               color: isSelected ? Colors.white : Colors.black,
-                              fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                              fontWeight: isSelected
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
                             ),
                           ),
                         ),
@@ -1384,7 +1435,8 @@ class _SlotViewState extends State<SlotView> {
           ),
         ),
         const SizedBox(width: 4),
-        Text(label, style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+        Text(label,
+            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
       ],
     );
   }

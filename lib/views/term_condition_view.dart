@@ -97,41 +97,80 @@ class TermConditionView extends StatelessWidget {
                       ),
                     ),
                     const SizedBox(height: 30),
-                    _buildSection("Booking Policy", [
-                      "Bookings are confirmed based on advance / full payment.",
-                      "Valid only for the selected time slot & date.",
-                      "Arrive 10–15 minutes before the slot time.",
-                      "Playtime starts and ends as per the allotted schedule.",
-                    ], sectionTitleFontSize, bodyFontSize),
-                    _buildSection("Payment Terms", [
-                      "Payments must be made through our secure gateway.",
-                      "Prices include applicable taxes and convenience charges.",
-                      "We are not responsible for network-related payment failures.",
-                    ], sectionTitleFontSize, bodyFontSize),
-                    _buildSection("Cancellation & Refund", [
-                      "Cancellation is NOT allowed for bookings made within 6 hours of the slot start time (instant bookings).",
-                      "For advance bookings (made more than 6 hours before slot time), cancellation is allowed up to 6 hours before the start time.",
-                      "No cancellation charges apply for eligible cancellations.",
-                      "Upon successful cancellation, the full money will be credited to your wallet as refund credits.",
-                      "Wallet credits can be used for future bookings and have no expiry date.",
-                      "Refund credits will be processed instantly to your wallet upon cancellation confirmation.",
-                      "Once booked, if you do not show up or fail to play, no refund or wallet credit will be provided.",
-                    ], sectionTitleFontSize, bodyFontSize),
-                    _buildSection("User Responsibilities", [
-                      "Follow venue rules (dress code, footwear, etc.).",
-                      "Damage to property (nets, lights, grass) will be charged.",
-                      "Alcohol, smoking, or abusive behavior is strictly prohibited.",
-                    ], sectionTitleFontSize, bodyFontSize),
-                    _buildSection("Liability Disclaimer", [
-                      "Book Your Turf is a platform; we are not liable for on-ground injuries.",
-                      "Venue management is responsible for safety and maintenance.",
-                    ], sectionTitleFontSize, bodyFontSize),
-                    _buildSection("Wallet Credits Policy", [
-                      "Wallet credits are non-transferable to other accounts.",
-                      "Credits cannot be withdrawn as cash - only usable for bookings.",
-                      "Credits will be automatically applied to your next booking.",
-                      "In case of disputes, the decision of Book Your Turf management will be final.",
-                    ], sectionTitleFontSize, bodyFontSize),
+                    _buildSection(
+                      "Booking Policy",
+                      [
+                        "Bookings are confirmed based on advance / full payment.",
+                        "Valid only for the selected time slot & date.",
+                        "Arrive 10–15 minutes before the slot time.",
+                        "Playtime starts and ends as per the allotted schedule.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "Payment Terms",
+                      [
+                        "Payments must be made through our secure gateway.",
+                        "Prices include applicable taxes and convenience charges.",
+                        "We are not responsible for network-related payment failures.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "Diwali Discount Offer",
+                      [
+                        "The Diwali discount offer is valid only from November 1 to November 10.",
+                        "The offer discount is applicable only to eligible turf bookings made during the offer period.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "Cancellation & Refund",
+                      [
+                        "Cancellation is NOT allowed for bookings made within 6 hours of the slot start time (instant bookings).",
+                        "For advance bookings (made more than 6 hours before slot time), cancellation is allowed up to 6 hours before the start time.",
+                        "No cancellation charges apply for eligible cancellations.",
+                        "Upon successful cancellation, the full money will be credited to your wallet as refund credits.",
+                        "Wallet credits can be used for future bookings and have no expiry date.",
+                        "Refund credits will be processed instantly to your wallet upon cancellation confirmation.",
+                        "Once booked, if you do not show up or fail to play, no refund or wallet credit will be provided.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "User Responsibilities",
+                      [
+                        "Follow venue rules (dress code, footwear, etc.).",
+                        "Damage to property (nets, lights, grass) will be charged.",
+                        "Alcohol, smoking, or abusive behavior is strictly prohibited.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "Liability Disclaimer",
+                      [
+                        "Book Your Turf is a platform; we are not liable for on-ground injuries.",
+                        "Venue management is responsible for safety and maintenance.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
+                    _buildSection(
+                      "Wallet Credits Policy",
+                      [
+                        "Wallet credits are non-transferable to other accounts.",
+                        "Credits cannot be withdrawn as cash - only usable for bookings.",
+                        "Credits will be automatically applied to your next booking.",
+                        "In case of disputes, the decision of Book Your Turf management will be final.",
+                      ],
+                      sectionTitleFontSize,
+                      bodyFontSize,
+                    ),
                     const Divider(height: 60, thickness: 1),
                     Center(
                       child: Column(
@@ -169,8 +208,12 @@ class TermConditionView extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(String title, List<String> points,
-      double sectionTitleFontSize, double bodyFontSize) {
+  Widget _buildSection(
+    String title,
+    List<String> points,
+    double sectionTitleFontSize,
+    double bodyFontSize,
+  ) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 24.0),
       child: Column(
@@ -186,7 +229,7 @@ class TermConditionView extends StatelessWidget {
           ),
           const SizedBox(height: 12),
           ...points.map(
-                (point) => Padding(
+            (point) => Padding(
               padding: const EdgeInsets.only(bottom: 10.0),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.start,
@@ -194,26 +237,46 @@ class TermConditionView extends StatelessWidget {
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Icon(
-                      point.startsWith('❌') ? Icons.cancel :
-                      point.startsWith('✅') ? Icons.check_circle :
-                      point.startsWith('💰') ? Icons.attach_money :
-                      point.startsWith('💳') ? Icons.account_balance_wallet :
-                      point.startsWith('⏱️') ? Icons.timer :
-                      point.startsWith('🔄') ? Icons.refresh :
-                      point.startsWith('🚫') ? Icons.block :
-                      Icons.circle,
-                      size: point.startsWith('❌') || point.startsWith('✅') ||
-                          point.startsWith('💰') || point.startsWith('💳') ||
-                          point.startsWith('⏱️') || point.startsWith('🔄') ||
-                          point.startsWith('🚫') ? 16 : 6,
-                      color: point.startsWith('❌') ? Colors.red :
-                      point.startsWith('✅') ? Colors.green :
-                      point.startsWith('💰') ? Colors.orange :
-                      point.startsWith('💳') ? Colors.blue :
-                      point.startsWith('⏱️') ? Colors.purple :
-                      point.startsWith('🔄') ? Colors.teal :
-                      point.startsWith('🚫') ? Colors.red :
-                      Colors.grey[600],
+                      point.startsWith('❌')
+                          ? Icons.cancel
+                          : point.startsWith('✅')
+                          ? Icons.check_circle
+                          : point.startsWith('💰')
+                          ? Icons.attach_money
+                          : point.startsWith('💳')
+                          ? Icons.account_balance_wallet
+                          : point.startsWith('⏱️')
+                          ? Icons.timer
+                          : point.startsWith('🔄')
+                          ? Icons.refresh
+                          : point.startsWith('🚫')
+                          ? Icons.block
+                          : Icons.circle,
+                      size:
+                          point.startsWith('❌') ||
+                              point.startsWith('✅') ||
+                              point.startsWith('💰') ||
+                              point.startsWith('💳') ||
+                              point.startsWith('⏱️') ||
+                              point.startsWith('🔄') ||
+                              point.startsWith('🚫')
+                          ? 16
+                          : 6,
+                      color: point.startsWith('❌')
+                          ? Colors.red
+                          : point.startsWith('✅')
+                          ? Colors.green
+                          : point.startsWith('💰')
+                          ? Colors.orange
+                          : point.startsWith('💳')
+                          ? Colors.blue
+                          : point.startsWith('⏱️')
+                          ? Colors.purple
+                          : point.startsWith('🔄')
+                          ? Colors.teal
+                          : point.startsWith('🚫')
+                          ? Colors.red
+                          : Colors.grey[600],
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -237,8 +300,23 @@ class TermConditionView extends StatelessWidget {
   }
 
   String _stripLeadingEmoji(String point) {
-    final prefixes = ['❌ ', '✅ ', '💰 ', '💳 ', '⏱️ ', '🔄 ', '🚫 ',
-      '❌', '✅', '💰', '💳', '⏱️', '🔄', '🚫', '️ '];
+    final prefixes = [
+      '❌ ',
+      '✅ ',
+      '💰 ',
+      '💳 ',
+      '⏱️ ',
+      '🔄 ',
+      '🚫 ',
+      '❌',
+      '✅',
+      '💰',
+      '💳',
+      '⏱️',
+      '🔄',
+      '🚫',
+      '️ ',
+    ];
     for (final prefix in prefixes) {
       if (point.startsWith(prefix)) {
         return point.substring(prefix.length).trim();
