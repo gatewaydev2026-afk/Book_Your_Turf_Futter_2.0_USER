@@ -1,17 +1,28 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+
+// Turf-card decorations retain their original one-time app-session window.
+final DateTime _diwaliCardDecorationEndsAt = DateTime.now().add(
+  const Duration(seconds: 15),
+);
+
+Duration _remainingDiwaliCardDecorationTime() {
+  final remaining = _diwaliCardDecorationEndsAt.difference(DateTime.now());
+  return remaining.isNegative ? Duration.zero : remaining;
+}
 
 /// Transparent, non-interactive fireworks layer for an app-wide Stack.
 class DiwaliBottomRocketOverlay extends StatefulWidget {
   const DiwaliBottomRocketOverlay({
     super.key,
     required this.bottomClearance,
-    this.showTitle = false,
+    this.displayDuration = const Duration(seconds: 15),
   });
 
   final double bottomClearance;
-  final bool showTitle;
+  final Duration displayDuration;
 
   @override
   State<DiwaliBottomRocketOverlay> createState() =>
@@ -21,6 +32,8 @@ class DiwaliBottomRocketOverlay extends StatefulWidget {
 class _DiwaliBottomRocketOverlayState extends State<DiwaliBottomRocketOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _endTimer;
+  bool _isVisible = true;
 
   @override
   void initState() {
@@ -28,17 +41,31 @@ class _DiwaliBottomRocketOverlayState extends State<DiwaliBottomRocketOverlay>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 6400),
-    )..repeat();
+    );
+    if (widget.displayDuration == Duration.zero) {
+      _isVisible = false;
+    } else {
+      _controller.repeat();
+      _endTimer = Timer(widget.displayDuration, _hideAnimation);
+    }
+  }
+
+  void _hideAnimation() {
+    if (!mounted) return;
+    _controller.stop();
+    setState(() => _isVisible = false);
   }
 
   @override
   void dispose() {
+    _endTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isVisible) return const SizedBox.shrink();
     return Padding(
       padding: EdgeInsets.only(bottom: widget.bottomClearance),
       child: IgnorePointer(
@@ -52,25 +79,6 @@ class _DiwaliBottomRocketOverlayState extends State<DiwaliBottomRocketOverlay>
                   isComplex: false,
                   willChange: true,
                 ),
-                if (widget.showTitle)
-                  AnimatedBuilder(
-                    animation: _controller,
-                    child: const _DarkDiwaliTitle(compact: false),
-                    builder: (context, child) {
-                      final time = _controller.value;
-                      final opacity = _titleOpacity(time);
-                      return Align(
-                        alignment: const Alignment(0, -0.18),
-                        child: Opacity(
-                          opacity: opacity,
-                          child: Transform.scale(
-                            scale: .84 + (opacity * .16),
-                            child: child,
-                          ),
-                        ),
-                      );
-                    },
-                  ),
               ],
             ),
           ),
@@ -100,8 +108,8 @@ class _Rocket {
 
 class _FullScreenRocketPainter extends CustomPainter {
   _FullScreenRocketPainter(Animation<double> progress)
-      : _progress = progress,
-        super(repaint: progress);
+    : _progress = progress,
+      super(repaint: progress);
 
   final Animation<double> _progress;
   final Paint _paint = Paint()..strokeCap = StrokeCap.round;
@@ -266,7 +274,8 @@ class _FullScreenRocketPainter extends CustomPainter {
       size.height * (.56 - (seed % 3) * .06),
     );
     final inverse = 1 - time;
-    final point = (start * (inverse * inverse)) +
+    final point =
+        (start * (inverse * inverse)) +
         (control * (2 * inverse * time)) +
         (end * (time * time));
     return point +
@@ -285,11 +294,16 @@ class _FullScreenRocketPainter extends CustomPainter {
   ) {
     final eased = Curves.easeOutCubic.transform(time);
     final head = _rocketPoint(size, rocket, eased, seed);
-    final previous =
-        _rocketPoint(size, rocket, math.max(0.0, eased - .04), seed);
+    final previous = _rocketPoint(
+      size,
+      rocket,
+      math.max(0.0, eased - .04),
+      seed,
+    );
     final delta = head - previous;
-    final direction =
-        delta.distance == 0 ? const Offset(0, 1) : delta / delta.distance;
+    final direction = delta.distance == 0
+        ? const Offset(0, 1)
+        : delta / delta.distance;
 
     for (var index = 0; index < 11; index++) {
       final alpha = ((1 - index / 11) * 230).round();
@@ -319,23 +333,15 @@ class _FullScreenRocketPainter extends CustomPainter {
         ..color = Colors.white,
     );
     for (var index = 0; index < 5; index++) {
-      final ember = Offset(
-        math.sin(index * 1.8 + seed) * 4,
-        8 + index * 8.0,
+      final ember = Offset(math.sin(index * 1.8 + seed) * 4, 8 + index * 8.0);
+      _paint.color = (index.isEven ? rocket.accent : rocket.color).withAlpha(
+        165 - index * 24,
       );
-      _paint.color = (index.isEven ? rocket.accent : rocket.color)
-          .withAlpha(165 - index * 24);
       canvas.drawCircle(head + ember, 1.9 - index * .24, _paint);
     }
   }
 
-  void _burst(
-    Canvas canvas,
-    Size size,
-    _Rocket rocket,
-    double time,
-    int seed,
-  ) {
+  void _burst(Canvas canvas, Size size, _Rocket rocket, double time, int seed) {
     final expansion = Curves.easeOutCubic.transform(time);
     final opacity = (1.0 - Curves.easeInQuad.transform(time)).clamp(0.0, 1.0);
     final center = Offset(
@@ -362,10 +368,11 @@ class _FullScreenRocketPainter extends CustomPainter {
         tip,
         _paint
           ..strokeWidth = index.isEven ? 2.2 : 1.25
-          ..color = (index % 3 == 0
-                  ? Colors.white
-                  : (index.isEven ? rocket.color : rocket.accent))
-              .withAlpha((opacity * 245).round()),
+          ..color =
+              (index % 3 == 0
+                      ? Colors.white
+                      : (index.isEven ? rocket.color : rocket.accent))
+                  .withAlpha((opacity * 245).round()),
       );
     }
 
@@ -409,7 +416,8 @@ class _FullScreenRocketPainter extends CustomPainter {
     for (var index = 0; index < 7; index++) {
       final angle = seed * .45 + index * .92;
       final orbit = 10 + index * 5.0 + time * 8;
-      final point = center +
+      final point =
+          center +
           Offset(math.cos(angle), math.sin(angle)) * orbit +
           Offset(0, time * 8);
       canvas.drawCircle(
@@ -417,8 +425,9 @@ class _FullScreenRocketPainter extends CustomPainter {
         index % 3 == 0 ? 1.9 : 1.3,
         _paint
           ..style = PaintingStyle.fill
-          ..color = (index.isEven ? rocket.color : rocket.accent)
-              .withAlpha((fade * 160).round()),
+          ..color = (index.isEven ? rocket.color : rocket.accent).withAlpha(
+            (fade * 160).round(),
+          ),
       );
     }
   }
@@ -461,9 +470,12 @@ class _FullScreenRocketPainter extends CustomPainter {
 
 /// Header fireworks retained on Turf Details and Slot Booking.
 class DiwaliTurfAnimation extends StatefulWidget {
-  const DiwaliTurfAnimation({super.key, this.compact = false});
+  const DiwaliTurfAnimation({
+    super.key,
+    this.displayDuration = const Duration(seconds: 10),
+  });
 
-  final bool compact;
+  final Duration displayDuration;
 
   @override
   State<DiwaliTurfAnimation> createState() => _DiwaliTurfAnimationState();
@@ -472,6 +484,8 @@ class DiwaliTurfAnimation extends StatefulWidget {
 class _DiwaliTurfAnimationState extends State<DiwaliTurfAnimation>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _endTimer;
+  bool _isVisible = true;
 
   @override
   void initState() {
@@ -479,17 +493,31 @@ class _DiwaliTurfAnimationState extends State<DiwaliTurfAnimation>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(seconds: 5),
-    )..repeat();
+    );
+    if (widget.displayDuration == Duration.zero) {
+      _isVisible = false;
+    } else {
+      _controller.repeat();
+      _endTimer = Timer(widget.displayDuration, _hideAnimation);
+    }
+  }
+
+  void _hideAnimation() {
+    if (!mounted) return;
+    _controller.stop();
+    setState(() => _isVisible = false);
   }
 
   @override
   void dispose() {
+    _endTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isVisible) return const SizedBox.shrink();
     return IgnorePointer(
       child: ExcludeSemantics(
         child: AspectRatio(
@@ -499,19 +527,6 @@ class _DiwaliTurfAnimationState extends State<DiwaliTurfAnimation>
               fit: StackFit.expand,
               children: [
                 CustomPaint(painter: _MiniFireworksPainter(_controller)),
-                AnimatedBuilder(
-                  animation: _controller,
-                  builder: (context, child) {
-                    final time = _controller.value;
-                    final opacity = _titleOpacity(time);
-                    return Center(
-                      child: Opacity(
-                        opacity: opacity.clamp(0.0, 1.0),
-                        child: _DarkDiwaliTitle(compact: widget.compact),
-                      ),
-                    );
-                  },
-                ),
               ],
             ),
           ),
@@ -521,74 +536,10 @@ class _DiwaliTurfAnimationState extends State<DiwaliTurfAnimation>
   }
 }
 
-double _titleOpacity(double time) {
-  if (time < .69) return 0;
-  if (time < .82) return (time - .69) / .13;
-  if (time < .94) return 1;
-  return ((1 - time) / .06).clamp(0.0, 1.0);
-}
-
-class _DarkDiwaliTitle extends StatelessWidget {
-  const _DarkDiwaliTitle({required this.compact});
-
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: compact ? 24 : 30,
-      fontWeight: FontWeight.w900,
-      fontStyle: FontStyle.italic,
-      letterSpacing: compact ? 1.1 : 1.7,
-      height: 1,
-    );
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        Transform.translate(
-          offset: const Offset(2.5, 3.5),
-          child: Text(
-            'HAPPY DIWALI',
-            style: style.copyWith(
-              color: const Color(0xFF3A1608),
-              shadows: const [
-                Shadow(color: Color(0xAA2A0B00), blurRadius: 4),
-              ],
-            ),
-          ),
-        ),
-        ShaderMask(
-          blendMode: BlendMode.srcIn,
-          shaderCallback: (bounds) => const LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              Color(0xFFFFE082),
-              Color(0xFFD18A00),
-              Color(0xFF8A3D00),
-              Color(0xFF5A1F00),
-            ],
-          ).createShader(bounds),
-          child: Text(
-            'HAPPY DIWALI',
-            style: style.copyWith(
-              color: Colors.white,
-              shadows: const [
-                Shadow(color: Color(0xFFFFB300), blurRadius: 6),
-                Shadow(color: Color(0xFF5A1F00), blurRadius: 2),
-              ],
-            ),
-          ),
-        ),
-      ],
-    );
-  }
-}
-
 class _MiniFireworksPainter extends CustomPainter {
   _MiniFireworksPainter(Animation<double> progress)
-      : _progress = progress,
-        super(repaint: progress);
+    : _progress = progress,
+      super(repaint: progress);
 
   final Animation<double> _progress;
   final Paint _paint = Paint()..strokeCap = StrokeCap.round;
@@ -625,17 +576,20 @@ class _MiniFireworksPainter extends CustomPainter {
         .55 * size.height,
       );
       final inverse = 1 - progress;
-      final head = (start * (inverse * inverse)) +
+      final head =
+          (start * (inverse * inverse)) +
           (middle * (2 * inverse * progress)) +
           (end * (progress * progress));
       final previousProgress = math.max(0.0, progress - .04);
       final previousInverse = 1 - previousProgress;
-      final previous = (start * (previousInverse * previousInverse)) +
+      final previous =
+          (start * (previousInverse * previousInverse)) +
           (middle * (2 * previousInverse * previousProgress)) +
           (end * (previousProgress * previousProgress));
       final delta = head - previous;
-      final direction =
-          delta.distance == 0 ? const Offset(0, 1) : delta / delta.distance;
+      final direction = delta.distance == 0
+          ? const Offset(0, 1)
+          : delta / delta.distance;
       for (var tailIndex = 0; tailIndex < 7; tailIndex++) {
         final tail = head - direction * (tailIndex * 5.5);
         canvas.drawLine(
@@ -651,8 +605,9 @@ class _MiniFireworksPainter extends CustomPainter {
           tail - direction * 4.5,
           _paint
             ..strokeWidth = math.max(.7, 2.0 - tailIndex * .18)
-            ..color =
-                colors[index].withAlpha(((1 - tailIndex / 7) * 200).round()),
+            ..color = colors[index].withAlpha(
+              ((1 - tailIndex / 7) * 200).round(),
+            ),
         );
       }
       canvas.drawCircle(
@@ -705,10 +660,10 @@ class DiwaliFilterBadge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => const SizedBox(
-        width: 58,
-        height: 26,
-        child: CustomPaint(painter: _StaticDiwaliSparkPainter(12)),
-      );
+    width: 58,
+    height: 26,
+    child: CustomPaint(painter: _StaticDiwaliSparkPainter(12)),
+  );
 }
 
 class DiwaliFilterSpark extends StatelessWidget {
@@ -718,9 +673,9 @@ class DiwaliFilterSpark extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => SizedBox.square(
-        dimension: size,
-        child: const CustomPaint(painter: _StaticDiwaliSparkPainter(8)),
-      );
+    dimension: size,
+    child: const CustomPaint(painter: _StaticDiwaliSparkPainter(8)),
+  );
 }
 
 /// Compact burning diya and firecracker shown at the end of the Home filter.
@@ -773,8 +728,8 @@ class _DiwaliFilterLampFirecrackerState
 
 class _LampFirecrackerPainter extends CustomPainter {
   _LampFirecrackerPainter(Animation<double> progress)
-      : _progress = progress,
-        super(repaint: progress);
+    : _progress = progress,
+      super(repaint: progress);
 
   final Animation<double> _progress;
   final Paint _paint = Paint()..strokeCap = StrokeCap.round;
@@ -897,7 +852,8 @@ class _LampFirecrackerPainter extends CustomPainter {
           ..color = colors[index % colors.length].withAlpha(alpha),
       );
       if (index.isEven) {
-        final spark = burstCenter +
+        final spark =
+            burstCenter +
             unit * radius +
             Offset(0, burst * burst * (3 + index * .28));
         canvas.drawCircle(
@@ -930,6 +886,8 @@ class DiwaliTurfCardDecoration extends StatefulWidget {
 class _DiwaliTurfCardDecorationState extends State<DiwaliTurfCardDecoration>
     with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
+  Timer? _endTimer;
+  bool _isVisible = true;
 
   @override
   void initState() {
@@ -937,24 +895,36 @@ class _DiwaliTurfCardDecorationState extends State<DiwaliTurfCardDecoration>
     _controller = AnimationController(
       vsync: this,
       duration: const Duration(milliseconds: 3600),
-    )..repeat();
+    );
+    final remaining = _remainingDiwaliCardDecorationTime();
+    if (remaining == Duration.zero) {
+      _isVisible = false;
+    } else {
+      _controller.repeat();
+      _endTimer = Timer(remaining, _hideAnimation);
+    }
+  }
+
+  void _hideAnimation() {
+    if (!mounted) return;
+    _controller.stop();
+    setState(() => _isVisible = false);
   }
 
   @override
   void dispose() {
+    _endTimer?.cancel();
     _controller.dispose();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
+    if (!_isVisible) return const SizedBox.shrink();
     return RepaintBoundary(
       child: IgnorePointer(
         child: CustomPaint(
-          painter: _TurfCardDiwaliPainter(
-            widget.variant,
-            _controller,
-          ),
+          painter: _TurfCardDiwaliPainter(widget.variant, _controller),
         ),
       ),
     );
@@ -963,8 +933,8 @@ class _DiwaliTurfCardDecorationState extends State<DiwaliTurfCardDecoration>
 
 class _TurfCardDiwaliPainter extends CustomPainter {
   _TurfCardDiwaliPainter(this.variant, Animation<double> progress)
-      : _progress = progress,
-        super(repaint: progress);
+    : _progress = progress,
+      super(repaint: progress);
 
   final int variant;
   final Animation<double> _progress;
@@ -1050,8 +1020,9 @@ class _TurfCardDiwaliPainter extends CustomPainter {
         3.3 * pulse,
         paint
           ..style = PaintingStyle.fill
-          ..color =
-              bulbColors[(index + variant) % bulbColors.length].withAlpha(72)
+          ..color = bulbColors[(index + variant) % bulbColors.length].withAlpha(
+            72,
+          )
           ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 3),
       );
       canvas.drawCircle(
@@ -1076,71 +1047,7 @@ class _TurfCardDiwaliPainter extends CustomPainter {
     );
     paint.maskFilter = null;
 
-    // Realistic small diya below the garland, away from the action icons.
-    final diyaX = size.width * .38;
-    const diyaY = 25.0;
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(diyaX, diyaY + 2), width: 17, height: 4),
-      paint
-        ..style = PaintingStyle.fill
-        ..color = const Color(0xFF1E0C00).withAlpha(110)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 2),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(center: Offset(diyaX, diyaY), width: 16, height: 6.2),
-      paint
-        ..style = PaintingStyle.fill
-        ..shader = const LinearGradient(
-          begin: Alignment.topCenter,
-          end: Alignment.bottomCenter,
-          colors: [Color(0xFFFFD54F), Color(0xFFE36900), Color(0xFF5A1900)],
-        ).createShader(Rect.fromLTWH(diyaX - 8, diyaY - 3, 16, 8))
-        ..maskFilter = null,
-    );
-    paint.shader = null;
-    canvas.drawArc(
-      Rect.fromLTWH(diyaX - 7, diyaY - 3.2, 14, 7),
-      0,
-      math.pi,
-      false,
-      paint..color = const Color(0xFFE87500),
-    );
-    final flicker = .82 + ((math.sin(time * math.pi * 9) + 1) * .09);
-    final flame = Path()
-      ..moveTo(diyaX, diyaY - 2)
-      ..quadraticBezierTo(
-        diyaX - 3.2,
-        diyaY - 7,
-        diyaX + .4,
-        diyaY - (13 * flicker),
-      )
-      ..quadraticBezierTo(diyaX + 3.5, diyaY - 7, diyaX, diyaY - 2)
-      ..close();
-    canvas.drawCircle(
-      Offset(diyaX, diyaY - 7),
-      5.4 * flicker,
-      paint
-        ..color = const Color(0xFFFF8F00).withAlpha(72)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 4),
-    );
-    canvas.drawPath(
-      flame,
-      paint
-        ..color = const Color(0xFFFF6D00)
-        ..maskFilter = const MaskFilter.blur(BlurStyle.normal, 1.8),
-    );
-    canvas.drawOval(
-      Rect.fromCenter(
-        center: Offset(diyaX + .1, diyaY - 7),
-        width: 1.7,
-        height: 4.5,
-      ),
-      paint
-        ..color = const Color(0xFFFFF7AE)
-        ..maskFilter = null,
-    );
-
-    // Multi-depth firework balances the diya without hiding turf content.
+    // Compact firework that does not hide turf content.
     final center = Offset(size.width * .65, 19);
     const sparkColors = [
       Color(0xFFFFD54F),

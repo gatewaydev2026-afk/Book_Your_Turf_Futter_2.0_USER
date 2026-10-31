@@ -24,11 +24,8 @@ class _LaunchOfferOverlayState extends State<LaunchOfferOverlay> {
 
   static const double _posterAspectRatio = 1026 / 1530;
 
-  // Popup size: 60% of available screen dimensions for better visibility.
-  static const double _popupSizeFactor = 0.60;
-
-  // Space between the poster and close button.
-  static const double _closeButtonSpacing = 8;
+  // Slightly larger popup while still fitting compact phones safely.
+  static const double _popupSizeFactor = 0.76;
 
   late final VideoPlayerController _videoController;
 
@@ -137,95 +134,101 @@ class _LaunchOfferOverlayState extends State<LaunchOfferOverlay> {
 
             final double posterHeight = posterWidth / _posterAspectRatio;
 
-            // Keep the complete poster and close button together.
-            final double buttonSize = 40;
+            final double buttonSize = 38;
 
-            final double totalWidth =
-                posterWidth + _closeButtonSpacing + buttonSize;
-
-            final double totalHeight = posterHeight;
-
-            return Center(
-              child: AnimatedScale(
-                scale: _isVisible ? 1.0 : 0.92,
-                duration: _transitionDuration,
-                curve: Curves.easeOutCubic,
-                child: SizedBox(
-                  width: totalWidth,
-                  height: totalHeight,
-                  child: Stack(
-                    clipBehavior: Clip.none,
-                    children: [
-                      // Poster and video.
-                      Positioned(
-                        left: 0,
-                        top: 0,
-                        width: posterWidth,
-                        height: posterHeight,
-                        child: GestureDetector(
-                          behavior: HitTestBehavior.opaque,
-                          onTap: _dismiss,
-                          child: Container(
-                            decoration: BoxDecoration(
-                              borderRadius: BorderRadius.circular(18),
-                              boxShadow: const [
-                                BoxShadow(
-                                  color: Colors.black45,
-                                  blurRadius: 20,
-                                  offset: Offset(0, 8),
-                                ),
-                              ],
-                            ),
-                            child: ClipRRect(
-                              borderRadius: BorderRadius.circular(18),
-                              child: Stack(
-                                fit: StackFit.expand,
-                                children: [
-                                  Image.asset(_posterAsset, fit: BoxFit.cover),
-
-                                  if (_isVideoReady)
-                                    Center(
-                                      child: AspectRatio(
-                                        aspectRatio:
-                                            _videoController.value.aspectRatio,
-                                        child: VideoPlayer(_videoController),
-                                      ),
+            return Stack(
+              children: [
+                Center(
+                  child: AnimatedScale(
+                    scale: _isVisible ? 1.0 : 0.92,
+                    duration: _transitionDuration,
+                    curve: Curves.easeOutCubic,
+                    child: SizedBox(
+                      width: posterWidth,
+                      height: posterHeight,
+                      child: Stack(
+                        clipBehavior: Clip.none,
+                        children: [
+                          // Poster and video.
+                          Positioned(
+                            left: 0,
+                            top: 0,
+                            width: posterWidth,
+                            height: posterHeight,
+                            child: GestureDetector(
+                              behavior: HitTestBehavior.opaque,
+                              onTap: _dismiss,
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(18),
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Colors.black45,
+                                      blurRadius: 20,
+                                      offset: Offset(0, 8),
                                     ),
-                                ],
-                              ),
-                            ),
-                          ),
-                        ),
-                      ),
+                                  ],
+                                ),
+                                child: ClipRRect(
+                                  borderRadius: BorderRadius.circular(18),
+                                  child: Stack(
+                                    fit: StackFit.expand,
+                                    children: [
+                                      Image.asset(
+                                        _posterAsset,
+                                        fit: BoxFit.cover,
+                                      ),
 
-                      // Close icon immediately beside the poster.
-                      Positioned(
-                        left: posterWidth + _closeButtonSpacing,
-                        top: 0,
-                        child: SizedBox(
-                          width: buttonSize,
-                          height: buttonSize,
-                          child: Material(
-                            color: Colors.black.withValues(alpha: 0.75),
-                            shape: const CircleBorder(),
-                            elevation: 4,
-                            child: IconButton(
-                              padding: EdgeInsets.zero,
-                              onPressed: _dismiss,
-                              tooltip: 'Close offer',
-                              icon: const Icon(
-                                Icons.close_rounded,
-                                size: 24,
-                                color: Colors.white,
+                                      if (_isVideoReady)
+                                        Center(
+                                          child: AspectRatio(
+                                            aspectRatio: _videoController
+                                                .value
+                                                .aspectRatio,
+                                            child: VideoPlayer(
+                                              _videoController,
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                                ),
                               ),
                             ),
                           ),
-                        ),
+                        ],
                       ),
-                    ],
+                    ),
                   ),
                 ),
-              ),
+                SafeArea(
+                  child: Align(
+                    alignment: Alignment.topRight,
+                    child: Padding(
+                      padding: const EdgeInsets.only(top: 12, right: 12),
+                      child: SizedBox(
+                        width: buttonSize,
+                        height: buttonSize,
+                        child: Material(
+                          color: Colors.black.withValues(alpha: 0.75),
+                          shape: const CircleBorder(),
+                          elevation: 4,
+                          child: IconButton(
+                            padding: EdgeInsets.zero,
+                            onPressed: _dismiss,
+                            tooltip: 'Close offer',
+                            icon: const Icon(
+                              Icons.close_rounded,
+                              size: 24,
+                              color: Colors.white,
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
             );
           },
         ),

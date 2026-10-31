@@ -92,9 +92,7 @@ void showGuestBookingAuthDialog({
     PopScope(
       canPop: false,
       child: AlertDialog(
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(20),
-        ),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
         title: const Text(
           'Login Required',
           style: TextStyle(fontWeight: FontWeight.bold),
@@ -102,11 +100,7 @@ void showGuestBookingAuthDialog({
         content: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Icon(
-              Icons.login,
-              size: 60,
-              color: Colors.green,
-            ),
+            const Icon(Icons.login, size: 60, color: Colors.green),
             const SizedBox(height: 16),
             const Text(
               'Please login to continue with your booking',
@@ -117,18 +111,12 @@ void showGuestBookingAuthDialog({
             Text(
               'Your selected slots will be preserved',
               textAlign: TextAlign.center,
-              style: TextStyle(
-                fontSize: 12,
-                color: Colors.grey.shade600,
-              ),
+              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
             ),
           ],
         ),
         actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               // Close dialog
@@ -215,7 +203,8 @@ class _SlotViewState extends State<SlotView> {
         if (turfArg is TurfModel) {
           turf = turfArg;
           print(
-              '✅ SlotView: Received TurfModel from pending booking: ${turf.name}');
+            '✅ SlotView: Received TurfModel from pending booking: ${turf.name}',
+          );
         } else if (turfArg is Map<String, dynamic>) {
           print('✅ SlotView: Converting Map to TurfModel from pending booking');
           turf = TurfModel.fromJson(turfArg);
@@ -300,14 +289,17 @@ class _SlotViewState extends State<SlotView> {
 
     final pendingDate = args['pendingDate'] as DateTime?;
     if (pendingDate != null) {
-      final dateIndex = vm.dates.indexWhere((d) =>
-          d.year == pendingDate.year &&
-          d.month == pendingDate.month &&
-          d.day == pendingDate.day);
+      final dateIndex = vm.dates.indexWhere(
+        (d) =>
+            d.year == pendingDate.year &&
+            d.month == pendingDate.month &&
+            d.day == pendingDate.day,
+      );
       if (dateIndex != -1) {
         vm.selectedDateIndex.value = dateIndex;
         print(
-            '✅ Restored date: ${pendingDate.toIso8601String().split('T').first}');
+          '✅ Restored date: ${pendingDate.toIso8601String().split('T').first}',
+        );
       }
     }
 
@@ -347,11 +339,11 @@ class _SlotViewState extends State<SlotView> {
               const SizedBox(height: 24),
               ElevatedButton(
                 onPressed: () => Get.back(),
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.green,
+                style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+                child: const Text(
+                  'Go Back',
+                  style: TextStyle(color: Colors.white),
                 ),
-                child: const Text('Go Back',
-                    style: TextStyle(color: Colors.white)),
               ),
             ],
           ),
@@ -377,15 +369,20 @@ class _SlotViewState extends State<SlotView> {
   }
 
   Widget _buildSlotViewUI(
-      BuildContext context, SlotViewModel vm, TurfModel turf) {
+    BuildContext context,
+    SlotViewModel vm,
+    TurfModel turf,
+  ) {
     final width = MediaQuery.of(context).size.width;
-    final isGuest = SharedPrefsHelper.getToken() == null ||
+    final isGuest =
+        SharedPrefsHelper.getToken() == null ||
         SharedPrefsHelper.getToken()!.isEmpty;
 
     int crossCount = width > 600 ? 4 : 3;
     double timeFontSize = width > 600 ? 12 : 11;
-    final courtTurfLabel =
-        _isCricketOrFootball(turf.gameType) ? "Turf" : "Court";
+    final courtTurfLabel = _isCricketOrFootball(turf.gameType)
+        ? "Turf"
+        : "Court";
 
     return Scaffold(
       body: SafeArea(
@@ -407,13 +404,18 @@ class _SlotViewState extends State<SlotView> {
                   child: Obx(() {
                     return RefreshIndicator(
                       key: ValueKey(
-                          '${vm.selectedDateIndex.value}_${vm.selectedCourt.value}_${vm.isLoadingSlots.value}'),
+                        '${vm.selectedDateIndex.value}_${vm.selectedCourt.value}_${vm.isLoadingSlots.value}',
+                      ),
                       onRefresh: () async {
                         await vm.refresh();
                       },
                       color: Colors.green,
-                      child:
-                          _buildSlotGrid(context, vm, crossCount, timeFontSize),
+                      child: _buildSlotGrid(
+                        context,
+                        vm,
+                        crossCount,
+                        timeFontSize,
+                      ),
                     );
                   }),
                 ),
@@ -423,13 +425,8 @@ class _SlotViewState extends State<SlotView> {
             Positioned.fill(
               child: DiwaliBottomRocketOverlay(
                 bottomClearance: MediaQuery.paddingOf(context).bottom + 72,
+                displayDuration: const Duration(seconds: 10),
               ),
-            ),
-            const Positioned(
-              top: 58,
-              left: 12,
-              right: 12,
-              child: DiwaliTurfAnimation(compact: true),
             ),
           ],
         ),
@@ -467,8 +464,11 @@ class _SlotViewState extends State<SlotView> {
                 ),
               ),
               IconButton(
-                icon:
-                    Icon(Icons.refresh, size: 18, color: Colors.green.shade700),
+                icon: Icon(
+                  Icons.refresh,
+                  size: 18,
+                  color: Colors.green.shade700,
+                ),
                 onPressed: () => vm.resetToToday(),
                 padding: EdgeInsets.zero,
                 constraints: const BoxConstraints(),
@@ -477,8 +477,10 @@ class _SlotViewState extends State<SlotView> {
               if (vm.courtCount > 1)
                 Obx(
                   () => Container(
-                    padding:
-                        const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 3,
+                    ),
                     decoration: BoxDecoration(
                       color: Colors.green.shade50,
                       borderRadius: BorderRadius.circular(15),
@@ -536,12 +538,16 @@ class _SlotViewState extends State<SlotView> {
                     const SizedBox(width: 4),
                     Builder(
                       builder: (context) {
-                        final totalHours =
-                            _getTotalHours(turf.openTime, turf.closeTime);
+                        final totalHours = _getTotalHours(
+                          turf.openTime,
+                          turf.closeTime,
+                        );
                         if (totalHours.isNotEmpty) {
                           return Container(
                             padding: const EdgeInsets.symmetric(
-                                horizontal: 4, vertical: 1),
+                              horizontal: 4,
+                              vertical: 1,
+                            ),
                             decoration: BoxDecoration(
                               color: Colors.green.shade50,
                               borderRadius: BorderRadius.circular(6),
@@ -639,7 +645,10 @@ class _SlotViewState extends State<SlotView> {
   }
 
   Widget _buildCourtSelector(
-      BuildContext context, SlotViewModel vm, String courtTurfLabel) {
+    BuildContext context,
+    SlotViewModel vm,
+    String courtTurfLabel,
+  ) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
       child: GestureDetector(
@@ -650,10 +659,7 @@ class _SlotViewState extends State<SlotView> {
             color: Colors.white,
             borderRadius: BorderRadius.circular(10),
             boxShadow: [
-              BoxShadow(
-                color: Colors.black.withOpacity(0.03),
-                blurRadius: 3,
-              ),
+              BoxShadow(color: Colors.black.withOpacity(0.03), blurRadius: 3),
             ],
           ),
           child: Row(
@@ -668,8 +674,10 @@ class _SlotViewState extends State<SlotView> {
               const SizedBox(width: 6),
               Text(
                 "Select $courtTurfLabel",
-                style:
-                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                style: const TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12,
+                ),
               ),
               const Spacer(),
               Obx(
@@ -724,7 +732,8 @@ class _SlotViewState extends State<SlotView> {
     return Obx(() {
       final selectedDate = vm.dates[vm.selectedDateIndex.value];
       final now = DateTime.now();
-      final isToday = selectedDate.year == now.year &&
+      final isToday =
+          selectedDate.year == now.year &&
           selectedDate.month == now.month &&
           selectedDate.day == now.day;
 
@@ -757,7 +766,8 @@ class _SlotViewState extends State<SlotView> {
   List<SlotModel> _getDisplaySlots(SlotViewModel vm) {
     final selectedDate = vm.dates[vm.selectedDateIndex.value];
     final now = DateTime.now();
-    final isToday = selectedDate.year == now.year &&
+    final isToday =
+        selectedDate.year == now.year &&
         selectedDate.month == now.month &&
         selectedDate.day == now.day;
 
@@ -779,8 +789,9 @@ class _SlotViewState extends State<SlotView> {
         endHour = int.parse(endParts[0]);
         endMinute = int.parse(endParts[1]);
 
-        int slotEndMinutes =
-            (endHour == 0 && endMinute == 0) ? 1440 : endHour * 60 + endMinute;
+        int slotEndMinutes = (endHour == 0 && endMinute == 0)
+            ? 1440
+            : endHour * 60 + endMinute;
         return slotEndMinutes > currentTimeMinutes;
       } catch (e) {
         return false;
@@ -788,8 +799,12 @@ class _SlotViewState extends State<SlotView> {
     }).toList();
   }
 
-  Widget _buildSlotGrid(BuildContext context, SlotViewModel vm, int crossCount,
-      double timeFontSize) {
+  Widget _buildSlotGrid(
+    BuildContext context,
+    SlotViewModel vm,
+    int crossCount,
+    double timeFontSize,
+  ) {
     if (vm.isLoadingSlots.value) {
       return const Center(child: CircularProgressIndicator());
     }
@@ -881,7 +896,9 @@ class _SlotViewState extends State<SlotView> {
             boxShadow: isNextDaySlot && isAvailable && !isSelected
                 ? [
                     BoxShadow(
-                        color: Colors.purple.withOpacity(0.3), blurRadius: 4)
+                      color: Colors.purple.withOpacity(0.3),
+                      blurRadius: 4,
+                    ),
                   ]
                 : null,
           ),
@@ -900,8 +917,8 @@ class _SlotViewState extends State<SlotView> {
                         fontWeight: isSelected && isAvailable
                             ? FontWeight.bold
                             : (isNextDaySlot
-                                ? FontWeight.w600
-                                : FontWeight.normal),
+                                  ? FontWeight.w600
+                                  : FontWeight.normal),
                         color: textColor,
                         fontSize: timeFontSize - 1,
                       ),
@@ -913,13 +930,15 @@ class _SlotViewState extends State<SlotView> {
                   if (statusText.isNotEmpty)
                     Container(
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 3, vertical: 1),
+                        horizontal: 3,
+                        vertical: 1,
+                      ),
                       decoration: BoxDecoration(
                         color: isNextDaySlot && isAvailable && !isSelected
                             ? Colors.purple
                             : (isBlocked
-                                ? Colors.grey.shade500
-                                : textColor.withOpacity(0.15)),
+                                  ? Colors.grey.shade500
+                                  : textColor.withOpacity(0.15)),
                         borderRadius: BorderRadius.circular(3),
                       ),
                       child: Text(
@@ -972,7 +991,8 @@ class _SlotViewState extends State<SlotView> {
               Obx(() {
                 final selectedDate = vm.dates[vm.selectedDateIndex.value];
                 final now = DateTime.now();
-                final isToday = selectedDate.year == now.year &&
+                final isToday =
+                    selectedDate.year == now.year &&
                     selectedDate.month == now.month &&
                     selectedDate.day == now.day;
                 if (isToday) {
@@ -989,8 +1009,10 @@ class _SlotViewState extends State<SlotView> {
                 onPressed: () => vm.refresh(),
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 16,
+                    vertical: 8,
+                  ),
                 ),
                 child: const Text(
                   "Refresh Slots",
@@ -1007,8 +1029,13 @@ class _SlotViewState extends State<SlotView> {
   // ============================================================
   // ✅ BOTTOM BAR - Always shows "Proceed to Pay"
   // ============================================================
-  Widget _buildBottomBar(BuildContext context, SlotViewModel vm, TurfModel turf,
-      double width, bool isGuest) {
+  Widget _buildBottomBar(
+    BuildContext context,
+    SlotViewModel vm,
+    TurfModel turf,
+    double width,
+    bool isGuest,
+  ) {
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
@@ -1142,22 +1169,29 @@ class _SlotViewState extends State<SlotView> {
               return Padding(
                 padding: const EdgeInsets.only(bottom: 8),
                 child: Container(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 12,
+                    vertical: 6,
+                  ),
                   decoration: BoxDecoration(
                     color: Colors.red.shade50,
                     borderRadius: BorderRadius.circular(8),
                   ),
                   child: Row(
                     children: [
-                      Icon(Icons.warning_amber,
-                          size: 16, color: Colors.red.shade700),
+                      Icon(
+                        Icons.warning_amber,
+                        size: 16,
+                        color: Colors.red.shade700,
+                      ),
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
                           'Need ${turf.minSlots - vm.selectedSlots.length} more slot(s)',
                           style: TextStyle(
-                              fontSize: 11, color: Colors.red.shade700),
+                            fontSize: 11,
+                            color: Colors.red.shade700,
+                          ),
                         ),
                       ),
                     ],
@@ -1235,10 +1269,7 @@ class _SlotViewState extends State<SlotView> {
               padding: const EdgeInsets.only(top: 6),
               child: Text(
                 '🔒 You will be asked to sign up before payment',
-                style: TextStyle(
-                  fontSize: 11,
-                  color: Colors.grey.shade600,
-                ),
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
               ),
             ),
         ],
@@ -1249,13 +1280,20 @@ class _SlotViewState extends State<SlotView> {
   // ============================================================
   // ✅ PROCEED TO PAY - With duplicate prevention
   // ============================================================
-  void _proceedToPay(
-      BuildContext context, SlotViewModel vm, TurfModel turf, bool isGuest) {
+  Future<void> _proceedToPay(
+    BuildContext context,
+    SlotViewModel vm,
+    TurfModel turf,
+    bool isGuest,
+  ) async {
     // ✅ Prevent multiple calls
     if (_isProceedingToPay) {
       print('⏭️ Already proceeding to pay - skipping duplicate');
       return;
     }
+
+    // Lock immediately so repeated taps cannot open multiple routes.
+    _isProceedingToPay = true;
 
     final selectedPaymentType = vm.selectedPaymentType.value;
     final totalAmount = vm.totalPrice;
@@ -1294,9 +1332,6 @@ class _SlotViewState extends State<SlotView> {
       'requiredAdvance': requiredAdvance,
     };
 
-    // ✅ Set flag to prevent duplicate calls
-    _isProceedingToPay = true;
-
     // ✅ If guest, show the signup+OTP dialog ON TOP of this SlotView
     if (isGuest) {
       print('👤 Guest user - Showing signup/OTP dialog');
@@ -1306,10 +1341,7 @@ class _SlotViewState extends State<SlotView> {
           // ✅ Reset flag
           _isProceedingToPay = false;
           // ✅ Navigate to booking summary
-          Get.toNamed(
-            AppRoutes.bookingSummary,
-            arguments: bookingData,
-          );
+          _openBookingSummary(bookingData);
         },
       );
       // ✅ Dialog will handle navigation - reset flag if dialog closes without success
@@ -1323,12 +1355,13 @@ class _SlotViewState extends State<SlotView> {
     }
 
     // ✅ Logged-in user - Go directly to summary
-    Get.toNamed(
-      AppRoutes.bookingSummary,
-      arguments: bookingData,
-    );
+    _openBookingSummary(bookingData);
     // ✅ Reset flag after navigation
     _isProceedingToPay = false;
+  }
+
+  void _openBookingSummary(Map<String, dynamic> bookingData) {
+    Get.toNamed(AppRoutes.bookingSummary, arguments: bookingData);
   }
 
   String _getCurrentTimeFormatted() {
@@ -1341,7 +1374,10 @@ class _SlotViewState extends State<SlotView> {
   }
 
   void _showCourtSheet(
-      BuildContext context, SlotViewModel vm, String courtTurfLabel) {
+    BuildContext context,
+    SlotViewModel vm,
+    String courtTurfLabel,
+  ) {
     showModalBottomSheet(
       context: context,
       isScrollControlled: true,
@@ -1389,12 +1425,14 @@ class _SlotViewState extends State<SlotView> {
                       child: AnimatedContainer(
                         duration: const Duration(milliseconds: 200),
                         decoration: BoxDecoration(
-                          color:
-                              isSelected ? Colors.green : Colors.grey.shade200,
+                          color: isSelected
+                              ? Colors.green
+                              : Colors.grey.shade200,
                           borderRadius: BorderRadius.circular(10),
                           border: Border.all(
-                            color:
-                                isSelected ? Colors.green : Colors.transparent,
+                            color: isSelected
+                                ? Colors.green
+                                : Colors.transparent,
                             width: 2,
                           ),
                         ),
@@ -1435,8 +1473,10 @@ class _SlotViewState extends State<SlotView> {
           ),
         ),
         const SizedBox(width: 4),
-        Text(label,
-            style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500)),
+        Text(
+          label,
+          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w500),
+        ),
       ],
     );
   }

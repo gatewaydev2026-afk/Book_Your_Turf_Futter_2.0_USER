@@ -40,6 +40,7 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
   // ✅ Cached turf - parsed once in initState
   TurfModel? _cachedTurf;
   bool _isInitialized = false;
+  bool _isOpeningSlots = false;
 
   @override
   void initState() {
@@ -240,9 +241,13 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
     }
   }
 
-  void _handlePrimaryAction(TurfModel turf) {
+  Future<void> _handlePrimaryAction(TurfModel turf) async {
     if (turf.isBookable) {
-      Get.toNamed(AppRoutes.slotSelection, arguments: turf);
+      if (_isOpeningSlots) return;
+      _isOpeningSlots = true;
+      await Get.toNamed(AppRoutes.slotSelection, arguments: {'turf': turf});
+      if (!mounted) return;
+      _isOpeningSlots = false;
     } else {
       _makePhoneCall(turf.phoneNumber);
     }
@@ -979,13 +984,8 @@ class _TurfDetailsViewState extends State<TurfDetailsView> {
           Positioned.fill(
             child: DiwaliBottomRocketOverlay(
               bottomClearance: MediaQuery.paddingOf(context).bottom + 72,
+              displayDuration: const Duration(seconds: 10),
             ),
-          ),
-          const Positioned(
-            top: 72,
-            left: 16,
-            right: 16,
-            child: DiwaliTurfAnimation(),
           ),
         ],
       ),

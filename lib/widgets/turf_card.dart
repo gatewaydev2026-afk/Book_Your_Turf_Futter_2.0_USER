@@ -21,8 +21,14 @@ class TurfCard extends StatefulWidget {
 }
 
 class _TurfCardState extends State<TurfCard> {
-  void _handleTap() {
-    Get.toNamed(AppRoutes.turfDetail, arguments: widget.turf);
+  bool _isOpeningDetails = false;
+
+  Future<void> _handleTap() async {
+    if (_isOpeningDetails) return;
+    _isOpeningDetails = true;
+    await Get.toNamed(AppRoutes.turfDetail, arguments: {'turf': widget.turf});
+    if (!mounted) return;
+    _isOpeningDetails = false;
   }
 
   Future<void> _handleFavoriteTap() async {

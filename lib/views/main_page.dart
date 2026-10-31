@@ -85,7 +85,7 @@ class _MainPageState extends State<MainPage> {
             Positioned.fill(
               child: DiwaliBottomRocketOverlay(
                 bottomClearance: MediaQuery.paddingOf(context).bottom + 72,
-                showTitle: controller.currentIndex.value == 0,
+                displayDuration: const Duration(seconds: 15),
               ),
             ),
             // ✅ Bottom Navigation Bar on top with glass effect
@@ -341,18 +341,13 @@ class _MainPageState extends State<MainPage> {
         title: const Text('Login Required'),
         content: const Text('Please login to access this feature.'),
         actions: [
-          TextButton(
-            onPressed: () => Get.back(),
-            child: const Text('Cancel'),
-          ),
+          TextButton(onPressed: () => Get.back(), child: const Text('Cancel')),
           ElevatedButton(
             onPressed: () {
               Get.back();
               Get.offAllNamed(AppRoutes.login);
             },
-            style: ElevatedButton.styleFrom(
-              backgroundColor: Colors.green,
-            ),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
             child: const Text('Login', style: TextStyle(color: Colors.white)),
           ),
         ],
